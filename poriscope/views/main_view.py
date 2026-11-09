@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
@@ -90,6 +91,8 @@ class MainView(QMainWindow, WalkthroughMixin):
     reset_session = Signal()
     request_analysis_tabs = Signal()
     received_analysis_tabs = Signal(dict)
+    #: The page showing, when Replay Actions is clicked.
+    replay_actions_requested = Signal(str)
 
     logger = logging.getLogger(__name__)
 
@@ -155,6 +158,13 @@ class MainView(QMainWindow, WalkthroughMixin):
         scroll_area.setWidget(self.text_display_widget)
         scroll_area.setWidgetResizable(True)
         self.text_display_container.layout().addWidget(scroll_area)
+        # Continues the replay of the tab showing; enabled only for a tab that has one
+        # to continue, per page.
+        self.replay_actions_button = QPushButton("Replay Actions", self)
+        self.replay_actions_button.setEnabled(False)
+        self.replay_actions_button.clicked.connect(self.on_replay_actions_click)
+        self.text_display_container.layout().addWidget(self.replay_actions_button)
+        self._replay_available: Dict[str, bool] = {}
         self.gridLayout.addWidget(self.text_display_container, 0, 3)
 
         # Ensure menu is visible
@@ -860,6 +870,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
         for page_name in doomed:
             del self.pages[page_name]
+            self._replay_available.pop(page_name, None)
             self.logger.debug(f"Removed page '{page_name}'")
 
         self._reindex_pages()
@@ -1046,6 +1057,9 @@ class MainView(QMainWindow, WalkthroughMixin):
             page_info = self.pages[page_name]
             self.stackedWidget.setCurrentIndex(page_info["index"])
             self.page_title_label.setText(page_name)
+            self.replay_actions_button.setEnabled(
+                self._replay_available.get(page_name, False)
+            )
             self.logger.info(f"Switched to page: {page_name}")
         else:
             self.logger.warning(
@@ -1250,6 +1264,28 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     def get_current_view(self) -> str:
         return self.page_title_label.text()
+
+    @log(logger=logger)
+    def set_replay_available(self, page_name: str, available: bool) -> None:
+        """
+        Record whether a tab's page has a replay Replay Actions would continue.
+
+        The button follows the page showing: it is updated now if that page is showing,
+        and whenever a page is switched to.
+
+        :param page_name: the tab's page
+        :type page_name: str
+        :param available: True if the tab has a replay to continue
+        :type available: bool
+        """
+        self._replay_available[page_name] = available
+        if page_name == self.get_current_view():
+            self.replay_actions_button.setEnabled(available)
+
+    @log(logger=logger)
+    def on_replay_actions_click(self) -> None:
+        """Ask for the replay of the page showing to be continued."""
+        self.replay_actions_requested.emit(self.get_current_view())
 
     def _reset_walkthrough_flag(
         self, view_name: str, completed_successfully: bool

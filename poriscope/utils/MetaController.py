@@ -44,6 +44,7 @@ from poriscope.utils.LogDecorator import (
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
+from poriscope.utils.replay_sequence import ReplaySequence
 from poriscope.utils.ReplayGuard import replaying
 
 #: The plugin method that says whether a channel holds a finished run, per plugin family.
@@ -98,6 +99,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
+    #: Whether a replay of this tab stopped or failed with entries left, which Replay
+    #: Actions would continue; sent when a replay starts (False) and when it ends.
+    replay_state_changed = Signal(bool)
 
     #: The last line sent to the status panel, whoever sent it, so a subclass can leave out a
     #: line that would only repeat the one directly above it.
@@ -130,6 +134,20 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: (plugin key, channel) -> the entry of a result whose run has not ended yet.
     _held_results: Optional[Dict[Tuple[Any, Any], Dict[str, Any]]] = None
 
+    #: (text, source) of each status-panel line held back while this tab replays.
+    _held_panel_text: Optional[List[Tuple[str, str]]] = None
+
+    #: True while a line is sent that must reach the panel even during a replay.
+    _panel_text_now: bool = False
+
+    #: The history the Reset button emptied, kept for an Undo straight after it; anything
+    #: recorded and kept after the Reset drops it, so at most one history is kept aside.
+    _history_set_aside: Optional["OrderedDict[int, Dict[str, Any]]"] = None
+
+    #: What the last recorded entry dropped from :py:attr:`_history_set_aside`, put back
+    #: if that entry is discarded: a refused plot leaves nothing kept after the Reset.
+    _history_set_aside_dropped: Optional["OrderedDict[int, Dict[str, Any]]"] = None
+
     def __init__(
         self,
         available_subclasses: Optional[Mapping[str, List[str]]] = None,
@@ -153,10 +171,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             setattr(self, k, v)
 
         self._init()
+        self.replay_sequence = ReplaySequence(self)
         self.view.set_available_subclasses(available_subclasses)
         self.view.plugin_state_changed.connect(self.plugin_state_changed)
         self.model.update_progressbar.connect(self.view.update_progressbar)
+        # Recorded first, so a replay waiting on the run sees the tab's history with it.
         self.model.run_finished.connect(self.record_finished_run)
+        self.model.run_finished.connect(self.replay_sequence.on_run_finished)
         self.view.kill_worker.connect(self.handle_kill_worker)
         self.view.kill_all_workers.connect(self.handle_kill_all_workers)
         self.add_text_to_display.connect(self._note_panel_text)
@@ -292,7 +313,86 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return None
         if self.__class__.__name__ in actions.keys():
             actions = actions[self.__class__.__name__]  # allow loading from base file
-        self.replay(actions.values())
+        if not self.start_replay(actions.values()):
+            self._panel_text_now = True
+            try:
+                self.add_text_to_display.emit(
+                    "a replay is already running; stop it, or let it finish, first",
+                    self.__class__.__name__,
+                )
+            finally:
+                self._panel_text_now = False
+
+    @log(logger=logger)
+    def start_replay(self, entries: Optional[Iterable[Any]] = None) -> bool:
+        """
+        Replay recorded actions one entry at a time, without blocking the window.
+
+        Each entry runs on its own turn of the event loop. A ``result`` entry waits for its
+        plugin's run on its channel to end, and the replay stops at the first entry that
+        fails; see :py:mod:`poriscope.utils.replay_sequence`. Undo replays with
+        :py:meth:`replay` instead, all at once.
+
+        :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
+            None continues the last replay from the entry it stopped or failed at
+        :type entries: Optional[Iterable[Any]]
+        :return: False if a replay of this tab is already running, or there is nothing left
+            to continue
+        :rtype: bool
+        """
+        return self.replay_sequence.start(entries)
+
+    @log(logger=logger)
+    def is_replaying(self) -> bool:
+        """
+        Is a replay started by :py:meth:`start_replay` still running?
+
+        :return: True until it is done, has failed or was stopped
+        :rtype: bool
+        """
+        return self.replay_sequence.running
+
+    @log(logger=logger)
+    def clear_for_replay(self) -> None:
+        """
+        Clear what the tab shows and holds, before its history is replayed onto it again.
+
+        Called when the user goes back to before a replay that failed. Records nothing, and
+        leaves the history alone: the replay that follows rebuilds it. The default clears the
+        View's figure; a tab that keeps more - what a figure holds, a result on its Model -
+        overrides this to clear that too.
+        """
+        self.view.clear_figure()
+
+    @log(logger=logger)
+    def panel_text_to_show(self, text: str, source: str) -> List[Tuple[str, str]]:
+        """
+        Say which status-panel lines to show now, given a line this tab has just sent.
+
+        While the tab replays, its lines are held back and nothing is shown, so the panel
+        does not interleave them with other tabs' lines. The first line once the replay has
+        ended - it says how the replay ended - comes with the held lines before it, in order.
+        A line the tab must show at once, such as refusing a second replay, is shown
+        alone and holds nothing back.
+        The tab's own ``add_text_to_display`` carries every line as it is sent.
+
+        :param text: the line
+        :type text: str
+        :param source: who sent it
+        :type source: str
+        :return: (text, source) of each line to show now, in order
+        :rtype: List[Tuple[str, str]]
+        """
+        if self._panel_text_now:
+            return [(text, source)]
+        if self._held_panel_text is None:
+            self._held_panel_text = []
+        if self.is_replaying():
+            self._held_panel_text.append((text, source))
+            return []
+        shown = self._held_panel_text + [(text, source)]
+        self._held_panel_text = []
+        return shown
 
     @log(logger=logger)
     def record_action(self, entry: Dict[str, Any]) -> None:
@@ -481,37 +581,60 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``
         :type entries: Iterable[Any]
         """
-        registry = self.action_registry()
         with replaying():
             for entry in entries:
-                name = entry.get("action") if isinstance(entry, Mapping) else None
-                method = registry.get(name) if isinstance(name, str) else None
-                if method is None:
-                    described = (
-                        f"'{name}' is not a recorded action of {self.__class__.__name__}"
-                        if isinstance(name, str)
-                        else f"an entry with no action name was found in {self.__class__.__name__}"
-                    )
-                    self.logger.warning(f"Not replayed: {described}")
-                    self.add_text_to_display.emit(
-                        f"Not replayed: {described}", self.__class__.__name__
-                    )
-                    continue
-                args = entry.get("args") or []
-                kwargs = entry.get("kwargs") or {}
-                try:
-                    inspect.signature(method).bind(*args, **kwargs)
-                except TypeError:
-                    described = (
-                        f"the recorded values of '{name}' do not fit that action of "
-                        f"{self.__class__.__name__} any more"
-                    )
-                    self.logger.warning(f"Not replayed: {described}")
-                    self.add_text_to_display.emit(
-                        f"Not replayed: {described}", self.__class__.__name__
-                    )
-                    continue
-                method(*args, **kwargs)
+                resolved = self.resolve_replayed_entry(entry)
+                if resolved is not None:
+                    method, args, kwargs = resolved
+                    method(*args, **kwargs)
+
+    @log(logger=logger)
+    def resolve_replayed_entry(
+        self, entry: Any
+    ) -> Optional[Tuple[Callable[..., Any], List[Any], Dict[str, Any]]]:
+        """
+        Find the method a recorded entry replays, and the values to call it with.
+
+        An entry with no action name, or one that names no declared action of this tab
+        (an old-format entry, or a method that has since been removed), is reported on
+        the status panel and gives None. So does an entry whose values no longer fit its
+        action's parameters - one saved before they changed. The fit is checked here, so
+        an action's own ``TypeError`` still comes from the call.
+
+        :param entry: a recorded entry, ``{"action": name, "args": [...], "kwargs": {...}}``
+        :type entry: Any
+        :return: the bound method, its positional and its keyword values; None if the
+            entry cannot be replayed
+        :rtype: Optional[Tuple[Callable[..., Any], List[Any], Dict[str, Any]]]
+        """
+        name = entry.get("action") if isinstance(entry, Mapping) else None
+        method = self.action_registry().get(name) if isinstance(name, str) else None
+        if method is None:
+            described = (
+                f"'{name}' is not a recorded action of {self.__class__.__name__}"
+                if isinstance(name, str)
+                else f"an entry with no action name was found in {self.__class__.__name__}"
+            )
+            self.logger.warning(f"Not replayed: {described}")
+            self.add_text_to_display.emit(
+                f"Not replayed: {described}", self.__class__.__name__
+            )
+            return None
+        args = list(entry.get("args") or [])
+        kwargs = dict(entry.get("kwargs") or {})
+        try:
+            inspect.signature(method).bind(*args, **kwargs)
+        except TypeError:
+            described = (
+                f"the recorded values of '{name}' do not fit that action of "
+                f"{self.__class__.__name__} any more"
+            )
+            self.logger.warning(f"Not replayed: {described}")
+            self.add_text_to_display.emit(
+                f"Not replayed: {described}", self.__class__.__name__
+            )
+            return None
+        return method, args, kwargs
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:
@@ -632,11 +755,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @Slot(str)
     def handle_kill_all_workers(self, subclass: str, exiting: bool = False) -> None:
         """
-        Kill all running workers for this tab, and say so on the display panel.
+        Kill all running workers for this tab, stop its replay, and say so on the display panel.
 
-        The panel message is skipped when ``exiting`` is set: the display widget is
+        The panel messages are skipped when ``exiting`` is set: the display widget is
         being torn down along with everything else, so writing to it at that point
-        would be pointless at best.
+        would be pointless at best. A stopped replay continues from the entry it was on
+        at the next :py:meth:`start_replay` with no entries.
 
         :param subclass: Name of the controller the request is addressed to; the
             request is ignored if it names a different one.
@@ -655,6 +779,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self.add_text_to_display.emit(
                 "Stopping all running operations.", self.__class__.__name__
             )
+        self.replay_sequence.stop(quitting=exiting)
         self.model.stop_workers(exiting=exiting)
 
     # public API, should generally be left alone by subclasses
@@ -691,7 +816,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         Undo removes the last action and any resets before it, then replays from the
         last reset left. When none is left, the last reset it removed is replayed first,
-        so undoing a figure's only plot clears the figure.
+        so undoing a figure's only plot clears the figure. Undo on a history the Reset
+        button emptied (:py:meth:`set_history_aside`) brings that history back by
+        replaying it, which records it again; recording anything else drops it, and the
+        status panel says the Reset's clear is final.
 
         :param history: Dictionary representing a new action to add.
         :type history: Optional[dict]
@@ -700,7 +828,19 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         if not undo:
             if history:
+                if self._history_set_aside is not None:
+                    self.add_text_to_display.emit(
+                        "Reset: plot and history cleared", self.__class__.__name__
+                    )
+                self._history_set_aside_dropped = (
+                    None if self.tab_action_history else self._history_set_aside
+                )
+                self._history_set_aside = None
                 self.tab_action_history[len(self.tab_action_history)] = history
+        elif not self.tab_action_history and self._history_set_aside is not None:
+            set_aside = list(self._history_set_aside.values())
+            self._history_set_aside = None
+            self.replay(set_aside)
         else:
             try:
                 self.tab_action_history.popitem()
@@ -759,6 +899,30 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self.tab_action_history.popitem()
         except KeyError:
             return
+        if not self.tab_action_history and self._history_set_aside_dropped is not None:
+            self._history_set_aside = self._history_set_aside_dropped
+            self.add_text_to_display.emit(
+                "Reset: Undo now will bring it back", self.__class__.__name__
+            )
+        self._history_set_aside_dropped = None
+        self.update_tab_action_history.emit(
+            self.__class__.__name__, self.tab_action_history
+        )
+
+    @log(logger=logger)
+    def set_history_aside(self) -> None:
+        """
+        Empty the history for the Reset button, keeping it for an Undo straight after.
+
+        Undo on the emptied history replays what was set aside
+        (:py:meth:`update_tab_actions`); anything recorded and kept first drops it. A Reset
+        of an already empty history keeps what an earlier one set aside.
+        """
+        if not self.tab_action_history:
+            return
+        self._history_set_aside = self.tab_action_history
+        self._history_set_aside_dropped = None
+        self.tab_action_history = OrderedDict()
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )

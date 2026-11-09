@@ -305,6 +305,58 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         self.canvas.setStyleSheet("border: none;")
         self.logger.info("Canvas set up successfully")
 
+    @log(logger=logger)
+    def clear_figure(self) -> None:
+        """
+        Empty the figure and redraw the canvas, recording nothing.
+
+        What a tab's Controller asks for, by default, before its history is replayed onto
+        it again.
+        """
+        self.figure.clear()
+        self.canvas.draw()
+
+    @log(logger=logger)
+    def ask_after_replay_failure(
+        self, tab: str, step: int, total: int, action: str, reason: str
+    ) -> str:
+        """
+        Ask the user whether to go back to before a replay that failed, or keep what it did.
+
+        Keep is the default, and the answer when the dialog is closed, since going back
+        clears the tab.
+
+        :param tab: the tab that was replaying
+        :type tab: str
+        :param step: the position of the failed entry, from 1
+        :type step: int
+        :param total: how many entries the replay had
+        :type total: int
+        :param action: the failed entry's action name
+        :type action: str
+        :param reason: what went wrong
+        :type reason: str
+        :return: "back" or "keep"
+        :rtype: str
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Replay stopped")
+        box.setText(
+            f"{tab} could not replay step {step} of {total}, {action}: {reason}."
+        )
+        box.setInformativeText(
+            "The status panel shows what the replayed actions reported.\n\n"
+            "Go back returns the tab to how it was before this replay. Keep leaves what "
+            "was replayed, and Replay Actions continues from this step."
+        )
+        back = box.addButton("Go back", QMessageBox.ButtonRole.DestructiveRole)
+        keep = box.addButton("Keep", QMessageBox.ButtonRole.AcceptRole)
+        box.setDefaultButton(keep)
+        box.setEscapeButton(keep)
+        box.exec()
+        return "back" if box.clickedButton() is back else "keep"
+
     @abstractmethod
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """

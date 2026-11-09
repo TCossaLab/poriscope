@@ -72,10 +72,21 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 - Replay goes through the tab's registry of declared actions, ``MetaController.action_registry``:
   a name that is not declared, an entry from an older file, or one whose saved values no longer
   fit its action's parameters, is reported on the status panel and not called
-- Can save and reload these actions from a JSON file
+- Can save and reload these actions from a JSON file. A loaded file replays through
+  ``start_replay``, one entry at a time on the event loop (``poriscope.utils.replay_sequence``):
+  a ``result`` entry waits for its run to end and carries on only if the run finished with
+  results, and the replay stops at the first entry that raises or, for a ``skip_on_false``
+  action, returns ``False``. The user is then asked to go back or keep (``MetaView.ask_after_replay_failure``);
+  going back calls ``clear_for_replay`` and replays the history from before. Its default clears
+  the View's figure (``MetaView.clear_figure``); override it if your tab keeps more, such as a
+  result on its Model, and record nothing in it. While a tab replays, its status-panel lines
+  are held and shown together when it ends, and ``replay_state_changed`` tells the main window
+  whether **Replay Actions** can continue it
 - Undo logic included (with safety checks and filtering): Undo replays the history from
   the last reset onward, and ``discard_last_tab_action`` drops a record without
-  replaying anything, for an action that was refused and changed nothing
+  replaying anything, for an action that was refused and changed nothing. A tab's own
+  Reset button can call ``set_history_aside`` to empty the history: Undo straight after
+  brings it back, and anything recorded first drops it (Metadata's ``clear_history``)
 - A recorded action must be a pure function of its recorded arguments, so put anything
   it reads from the widgets - a selection, say - into its parameters before calling it,
   as ``MetaSubsetTabView._record_selection`` does. A replay refuses a read of a controls panel
@@ -104,7 +115,7 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 - ``update_plot_data()`` to push processed data to the view
 - ``set_generator()`` to forward generators from controller to model
 - ``handle_kill_worker()`` and ``handle_kill_all_workers()`` to gracefully stop
-  long-running operations
+  long-running operations; the second also stops the tab's replay
 
 What You Need to Implement
 --------------------------

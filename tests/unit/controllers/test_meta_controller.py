@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from pathlib import Path
-from typing import List, override
+from typing import Any, Dict, List, override
 from unittest.mock import MagicMock, mock_open
 
 import numpy as np
@@ -109,8 +109,11 @@ def controller(
     ctrl.model = mock_model
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.tab_action_history = OrderedDict()
-    # Replay has its own tests (test_action_registry); here it is only observed.
+    # Replay has its own tests (test_action_registry, test_meta_controller_replay); here
+    # it is only observed.
     ctrl.replay = mocker.Mock()  # type: ignore[method-assign]
+    ctrl.start_replay = mocker.Mock(return_value=True)  # type: ignore[method-assign]
+    ctrl.replay_sequence = mocker.Mock()
 
     # Mock Qt signals on the instance
     for sig in [
@@ -231,8 +234,8 @@ def test_load_actions_from_json_updates_view_on_success(
 
     controller.load_actions_from_json("actions.json")
 
-    controller.replay.assert_called_once()  # type: ignore[attr-defined]
-    assert list(controller.replay.call_args[0][0]) == list(actions.values())  # type: ignore[attr-defined]
+    controller.start_replay.assert_called_once()  # type: ignore[attr-defined]
+    assert list(controller.start_replay.call_args[0][0]) == list(actions.values())  # type: ignore[attr-defined]
 
 
 def test_load_actions_from_json_returns_none_on_file_error(
@@ -271,8 +274,8 @@ def test_load_actions_from_json_unwraps_class_name_key(
 
     controller.load_actions_from_json("actions.json")
 
-    controller.replay.assert_called_once()  # type: ignore[attr-defined]
-    assert list(controller.replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
+    controller.start_replay.assert_called_once()  # type: ignore[attr-defined]
+    assert list(controller.start_replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
 
 
 # ----------------- relay_add_text_to_display -------------------------
@@ -395,6 +398,7 @@ def test_handle_kill_all_workers_stops_workers_when_subclass_matches(
     """
     controller.handle_kill_all_workers(controller.__class__.__name__)
     mock_model.stop_workers.assert_called_once_with(exiting=False)
+    controller.replay_sequence.stop.assert_called_once_with(quitting=False)  # type: ignore[attr-defined]
 
 
 def test_handle_kill_all_workers_passes_exiting_flag(
@@ -409,6 +413,7 @@ def test_handle_kill_all_workers_passes_exiting_flag(
     """
     controller.handle_kill_all_workers(controller.__class__.__name__, exiting=True)
     mock_model.stop_workers.assert_called_once_with(exiting=True)
+    controller.replay_sequence.stop.assert_called_once_with(quitting=True)  # type: ignore[attr-defined]
 
 
 def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
@@ -423,6 +428,7 @@ def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
     """
     controller.handle_kill_all_workers("SomeOtherController")
     mock_model.stop_workers.assert_not_called()
+    controller.replay_sequence.stop.assert_not_called()  # type: ignore[attr-defined]
 
 
 # ------------------- update_available_plugins ------------------------
@@ -869,4 +875,147 @@ def test_export_plot_data_writes_every_dataset_of_an_overlay(
         "1.0,3.0,5.0,8.0",
         "2.0,4.0,6.0,9.0",
         ",,7.0,1.0",
+    ]
+
+
+# ------------- the Reset button sets the history aside -------------
+
+
+def _names(entries: Any) -> List[str]:
+    return [entry["action"] for entry in entries]
+
+
+def _history(*names: str) -> "OrderedDict[int, Dict[str, Any]]":
+    return OrderedDict((i, {"action": name}) for i, name in enumerate(names))
+
+
+def test_setting_the_history_aside_empties_it_and_says_so(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+
+    controller.set_history_aside()
+
+    assert controller.tab_action_history == OrderedDict()
+    controller.update_tab_action_history.emit.assert_called_once_with(  # type: ignore[attr-defined]
+        type(controller).__name__, OrderedDict()
+    )
+
+
+def test_undo_straight_after_brings_back_what_was_set_aside_once(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a", "plot_b")
+    controller.set_history_aside()
+
+    controller.update_tab_actions(undo=True)
+    controller.update_tab_actions(undo=True)
+
+    assert controller.replay.call_count == 1  # type: ignore[attr-defined]
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert _names(replayed) == [RESET_ACTION, "plot_a", "plot_b"]
+
+
+def test_recording_after_the_reset_drops_what_was_set_aside(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.update_tab_actions(undo=True)
+    controller.update_tab_actions(undo=True)
+
+    for call in controller.replay.call_args_list:  # type: ignore[attr-defined]
+        assert "plot_a" not in _names(call[0][0])
+
+
+def test_a_reset_of_an_empty_history_keeps_what_an_earlier_one_set_aside(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+    controller.set_history_aside()
+
+    controller.update_tab_actions(undo=True)
+
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert _names(replayed) == [RESET_ACTION, "plot_a"]
+
+
+def test_a_refused_plot_after_the_reset_keeps_what_was_set_aside(
+    controller: MetaController,
+) -> None:
+    """
+    A refused plot is recorded and then discarded, so nothing was kept after the Reset.
+
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.discard_last_tab_action()
+    controller.update_tab_actions(undo=True)
+
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert _names(replayed) == [RESET_ACTION, "plot_a"]
+
+
+def test_the_first_entry_kept_after_the_reset_says_the_clear_is_final(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.update_tab_actions({"action": "plot_c"})
+
+    controller.add_text_to_display.emit.assert_called_once_with(  # type: ignore[attr-defined]
+        "Reset: plot and history cleared", type(controller).__name__
+    )
+
+
+def test_an_entry_with_nothing_set_aside_says_nothing(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.update_tab_actions({"action": "plot_a"})
+
+    controller.add_text_to_display.emit.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_a_refused_plot_after_the_reset_says_undo_still_brings_it_back(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.discard_last_tab_action()
+
+    said = [c.args[0] for c in controller.add_text_to_display.emit.call_args_list]  # type: ignore[attr-defined]
+    assert said == [
+        "Reset: plot and history cleared",
+        "Reset: Undo now will bring it back",
     ]

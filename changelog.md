@@ -172,6 +172,10 @@
 
 * A recorded `result` action is held until `MetaModel.run_finished` says its run ended, and `MetaController.record_finished_run` records it only if the plugin then says the channel holds a finished run (`get_eventfinding_status` / `get_eventfitting_status`)
 
+* `MetaController.start_replay` replays a tab's actions one entry at a time through a `ReplaySequence` (`poriscope/utils/replay_sequence.py`), waiting for each Find or Fit to finish with results, and `load_actions_from_json` now replays through it; `is_replaying`, `resolve_replayed_entry`, `panel_text_to_show`, `clear_for_replay` (overridden by Metadata, Clustering and Protein) and the `replay_state_changed` signal are new, and `ActionDeclaration` keeps `skip_on_false`
+
+* `MetaView.clear_figure` and `MetaView.ask_after_replay_failure` are new, `MainView` has `replay_actions_requested` and `set_replay_available`, and `MainController.show_tab_text` puts each tab's lines on the status panel
+
 ### User-Facing Behaviour:
 
 #### General:
@@ -179,6 +183,16 @@
 * Poriscope installs on Python 3.12.0 through 3.14; the floor was 3.12.10, which no dependency required, and the dependency ranges now start at the versions CI tests
 
 * Plot Events in the Event Analysis and Metadata tabs no longer fails with matplotlib 3.11, which reports the colour cycle as RGB tuples instead of hex strings
+
+* **Load Plot Configuration replays one step at a time**, so the window stays responsive, and the tab's status-panel lines appear together when it ends; if a step fails, a dialog asks whether to **Go back** to before the load or **Keep** what was replayed
+
+* A **Replay Actions** button under the status panel continues the showing tab's replay from the step it stopped at, after Keep or after Abort Analysis
+
+* Abort Analysis and a tab's **❌ ALL** button also stop that tab's replay
+
+* Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back, and the status panel says which
+
+* A replay opens no error dialogs of its own: an error a replayed step logs goes to the log file, and a failed step is reported only by the Go back / Keep question
 
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 

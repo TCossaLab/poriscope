@@ -113,10 +113,17 @@ Step 4: Generate and Export
 
 2. You can then:
 
-   - **Save Plot Configuration**: Save the sequence of plots you have made as a JSON file.
-   - **Undo**: Revert to the previous state.
-   - **Load Plot Configuration**: Replay a previously saved sequence of plots.
-   - **Reset**: Return to default settings.
+   - **Save Plot Configuration**: Save the sequence of plots you have made since the last
+     **Reset** as a JSON file.
+   - **Undo**: Revert to the previous state. Straight after a **Reset**, Undo brings back
+     everything the Reset cleared.
+   - **Load Plot Configuration**: Replay a previously saved sequence of plots, one step at a
+     time. The tab's messages appear together when it is done. If a step cannot be replayed,
+     you are asked whether to **Go back** to the plot you had before loading, or **Keep** what
+     was replayed and continue later with **Replay Actions** (see :ref:`replay_actions`).
+   - **Reset**: Clear the plot and the tab's history of plots. Plotting anything after it
+     makes the clear final. The message panel says which: whether **Undo** will bring the
+     plots back, or that they are cleared for good.
    - **Export Subset - CSV**: Save the currently filtered data to CSV for external analysis.
    - **Export Plot Data**: Save the data behind the current plot.
 

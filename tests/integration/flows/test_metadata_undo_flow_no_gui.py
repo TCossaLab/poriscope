@@ -242,3 +242,83 @@ def test_undo_replays_only_from_the_last_reset(metadata_tab: Triad) -> None:
 
     assert on_figure(metadata_tab) == {(0, "F5")}
     assert len(queries) <= 2
+
+
+def reset(triad: Triad) -> None:
+    """
+    Press Reset.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    """
+    triad.tab_view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
+
+
+@pytest.mark.timeout(120)
+def test_reset_empties_the_history_and_undo_straight_after_brings_it_back(
+    metadata_tab: Triad,
+) -> None:
+    """Plot, overlay, plot, Reset: nothing is left; Undo: all three come back."""
+    for name in ("F0", "F1", "F2"):
+        plot(metadata_tab, name)
+    history = list(metadata_tab.tab_controller.tab_action_history.values())
+
+    reset(metadata_tab)
+
+    assert on_figure(metadata_tab) == set()
+    assert len(metadata_tab.tab_controller.tab_action_history) == 0
+
+    undo(metadata_tab)
+
+    assert on_figure(metadata_tab) == {(0, "F0"), (0, "F1"), (0, "F2")}
+    assert list(metadata_tab.tab_controller.tab_action_history.values()) == history
+
+
+@pytest.mark.timeout(120)
+def test_a_plot_after_reset_drops_what_reset_cleared(metadata_tab: Triad) -> None:
+    """
+    Plot, overlay, overlay, Reset, plot, Undo: empty; further Undos leave it empty.
+
+    Undoing the plot leaves its figure's reset in the history, so it takes a second Undo
+    to empty it and a third to reach what the Reset cleared.
+    """
+    for name in ("F0", "F1", "F2"):
+        plot(metadata_tab, name)
+    reset(metadata_tab)
+    plot(metadata_tab, "F3")
+
+    undo(metadata_tab)
+
+    assert on_figure(metadata_tab) == set()
+
+    for _ in range(2):
+        undo(metadata_tab)
+
+    assert on_figure(metadata_tab) == set()
+    assert len(metadata_tab.tab_controller.tab_action_history) == 0
+
+
+@pytest.mark.timeout(120)
+def test_a_configuration_saved_after_reset_holds_only_what_followed(
+    metadata_tab: Triad, tmp_path: Path, mocker: Any
+) -> None:
+    """
+    :param tmp_path: per-test scratch directory
+    :param mocker: pytest-mock fixture
+    """
+    saved = tmp_path / "config.json"
+    mocker.patch(
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
+        return_value=(str(saved), ""),
+    )
+    plot(metadata_tab, "F0")
+    reset(metadata_tab)
+    plot(metadata_tab, "F3")
+
+    metadata_tab.tab_view.handle_parameter_change(
+        "metadatacontrols", "save_plot_config", ({},)
+    )
+
+    text = saved.read_text(encoding="utf-8")
+    assert '"F3"' in text
+    assert '"F0"' not in text

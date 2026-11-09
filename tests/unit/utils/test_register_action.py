@@ -249,9 +249,25 @@ def test_the_declaration_is_stored_on_the_method_and_not_in_the_entry() -> None:
     tab.find("Finder A", 1, [])
 
     assert getattr(_Tab.find, ACTION_DECLARATION_ATTR) == ActionDeclaration(
-        "find", "result", key=("finder", "channel")
+        "find", "result", key=("finder", "channel"), skip_on_false=True
     )
     assert set(tab.entries[0]) == {"action", "args", "kwargs"}
+
+
+def test_the_declaration_says_whether_false_means_the_call_did_nothing() -> None:
+    """A replay reads it: ``False`` from such an action means it refused or drew nothing."""
+
+    class _Tab(_Recorder):
+        @register_action("plain", kind="view", figure="plot")
+        def plain(self) -> bool:
+            return False
+
+        @register_action("acts", kind="view", figure="plot", skip_on_false=True)
+        def acts(self) -> bool:
+            return False
+
+    assert getattr(_Tab.plain, ACTION_DECLARATION_ATTR).skip_on_false is False
+    assert getattr(_Tab.acts, ACTION_DECLARATION_ATTR).skip_on_false is True
 
 
 def test_a_figure_can_be_named_by_a_parameter() -> None:

@@ -10,6 +10,7 @@ database whose channels hold different numbers of events, so a filter that leaks
 channels shows as a count.
 """
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
@@ -391,7 +392,7 @@ def test_the_protein_ensemble_histogram_averages_the_selected_channels_events(
 
 @pytest.mark.timeout(120)
 def test_a_saved_plot_configuration_replays_raw_plots_on_their_own_channels(
-    metadata_tab: Triad, tmp_path: Path, mocker: Any
+    metadata_tab: Triad, tmp_path: Path, mocker: Any, qtbot: Any
 ) -> None:
     """
     Save two raw plots, reset, and load: both come back, each bound to its own channel.
@@ -418,6 +419,7 @@ def test_a_saved_plot_configuration_replays_raw_plots_on_their_own_channels(
     assert on_figure(metadata_tab) == set()
     view.subset_filters.pop("own_raw")
     view.handle_parameter_change("metadatacontrols", "load_plot", ({},))
+    qtbot.waitUntil(lambda: not metadata_tab.tab_controller.is_replaying())
 
     assert on_figure(metadata_tab) == {(0, "own_raw"), (1, "own_raw")}
     assert plotted_row_count(metadata_tab) == CHANNEL_0 + CHANNEL_1
@@ -596,3 +598,90 @@ def test_a_protein_plot_asks_about_event_id_before_it_is_recorded(
         if entry["action"] == action
     ]
     assert entries[0]["kwargs"]["filters"]["noid_raw"].startswith("SELECT event_id")
+
+
+def broken_configuration(triad: Triad, saved: Path) -> None:
+    """
+    Save a plot of channel 0 with, after it, a Plot Events entry whose loader is gone.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param saved: where the configuration is saved
+    :type saved: Path
+    """
+    plot(triad, "own_raw", "0")
+    triad.tab_view.handle_parameter_change(
+        "metadatacontrols", "save_plot_config", ({},)
+    )
+    data = json.loads(saved.read_text(encoding="utf-8"))
+    data[str(len(data))] = {
+        "action": "plot_events",
+        "args": [],
+        "kwargs": {
+            "loader": "no_such_loader",
+            "event_ids": [0],
+            "experiment": "exp_a",
+            "channel": "0",
+            "subset_name": "own_raw",
+            "sql_filter": "",
+            "raw": False,
+        },
+    }
+    saved.write_text(json.dumps(data), encoding="utf-8")
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "choice, figure",
+    [("back", {(1, "own_raw")}), ("keep", {(0, "own_raw")})],
+)
+def test_a_loaded_configuration_that_fails_goes_back_or_keeps_what_it_drew(
+    metadata_tab: Triad,
+    tmp_path: Path,
+    mocker: Any,
+    qtbot: Any,
+    choice: str,
+    figure: Set[Tuple[int, str]],
+) -> None:
+    """
+    Go back redraws the tab as it was before the load; Keep leaves the plot the load drew.
+    """
+    saved = tmp_path / "config.json"
+    mocker.patch(
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
+        return_value=(str(saved), ""),
+    )
+    mocker.patch(
+        "poriscope.utils.MetaView.QFileDialog.getOpenFileName",
+        return_value=(str(saved), ""),
+    )
+    ask = mocker.patch.object(
+        metadata_tab.tab_view, "ask_after_replay_failure", return_value=choice
+    )
+    controller = metadata_tab.tab_controller
+    broken_configuration(metadata_tab, saved)
+    metadata_tab.tab_view.handle_parameter_change(
+        "metadatacontrols", "reset_plot", ({},)
+    )
+    plot(metadata_tab, "own_raw", "1")
+    before = json.loads(json.dumps(list(controller.tab_action_history.values())))
+
+    metadata_tab.tab_view.handle_parameter_change(
+        "metadatacontrols", "load_plot", ({},)
+    )
+    qtbot.waitUntil(lambda: ask.called and not controller.is_replaying())
+
+    assert ask.call_args.args[:4] == ("MetadataController", 3, 3, "plot_events")
+    assert on_figure(metadata_tab) == figure
+    after = json.loads(json.dumps(list(controller.tab_action_history.values())))
+    if choice == "back":
+        assert after == before
+        assert not controller.replay_sequence.has_remaining()
+    else:
+        # The load adds to the history; its own reset cleared the figure.
+        assert after[: len(before)] == before
+        assert [entry["action"] for entry in after[len(before) :]] == [
+            "reset",
+            "overlay_plot",
+        ]
+        assert controller.replay_sequence.has_remaining()

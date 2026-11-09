@@ -187,7 +187,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.plot_events_requested.connect(self.plot_events)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.overlay_plot_requested.connect(self.request_overlay_plot)
-        self.view.reset_requested.connect(self.reset)
+        self.view.reset_requested.connect(self.clear_history)
 
     @log(logger=logger)
     @register_action(RESET_ACTION, kind="reset", figure="plot")
@@ -195,15 +195,53 @@ class MetadataController(MetaSubsetTabController):
         """
         Clear the figure and forget what it held.
 
-        A recorded action: Undo replays from the last one. Reset asks for it, and so do an
-        overlay that needs a new figure and Plot Events on a figure whose history holds
-        none.
+        A recorded action: Undo replays from the last one. An overlay that needs a new
+        figure asks for it, and so does Plot Events on a figure whose history holds none;
+        the Reset button empties the history instead (:py:meth:`clear_history`).
+
+        :param axis_type: Either '2d' or '3d', the projection of the fresh axes
+        :type axis_type: str
+        """
+        self._clear_figure(axis_type)
+
+    @log(logger=logger)
+    @Slot(str)
+    def clear_history(self, axis_type: str = "2d") -> None:
+        """
+        Clear the figure and empty the history; the Reset button.
+
+        Recorded by nothing: an Undo straight after brings the history back, and anything
+        recorded first drops it (:py:meth:`set_history_aside`). The status panel says which
+        was cleared. The resets the tab makes
+        itself - a new figure, the first Plot Events - stay recorded through :py:meth:`reset`.
+
+        :param axis_type: Either '2d' or '3d', the projection of the fresh axes
+        :type axis_type: str
+        """
+        self._clear_figure(axis_type)
+        self.set_history_aside()
+        if self._history_set_aside is not None:
+            self._say("Reset: plot and history cleared; Undo now will bring it back")
+        else:
+            self._say("Reset: plot cleared")
+
+    def _clear_figure(self, axis_type: str) -> None:
+        """
+        Clear the figure and forget what it held.
 
         :param axis_type: Either '2d' or '3d', the projection of the fresh axes
         :type axis_type: str
         """
         self.model.clear_overlay(axis_type)
         self.view.clear_plot(axis_type)
+
+    @log(logger=logger)
+    @override
+    def clear_for_replay(self) -> None:
+        """
+        Clear the figure and forget what it held, recording nothing, before a replay rebuilds it.
+        """
+        self._clear_figure("2d")
 
     @log(logger=logger)
     @Slot(str, str, list, list, object, bool, object, object)

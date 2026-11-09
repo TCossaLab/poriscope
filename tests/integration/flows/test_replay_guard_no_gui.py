@@ -267,7 +267,7 @@ def select(triad: Triad, filter_name: str, channel: str) -> None:
 
 
 def metadata_act(triad: Triad, qtbot: Any) -> None:
-    """Two overlays, a reset, then a plot: the Metadata recorded actions."""
+    """Two overlays, then a plot whose new bins reset the figure: the Metadata recorded actions."""
     view = triad.tab_view
     histogram = {
         "db_loader": LOADER,
@@ -285,9 +285,10 @@ def metadata_act(triad: Triad, qtbot: Any) -> None:
     view.handle_parameter_change("metadatacontrols", "update_plot", (dict(histogram),))
     select(triad, "F1", "0")
     view.handle_parameter_change("metadatacontrols", "update_plot", (dict(histogram),))
-    view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
     select(triad, "F2", "0")
-    view.handle_parameter_change("metadatacontrols", "update_plot", (dict(histogram),))
+    view.handle_parameter_change(
+        "metadatacontrols", "update_plot", (dict(histogram, bins=[40]),)
+    )
 
 
 def metadata_perturb(triad: Triad) -> None:

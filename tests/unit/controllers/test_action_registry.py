@@ -362,31 +362,6 @@ class TestUndoUsesTheDeclaredResetName:
         assert controller.calls == ["reset:2d", "overlay:a"]  # type: ignore[attr-defined]
 
 
-class TestLoadActionsFromJson:
-    def test_a_loaded_file_is_replayed_through_the_controller(
-        self, controller: _Controller, tmp_path: Any
-    ) -> None:
-        path = tmp_path / "actions.json"
-        path.write_text(json.dumps({"0": _entry("start_run", "a")}), encoding="utf-8")
-
-        controller.load_actions_from_json(str(path))
-
-        assert controller.runs == [("a", 1)]  # type: ignore[attr-defined]
-
-    def test_a_file_keyed_by_the_class_name_is_unwrapped(
-        self, controller: _Controller, tmp_path: Any
-    ) -> None:
-        path = tmp_path / "actions.json"
-        path.write_text(
-            json.dumps({"_Controller": {"0": _entry("start_run", "b")}}),
-            encoding="utf-8",
-        )
-
-        controller.load_actions_from_json(str(path))
-
-        assert controller.runs == [("b", 1)]  # type: ignore[attr-defined]
-
-
 def test_a_mock_view_does_not_break_replay(mocker: MockerFixture) -> None:
     view: MagicMock = mocker.Mock()
     controller = _make(mocker, view)
@@ -434,11 +409,15 @@ class TestReplayRunsInsideTheTripwire:
 
 
 def _view(name: str, figure: str, *depends_on: str) -> ActionDeclaration:
-    return ActionDeclaration(name, "view", figure=figure, depends_on=depends_on)
+    return ActionDeclaration(
+        name, "view", figure=figure, depends_on=depends_on, skip_on_false=True
+    )
 
 
-def _additive(name: str, figure: str) -> ActionDeclaration:
-    return ActionDeclaration(name, "additive", figure=figure)
+def _additive(name: str, figure: str, skip_on_false: bool = True) -> ActionDeclaration:
+    return ActionDeclaration(
+        name, "additive", figure=figure, skip_on_false=skip_on_false
+    )
 
 
 @pytest.mark.parametrize(
@@ -448,7 +427,10 @@ def _additive(name: str, figure: str) -> ActionDeclaration:
             RawDataController,
             [
                 ActionDeclaration(
-                    "find_events", "result", key=("eventfinder", "channel")
+                    "find_events",
+                    "result",
+                    key=("eventfinder", "channel"),
+                    skip_on_false=True,
                 ),
                 _view("update_trace", "plot"),
                 _view("update_psd", "plot"),
@@ -459,7 +441,10 @@ def _additive(name: str, figure: str) -> ActionDeclaration:
             EventAnalysisController,
             [
                 ActionDeclaration(
-                    "fit_events", "result", key=("eventfitter", "channel")
+                    "fit_events",
+                    "result",
+                    key=("eventfitter", "channel"),
+                    skip_on_false=True,
                 ),
                 _view("plot_events", "plot", "eventfitter", "channel"),
             ],
@@ -476,7 +461,7 @@ def _additive(name: str, figure: str) -> ActionDeclaration:
             MetadataController,
             [
                 ActionDeclaration(RESET_ACTION, "reset", figure="plot"),
-                _additive("overlay_plot", "plot"),
+                _additive("overlay_plot", "plot", skip_on_false=False),
                 _view("plot_events", "plot"),
             ],
         ),

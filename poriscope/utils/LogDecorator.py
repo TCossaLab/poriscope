@@ -76,6 +76,7 @@ class ActionDeclaration:
     figure: str = ""
     figure_from: str = ""
     depends_on: Tuple[str, ...] = ()
+    skip_on_false: bool = False
 
 
 @overload
@@ -338,7 +339,9 @@ def register_action(
     returns ``False`` when it refused, or drew nothing, and that call is not recorded.
     Without it a refused call would stay in the history and, once the history keeps
     only the latest run of an action, replace a good one. Only a literal ``False``
-    counts, so a method that returns ``None`` is recorded either way.
+    counts, so a method that returns ``None`` is recorded either way. The flag is kept on
+    the declaration too, so a replay can read ``False`` from such a method as a call that
+    did nothing.
 
     ``kind`` and the fields after it say what a restored session keeps of the action
     (see :py:data:`ACTION_KINDS`). They are stored on the wrapper as an
@@ -368,7 +371,9 @@ def register_action(
     def decorator(func: F) -> F:
         signature = inspect.signature(func)
         declaration = _checked_declaration(
-            ActionDeclaration(name, kind, key, figure, figure_from, depends_on),
+            ActionDeclaration(
+                name, kind, key, figure, figure_from, depends_on, skip_on_false
+            ),
             signature,
         )
 
