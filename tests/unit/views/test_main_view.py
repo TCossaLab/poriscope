@@ -411,15 +411,18 @@ def test_on_save_session_button_click_emits_if_file_selected(main_view, mocker, 
 
 def test_on_save_session_button_click_does_nothing_if_no_file(main_view, mocker):
     """
-    Ensure no signal is emitted if user cancels save dialog.
-    """
-    # Simulate user cancelling
-    mocker.patch.object(main_view, "get_save_file_name", return_value=None)
+    Cancelling the Save Session dialog emits nothing.
 
-    # Call the method; no need to mock emit — just ensure nothing crashes
+    The dialog gives back an empty name on cancel (``QFileDialog.getSaveFileName``),
+    which, emitted, was saved to as a chosen path and failed with an error dialog.
+    """
+    mocker.patch.object(main_view, "get_save_file_name", return_value="")
+    emitted = []
+    main_view.save_session.connect(emitted.append)
+
     main_view.on_save_session_button_click()
 
-    # Nothing to assert; success = no crash and no signal emitted
+    assert emitted == []
 
 
 def test_on_raw_data_view_click(main_view, qtbot, mocker):
