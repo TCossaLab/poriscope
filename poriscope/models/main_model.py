@@ -32,6 +32,7 @@ import logging
 import os
 import time
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import (
@@ -50,6 +51,7 @@ from typing import (
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.constants import __VERSION__
 from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
@@ -73,6 +75,50 @@ _JSON_CLASS_NAMES: Mapping[str, Any] = {
     "float": float,
     "bool": bool,
 }
+
+
+#: The layout of the session file this version writes. A file in another layout is
+#: refused whole; a file with none is the 2.0 layout, a plain map of entries.
+SESSION_FORMAT_VERSION = 2
+
+#: Why a file that holds no session, or a malformed one, is refused.
+_NOT_A_SESSION = "it does not hold a Poriscope session"
+
+#: The ``metaclass`` an analysis tab's entry carries in memory. The session file keeps
+#: tabs apart from the data plugins, under ``tabs``, and leaves it out there.
+TAB_METACLASS = "MetaController"
+
+
+class SessionRefused(Exception):
+    """
+    A session file that cannot be loaded, carrying the reason to give the user.
+
+    :param reason: why, in words that follow "was not loaded:"
+    :type reason: str
+    :param missing: True when there is no file at all, which a Restore reports as routine
+    :type missing: bool
+    """
+
+    def __init__(self, reason: str, missing: bool = False) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.missing = missing
+
+
+@dataclass(frozen=True)
+class LoadedSession:
+    """
+    What a session file holds, in the shape the app keeps it in memory.
+
+    ``plugin_history`` maps each key to its entry, data plugins first in their saved
+    order, then the analysis tabs, each with ``metaclass`` and ``subclass``.
+    ``last_tab`` is the tab whose history changed last when it was saved, or "".
+    """
+
+    plugin_history: "OrderedDict[str, Dict[str, Any]]" = field(
+        default_factory=OrderedDict
+    )
+    last_tab: str = ""
 
 
 class MainModel(QObject):
@@ -444,9 +490,16 @@ class MainModel(QObject):
         self,
         plugin_history: Dict[str, Any],
         save_file: Optional[Union[str, Path]] = None,
+        last_tab: str = "",
     ) -> None:
         """
-        Write the plugin history to disk as JSON
+        Write the session to disk as JSON, in the layout :py:meth:`load_session` reads.
+
+        The file holds ``format_version``, ``poriscope_version`` (for messages only),
+        ``last_tab``, the data plugins under ``plugins`` as a list in their order - a
+        plugin is restored after the plugins it depends on, and JSON keeps no order for an
+        object's keys - and each analysis tab's own state under ``tabs``, keyed by its
+        class name. The in-memory history keeps one map of both, which is split here.
 
         A write failure is logged rather than raised. Every caller is a Qt slot, and
         PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
@@ -464,18 +517,20 @@ class MainModel(QObject):
         instead, and therefore does raise a dialog, so that a Save Session which did
         not happen is not mistaken for one that did.
 
-        :param plugin_history: the session state to persist
+        :param plugin_history: every open data plugin and analysis tab, keyed by name
         :type plugin_history: Dict[str, Any]
         :param save_file: path to write to, or None to use the default session file
         :type save_file: Optional[Union[str, Path]]
+        :param last_tab: the tab whose history changed last, or ""
+        :type last_tab: str
         """
-        json_dump = copy.deepcopy(plugin_history)
-        self.replace_classes_with_class_names(json_dump)
         user_specified = save_file is not None
         if save_file is None:
             save_file = Path(self.session_path, "plugin_history.json")
         try:
-            self._write_json_atomically(json_dump, save_file)
+            self._write_json_atomically(
+                self._session_file(plugin_history, last_tab), save_file
+            )
         except Exception as e:
             message = f"Unable to save session to {save_file}: {e}"
             if user_specified:
@@ -487,6 +542,40 @@ class MainModel(QObject):
                     "saved automatically until this is resolved.",
                     self.__class__.__name__,
                 )
+
+    def _session_file(
+        self, plugin_history: Dict[str, Any], last_tab: str
+    ) -> Dict[str, Any]:
+        """
+        The JSON content of the session file for this history.
+
+        :param plugin_history: every open data plugin and analysis tab, keyed by name
+        :type plugin_history: Dict[str, Any]
+        :param last_tab: the tab whose history changed last, or ""
+        :type last_tab: str
+        :return: the content to write
+        :rtype: Dict[str, Any]
+        """
+        history = copy.deepcopy(plugin_history)
+        self.replace_classes_with_class_names(history)
+        plugins: List[Dict[str, Any]] = []
+        tabs: Dict[str, Dict[str, Any]] = {}
+        for key, entry in history.items():
+            if isinstance(entry, dict) and entry.get("metaclass") == TAB_METACLASS:
+                tabs[key] = {
+                    name: value
+                    for name, value in entry.items()
+                    if name not in ("metaclass", "subclass")
+                }
+            else:
+                plugins.append({"key": key, **entry})
+        return {
+            "format_version": SESSION_FORMAT_VERSION,
+            "poriscope_version": __VERSION__,
+            "last_tab": last_tab,
+            "plugins": plugins,
+            "tabs": tabs,
+        }
 
     @log(logger=logger)
     def save_tab_actions(
@@ -567,36 +656,115 @@ class MainModel(QObject):
     @log(logger=logger)
     def load_session(
         self, file_name: Optional[Union[str, Path]] = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> LoadedSession:
         """
-        Read a saved session, or None if the file is missing, unreadable, or not a session.
+        Read a saved session, checking all of it before anything is applied.
 
-        A session maps each key to an entry carrying ``metaclass`` and ``subclass``, as
-        every writer of the history produces; anything else - a tab action history
-        from the same folder, a config file - is refused here, before the caller resets
-        the workspace to apply it. The caller reports a refusal to the user.
+        A file in this version's layout (:py:meth:`save_session`) and a file in the 2.0
+        layout - a map of entries, each carrying ``metaclass`` and ``subclass`` - both
+        load: data plugins first in their saved order, then the analysis tabs. Anything
+        else is refused here, before the caller resets the workspace to apply it: a file
+        that is missing or unreadable, one that holds no session (a tab action history
+        from the same folder, a config file), and one in a layout this version does not
+        know, which a later version may have changed anywhere.
 
         :param file_name: the file to read, or None for the default session file
         :type file_name: Optional[Union[str, Path]]
-        :return: the session, or None if it could not be loaded
-        :rtype: Optional[Dict[str, Any]]
+        :raises SessionRefused: if the file cannot be loaded; its reason is for the user
+        :return: the session
+        :rtype: LoadedSession
         """
         if not file_name:
             file_name = Path(self.session_path, "plugin_history.json")
         try:
             with open(file_name, "r") as jf:
-                plugin_history = json.load(jf, object_pairs_hook=OrderedDict)
+                content = json.load(jf, object_pairs_hook=OrderedDict)
+        except FileNotFoundError as e:
+            raise SessionRefused("there is no saved session", missing=True) from e
         except Exception as e:
             self.logger.debug(f"Unable to read a session from {file_name}: {e}")
-            return None
-        if not isinstance(plugin_history, dict) or not all(
-            isinstance(entry, dict) and "metaclass" in entry and "subclass" in entry
-            for entry in plugin_history.values()
+            raise SessionRefused(f"it could not be read ({e})") from e
+        session = self._session_from_file(content)
+        self.replace_class_names_with_classes(session.plugin_history)
+        return session
+
+    def _session_from_file(self, content: Any) -> LoadedSession:
+        """
+        Check a session file's whole shape and turn it into the in-memory history.
+
+        :param content: the parsed JSON
+        :type content: Any
+        :raises SessionRefused: if it is not a session in a layout this version reads
+        :return: the session, types still written as names
+        :rtype: LoadedSession
+        """
+        if not isinstance(content, dict):
+            raise SessionRefused(_NOT_A_SESSION)
+        if not isinstance(content.get("format_version"), int):
+            return self._session_from_2_0_file(content)
+        version = content["format_version"]
+        if version != SESSION_FORMAT_VERSION:
+            written_by = content.get("poriscope_version")
+            by = f" by Poriscope {written_by}" if isinstance(written_by, str) else ""
+            raise SessionRefused(
+                f"it was saved{by} in a session format this version does not read "
+                f"(format {version})"
+            )
+        plugins = content.get("plugins")
+        tabs = content.get("tabs")
+        last_tab = content.get("last_tab", "")
+        if (
+            not isinstance(plugins, list)
+            or not isinstance(tabs, dict)
+            or not isinstance(last_tab, str)
         ):
-            self.logger.debug(f"{file_name} does not hold a session")
-            return None
-        self.replace_class_names_with_classes(plugin_history)
-        return plugin_history
+            raise SessionRefused(_NOT_A_SESSION)
+        history: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        for plugin in plugins:
+            if not isinstance(plugin, dict) or not all(
+                isinstance(plugin.get(name), str)
+                for name in ("key", "metaclass", "subclass")
+            ):
+                raise SessionRefused(_NOT_A_SESSION)
+            entry = OrderedDict(plugin)
+            key = entry.pop("key")
+            if key in history:
+                raise SessionRefused(_NOT_A_SESSION)
+            history[key] = entry
+        for name, state in tabs.items():
+            if not isinstance(state, dict) or name in history:
+                raise SessionRefused(_NOT_A_SESSION)
+            history[name] = OrderedDict(
+                [("metaclass", TAB_METACLASS), ("subclass", name), *state.items()]
+            )
+        return LoadedSession(history, last_tab)
+
+    def _session_from_2_0_file(self, content: Dict[str, Any]) -> LoadedSession:
+        """
+        Read a session saved in the 2.0 layout: a map of entries, tabs among the plugins.
+
+        :param content: the parsed JSON
+        :type content: Dict[str, Any]
+        :raises SessionRefused: if an entry lacks ``metaclass`` or ``subclass``
+        :return: the session, data plugins first in their order, then the tabs
+        :rtype: LoadedSession
+        """
+        if not all(
+            isinstance(entry, dict) and "metaclass" in entry and "subclass" in entry
+            for entry in content.values()
+        ):
+            raise SessionRefused(_NOT_A_SESSION)
+        plugins = [
+            (key, entry)
+            for key, entry in content.items()
+            if entry["metaclass"] != TAB_METACLASS
+        ]
+        tabs = [
+            (key, entry)
+            for key, entry in content.items()
+            if entry["metaclass"] == TAB_METACLASS
+        ]
+        return LoadedSession(OrderedDict(plugins + tabs), "")
 
     @log(logger=logger)
     def replace_classes_with_class_names(self, d: Any) -> None:

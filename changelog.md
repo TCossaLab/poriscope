@@ -100,6 +100,10 @@
 
 * **Breaking:** `register_action` requires `kind=` (`result`, `view`, `additive` or `reset`) with the figure or key it acts on, so a tab that decorates a method without it no longer loads
 
+* **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 2.1 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
+
+* **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
+
 ### Developer Tooling:
 
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
@@ -197,6 +201,10 @@
 * A replay opens no error dialogs of its own: an error a replayed step logs goes to the log file, and a failed step is reported only by the Go back / Keep question
 
 * **Fixed cancelling Save Session showing an error dialog**; a cancelled dialog now saves nothing
+
+* A session that cannot be loaded or restored now says why, and loading one restores its data plugins before its tabs
+
+* A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session
 
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 

@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional, Union
 from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
-from poriscope.models.main_model import MainModel
+from poriscope.models.main_model import MainModel, SessionRefused
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.views.main_view import MainView
@@ -76,6 +76,8 @@ class MainController(QObject):
 
         self.plugin_history: Dict[str, Any] = {}
         self.tab_action_history: Dict[str, Any] = {}
+        #: The analysis tab whose history changed last, saved with the session.
+        self.last_tab: str = ""
 
         # Both histories persist themselves on every change. Reset Session
         # empties them on its way to a clean workspace, and without this guard
@@ -83,10 +85,15 @@ class MainController(QObject):
         # expects Restore Session to read back.
         self._suppress_session_save: bool = False
 
-        previous_plugin_history = self.main_model.load_session(None)
-        self.previous_plugin_history: Dict[str, Any] = (
-            previous_plugin_history if previous_plugin_history is not None else {}
-        )
+        # Read for the settings a new plugin of a known type starts from, and applied
+        # only if the user chooses Restore Session.
+        self.previous_plugin_history: Dict[str, Any] = {}
+        try:
+            self.previous_plugin_history = self.main_model.load_session(
+                None
+            ).plugin_history
+        except SessionRefused as e:
+            self.logger.debug(f"No previous session to take settings from: {e}")
 
         self.setup_connections()
 
@@ -330,6 +337,7 @@ class MainController(QObject):
             self.analysis_tabs.clear()
             self.plugin_history.clear()
             self.tab_action_history.clear()
+            self.last_tab = ""
         finally:
             self._suppress_session_save = False
 
@@ -454,7 +462,7 @@ class MainController(QObject):
 
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
-            self.main_model.save_session(self.plugin_history)
+            self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
     @log(logger=logger)
     def _renamed_history(
@@ -650,7 +658,7 @@ class MainController(QObject):
     @Slot(str)
     def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
         self._sync_tab_session_state_into_history()
-        self.main_model.save_session(self.plugin_history, save_file)
+        self.main_model.save_session(self.plugin_history, save_file, self.last_tab)
 
     @log(logger=logger)
     @Slot(object, str)
@@ -659,26 +667,30 @@ class MainController(QObject):
     ) -> None:
         self.main_model.save_tab_actions(history, save_file)
 
-    def _report_unloadable_session(self, file_name: Optional[Union[str, Path]]) -> None:
+    def _report_unloadable_session(
+        self, file_name: Optional[Union[str, Path]], refused: SessionRefused
+    ) -> None:
         """
-        Tell the user a session could not be loaded, at the level that fits who asked.
+        Tell the user a session could not be loaded and why, at the level that fits who asked.
 
-        A file the user picked logs ERROR, so a dialog says it did not load; Restore with
-        nothing saved is routine, so it logs WARNING and says so on the status panel.
+        A file the user picked logs ERROR, so a dialog says it did not load. Restore with
+        nothing saved is routine, so it logs WARNING and says so on the status panel; a
+        saved session Restore cannot read is said there with its reason.
 
         :param file_name: the file the user chose, or None for Restore Session
         :type file_name: Optional[Union[str, Path]]
+        :param refused: what the model refused the file for
+        :type refused: SessionRefused
         """
         if file_name:
-            self.logger.error(
-                f"{file_name} is not a readable Poriscope session file, so nothing "
-                "was loaded"
-            )
+            self.logger.error(f"{file_name} was not loaded: {refused.reason}")
+            return
+        if refused.missing:
+            text = "There is no saved session to restore"
         else:
-            self.logger.warning("No saved session to restore")
-            self.main_view.add_text_to_display(
-                "There is no saved session to restore", self.__class__.__name__
-            )
+            text = f"The last saved session was not restored: {refused.reason}"
+        self.logger.warning(text)
+        self.main_view.add_text_to_display(text, self.__class__.__name__)
 
     @log(logger=logger)
     @Slot(str)
@@ -707,15 +719,17 @@ class MainController(QObject):
         :type file_name: Optional[Union[str, Path]]
         """
         self.logger.debug(f"Loading session from file {file_name}")
-        plugin_history = self.main_model.load_session(file_name)
-        if plugin_history is None:
+        try:
+            loaded = self.main_model.load_session(file_name)
+        except SessionRefused as refused:
             # Refused before reset_session(), so the workspace and the autosave are
             # left as they were.
-            self._report_unloadable_session(file_name)
+            self._report_unloadable_session(file_name, refused)
             return
         self.reset_session()
-        self.plugin_history = plugin_history
-        self.main_model.save_session(self.plugin_history)
+        self.plugin_history = loaded.plugin_history
+        self.last_tab = loaded.last_tab
+        self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
         # Counted before the loop, which emits update_plugin_history and so can
         # change the dict it is iterating a copy of.
@@ -769,7 +783,7 @@ class MainController(QObject):
         # lost them: Metadata kept its filters and Protein did not, purely because
         # Protein was opened second and so is restored second.
         self._sync_tab_session_state_into_history()
-        self.main_model.save_session(self.plugin_history)
+        self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
         if file_name:
             message = f"Loaded session from {file_name}."
@@ -794,8 +808,8 @@ class MainController(QObject):
         self.logger.debug("Sending instantiated analysis tabs to MainView.")
 
         if not self.analysis_tabs:
-            # Normal at startup and after a session reset, so not a warning:
-            # QtHandler promotes WARNING to a modal dialog.
+            # Normal at startup and after a session reset, so debug: nothing for the
+            # user to act on.
             self.logger.debug("No instantiated analysis tabs in MainController.")
 
         # Emit the correct signal with the current analysis tabs

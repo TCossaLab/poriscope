@@ -35,6 +35,8 @@ def mock_model(mocker: MockerFixture) -> MagicMock:
     model: MagicMock = mocker.Mock()
     model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     model.get_available_metaclasses.return_value = []
+    # The real model holds every discovered class here, analysis tabs included.
+    model.available_plugins = {}
     return model
 
 
@@ -2133,6 +2135,28 @@ class TestKeyIsUnused:
             "Please choose a different name"
             in ctrl.add_text_to_display.emit.call_args[0][0]
         )
+
+    def test_rejects_the_name_of_an_analysis_tab(
+        self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
+    ) -> None:
+        """
+        The session keeps tabs and plugins in one map keyed by name, so a plugin named
+        like a tab would replace that tab's entry, its saved actions with it.
+
+        :param mock_model: Mocked data plugin model.
+        :param mock_view: Mocked data plugin view.
+        :param mocker: Pytest-mock fixture.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+        mock_model.available_plugins = {
+            "MetaController": {"MetadataController": object},
+            "MetaReader": {},
+        }
+
+        assert ctrl._key_is_unused("MetadataController") is False
+        assert "analysis tab" in ctrl.add_text_to_display.emit.call_args[0][0]
+        assert ctrl._key_is_unused("Metadata") is True
 
 
 class TestSettingsFromNewPluginDialog:

@@ -32,6 +32,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.controllers.main_controller import MainController
+from poriscope.models.main_model import LoadedSession, SessionRefused
 
 # --------------------------- helpers ---------------------------
 
@@ -65,7 +66,7 @@ def mock_main_model(mocker: MockerFixture) -> MagicMock:
         "RawDataController": lambda available_plugins: MagicMock(view=MagicMock())
     }
     model.get_data_server_location.return_value = "/tmp/data"
-    model.load_session.return_value = {}
+    model.load_session.return_value = LoadedSession()
     model.get_available_plugins.return_value = {}
     return model
 
@@ -392,7 +393,7 @@ def test_handle_about_to_quit_flushes_session_state_first(
         "f1": "voltage > 0"
     }
     mock_main_model.save_session.assert_called_once_with(
-        controller.plugin_history, None
+        controller.plugin_history, None, ""
     )
 
 
@@ -669,7 +670,7 @@ def test_save_session_with_provided_file(
     controller.save_session(save_file="test_session.json")
 
     mock_main_model.save_session.assert_called_once_with(
-        controller.plugin_history, "test_session.json"
+        controller.plugin_history, "test_session.json", ""
     )
 
 
@@ -687,7 +688,7 @@ def test_save_session_without_file(
 
     controller.save_session()
 
-    mock_main_model.save_session.assert_called_once_with({}, None)
+    mock_main_model.save_session.assert_called_once_with({}, None, "")
 
 
 def test_save_session_syncs_tab_state_before_saving(
@@ -713,7 +714,7 @@ def test_save_session_syncs_tab_state_before_saving(
         "f1": "voltage > 0"
     }
     mock_main_model.save_session.assert_called_once_with(
-        controller.plugin_history, "test_session.json"
+        controller.plugin_history, "test_session.json", ""
     )
 
 
@@ -844,7 +845,7 @@ def test_load_session_restores_tabs_and_plugins(
             "settings": {"a": 1},
         },
     }
-    mock_main_model.load_session.return_value = history
+    mock_main_model.load_session.return_value = LoadedSession(history)
 
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
@@ -894,7 +895,7 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
             "subset_filters": {"f1": "voltage > 0"},
         },
     }
-    mock_main_model.load_session.return_value = history
+    mock_main_model.load_session.return_value = LoadedSession(history)
 
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
@@ -949,7 +950,7 @@ def test_load_session_persists_restored_tab_state_before_returning(
             "subset_filters": {"f1": "voltage > 0"},
         },
     }
-    mock_main_model.load_session.return_value = history
+    mock_main_model.load_session.return_value = LoadedSession(history)
 
     # A tab that answers get_session_state from what it was actually restored with,
     # the way MetaSubsetTabController does. A Mock returning a fixed dict would pass
@@ -1020,7 +1021,9 @@ def test_load_session_resets_an_already_open_tab_before_restoring(
             "subset_filters": {"f1": "voltage > 0"},
         }
     }
-    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(loaded_history)
+    )
 
     controller.load_session("session.json")
 
@@ -1036,7 +1039,7 @@ def test_load_session_returns_early_when_history_is_none(
     mocker: MockerFixture,
 ) -> None:
     """
-    Return early and log info when load_session returns None.
+    Return early when the model refuses the file.
 
     A failed load must not tear down the current workspace for nothing -
     reset_session() is only worth running once there is something to apply.
@@ -1044,7 +1047,9 @@ def test_load_session_returns_early_when_history_is_none(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.main_model.load_session = mocker.Mock(return_value=None)
+    controller.main_model.load_session = mocker.Mock(
+        side_effect=SessionRefused("it does not hold a Poriscope session")
+    )
     controller.plugin_history = {}
     reset_spy = mocker.patch.object(controller, "reset_session")
 
@@ -1067,12 +1072,43 @@ def test_a_chosen_file_that_is_not_a_session_is_reported_as_an_error(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.main_model.load_session = mocker.Mock(return_value=None)
+    controller.main_model.load_session = mocker.Mock(
+        side_effect=SessionRefused("it does not hold a Poriscope session")
+    )
 
     controller.load_session("not_a_session.json")
 
     controller.logger.error.assert_called_once()
-    assert "not_a_session.json" in controller.logger.error.call_args[0][0]
+    assert controller.logger.error.call_args[0][0] == (
+        "not_a_session.json was not loaded: it does not hold a Poriscope session"
+    )
+
+
+def test_restore_of_a_session_it_cannot_read_says_why_on_the_status_panel(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    A saved session Restore cannot read is not "nothing saved": the panel gives the reason.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.main_model.load_session = mocker.Mock(
+        side_effect=SessionRefused(
+            "it was saved by Poriscope 9.9 in a session format this version does not "
+            "read (format 3)"
+        )
+    )
+
+    controller.load_session(None)
+
+    controller.logger.error.assert_not_called()
+    controller.main_view.add_text_to_display.assert_called_once_with(
+        "The last saved session was not restored: it was saved by Poriscope 9.9 in a "
+        "session format this version does not read (format 3)",
+        "MainController",
+    )
 
 
 def test_restore_with_no_saved_session_says_so_on_the_status_panel(
@@ -1085,13 +1121,17 @@ def test_restore_with_no_saved_session_says_so_on_the_status_panel(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.main_model.load_session = mocker.Mock(return_value=None)
+    controller.main_model.load_session = mocker.Mock(
+        side_effect=SessionRefused("there is no saved session", missing=True)
+    )
 
     controller.load_session(None)
 
     controller.logger.error.assert_not_called()
     controller.logger.warning.assert_called_once()
-    controller.main_view.add_text_to_display.assert_called_once()
+    controller.main_view.add_text_to_display.assert_called_once_with(
+        "There is no saved session to restore", "MainController"
+    )
 
 
 def test_load_session_resets_before_applying_the_loaded_history(
@@ -1122,7 +1162,9 @@ def test_load_session_resets_before_applying_the_loaded_history(
             "settings": {},
         }
     }
-    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(loaded_history)
+    )
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
         side_effect=lambda **kwargs: order.append("restore")
     )
@@ -1147,7 +1189,7 @@ def test_load_session_displays_the_loaded_file_name(
     :param mocker: Pytest-mock fixture.
     """
     mocker.patch.object(controller, "reset_session")
-    controller.main_model.load_session = mocker.Mock(return_value={})
+    controller.main_model.load_session = mocker.Mock(return_value=LoadedSession())
 
     controller.load_session("my_session.json")
 
@@ -1169,7 +1211,7 @@ def test_load_session_displays_a_restored_message_with_no_file_name(
     :param mocker: Pytest-mock fixture.
     """
     mocker.patch.object(controller, "reset_session")
-    controller.main_model.load_session = mocker.Mock(return_value={})
+    controller.main_model.load_session = mocker.Mock(return_value=LoadedSession())
 
     controller.load_session(None)
 
@@ -1192,7 +1234,9 @@ def test_load_session_logs_error_on_analysis_tab_failure(
     # now runs before this is applied and clears that dict in place, which
     # would otherwise wipe out the same object this mock returns.
     loaded_history = {"key1": {"metaclass": "MetaController", "subclass": "SomeTab"}}
-    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(loaded_history)
+    )
     controller.instantiate_analysis_tab = mocker.Mock(side_effect=RuntimeError("fail"))
 
     controller.load_session("session.json")
@@ -1216,7 +1260,9 @@ def test_load_session_logs_error_on_other_value_error(
     loaded_history = {
         "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
     }
-    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(loaded_history)
+    )
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
         side_effect=ValueError("some other error")
     )
@@ -1242,7 +1288,9 @@ def test_load_session_logs_error_on_unexpected_plugin_exception(
     loaded_history = {
         "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
     }
-    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(loaded_history)
+    )
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
         side_effect=RuntimeError("unexpected")
     )
@@ -1514,13 +1562,15 @@ def test_load_session_reports_entries_that_could_not_be_restored(
     dpc_cls.return_value.validate_and_instantiate_plugin.return_value = False
 
     ctrl = MainController(mock_main_model, mock_main_view)
-    mock_main_model.load_session.return_value = {
-        "reader_key": {
-            "metaclass": "MetaReader",
-            "subclass": "ABF2Reader",
-            "settings": {"a": 1},
+    mock_main_model.load_session.return_value = LoadedSession(
+        {
+            "reader_key": {
+                "metaclass": "MetaReader",
+                "subclass": "ABF2Reader",
+                "settings": {"a": 1},
+            }
         }
-    }
+    )
     mock_main_model.get_available_plugins.return_value = {}
 
     ctrl.load_session("session.json")
@@ -1546,13 +1596,15 @@ def test_load_session_says_nothing_extra_when_every_entry_restored(
     dpc_cls.return_value.validate_and_instantiate_plugin.return_value = True
 
     ctrl = MainController(mock_main_model, mock_main_view)
-    mock_main_model.load_session.return_value = {
-        "reader_key": {
-            "metaclass": "MetaReader",
-            "subclass": "MyReader",
-            "settings": {"a": 1},
+    mock_main_model.load_session.return_value = LoadedSession(
+        {
+            "reader_key": {
+                "metaclass": "MetaReader",
+                "subclass": "MyReader",
+                "settings": {"a": 1},
+            }
         }
-    }
+    )
     mock_main_model.get_available_plugins.return_value = {}
 
     ctrl.load_session("session.json")
@@ -1617,3 +1669,66 @@ class TestRenamedHistory:
         renamed = ctrl._renamed_history("gone", {"key": "renamed"})
 
         assert list(renamed) == ["first", "second"]
+
+
+# ------------- the last tab travels with the session -------------------
+def test_a_loaded_sessions_last_tab_is_saved_with_it(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Every save after a load carries the loaded session's last tab, and Save Session too.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession({}, "MetadataController")
+    )
+
+    controller.load_session("session.json")
+    controller.save_session("copy.json")
+
+    saves = controller.main_model.save_session.call_args_list
+    assert saves
+    for call in saves:
+        last_tab = call.kwargs.get(
+            "last_tab", call.args[2] if len(call.args) > 2 else None
+        )
+        assert last_tab == "MetadataController", call
+
+
+def test_reset_session_forgets_the_last_tab(controller: MainController) -> None:
+    """
+    A clean workspace has no last tab.
+
+    :param controller: Controller under test.
+    """
+    controller.last_tab = "MetadataController"
+    controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+    controller.reset_session()
+
+    assert controller.last_tab == ""
+
+
+def test_a_refused_restore_at_startup_leaves_no_previous_settings(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    The autosave read at startup is only for settings look-ups; a refusal is not an error.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+    mock_main_model.load_session.side_effect = SessionRefused(
+        "there is no saved session", missing=True
+    )
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+
+    assert ctrl.previous_plugin_history == {}

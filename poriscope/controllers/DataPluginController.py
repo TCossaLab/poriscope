@@ -32,6 +32,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 from PySide6.QtCore import QObject, Signal, Slot
 
 from poriscope.models.DataPluginModel import DataPluginModel
+from poriscope.models.main_model import TAB_METACLASS
 from poriscope.utils.LogDecorator import log
 from poriscope.views.DataPluginView import DataPluginView
 
@@ -985,16 +986,25 @@ class DataPluginController(QObject):
     @log(logger=logger)
     def _key_is_unused(self, key: Optional[str]) -> bool:
         """
-        Check that no plugin anywhere already answers to this name.
+        Check that no plugin anywhere already answers to this name, and no analysis tab.
 
         Names are unique across *every* metaclass rather than within one, so a
-        reader cannot take a name a writer already holds.
+        reader cannot take a name a writer already holds. An analysis tab's class name
+        is taken too: the session keeps tabs and plugins in one map keyed by name, so a
+        plugin named like a tab would replace that tab's entry and its saved actions.
 
         :param key: The proposed plugin name.
         :type key: Optional[str]
         :return: True if the name is free, False if it is taken and was reported.
         :rtype: bool
         """
+        if key in self.model.available_plugins.get(TAB_METACLASS, {}):
+            self._report(
+                self.logger.warning,
+                f"Plugin name '{key}' is the name of an analysis tab. Please use another name.",
+                display_message=f"Plugin name '{key}' is the name of an analysis tab. Please choose a different name.",
+            )
+            return False
         for meta, existing_keys in self.model.get_instantiated_plugins_list().items():
             if key in existing_keys:
                 self._report(
