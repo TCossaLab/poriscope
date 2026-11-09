@@ -9,9 +9,10 @@ JSON round trip and, replayed, records itself again.
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections import OrderedDict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,7 +30,11 @@ from poriscope.utils.LogDecorator import (
     ActionDeclaration,
     register_action,
 )
-from poriscope.utils.MetaController import MetaController, declarations_of
+from poriscope.utils.MetaController import (
+    MetaController,
+    declarations_of,
+    declared_actions,
+)
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.ReplayGuard import ReplayWidgetReadError, forbid_while_replaying
 
@@ -408,16 +413,35 @@ class TestReplayRunsInsideTheTripwire:
         forbid_while_replaying("after the replay")
 
 
-def _view(name: str, figure: str, *depends_on: str) -> ActionDeclaration:
+def _view(
+    name: str, figure: str, *depends_on: str, plugin_args: Tuple[str, ...] = ()
+) -> ActionDeclaration:
     return ActionDeclaration(
-        name, "view", figure=figure, depends_on=depends_on, skip_on_false=True
+        name,
+        "view",
+        figure=figure,
+        depends_on=depends_on,
+        skip_on_false=True,
+        plugin_args=plugin_args,
     )
 
 
-def _additive(name: str, figure: str, skip_on_false: bool = True) -> ActionDeclaration:
+def _additive(
+    name: str,
+    figure: str,
+    skip_on_false: bool = True,
+    plugin_args: Tuple[str, ...] = (),
+) -> ActionDeclaration:
     return ActionDeclaration(
-        name, "additive", figure=figure, skip_on_false=skip_on_false
+        name,
+        "additive",
+        figure=figure,
+        skip_on_false=skip_on_false,
+        plugin_args=plugin_args,
     )
+
+
+_LOADER = ("loader",)
 
 
 @pytest.mark.parametrize(
@@ -431,10 +455,17 @@ def _additive(name: str, figure: str, skip_on_false: bool = True) -> ActionDecla
                     "result",
                     key=("eventfinder", "channel"),
                     skip_on_false=True,
+                    plugin_args=("eventfinder", "data_filter"),
                 ),
-                _view("update_trace", "plot"),
-                _view("update_psd", "plot"),
-                _view("plot_events", "plot", "eventfinder", "channel"),
+                _view("update_trace", "plot", plugin_args=("reader", "data_filter")),
+                _view("update_psd", "plot", plugin_args=("reader", "data_filter")),
+                _view(
+                    "plot_events",
+                    "plot",
+                    "eventfinder",
+                    "channel",
+                    plugin_args=("eventfinder", "data_filter"),
+                ),
             ],
         ),
         (
@@ -445,15 +476,22 @@ def _additive(name: str, figure: str, skip_on_false: bool = True) -> ActionDecla
                     "result",
                     key=("eventfitter", "channel"),
                     skip_on_false=True,
+                    plugin_args=("eventfitter", "data_filter"),
                 ),
-                _view("plot_events", "plot", "eventfitter", "channel"),
+                _view(
+                    "plot_events",
+                    "plot",
+                    "eventfitter",
+                    "channel",
+                    plugin_args=("loader", "eventfitter", "data_filter"),
+                ),
             ],
         ),
         (
             ClusteringController,
             [
                 ActionDeclaration(RESET_ACTION, "reset", figure="clusters"),
-                _additive("cluster_run", "clusters"),
+                _additive("cluster_run", "clusters", plugin_args=_LOADER),
                 _additive("merge_clusters", "clusters"),
             ],
         ),
@@ -461,18 +499,24 @@ def _additive(name: str, figure: str, skip_on_false: bool = True) -> ActionDecla
             MetadataController,
             [
                 ActionDeclaration(RESET_ACTION, "reset", figure="plot"),
-                _additive("overlay_plot", "plot", skip_on_false=False),
-                _view("plot_events", "plot"),
+                _additive(
+                    "overlay_plot", "plot", skip_on_false=False, plugin_args=_LOADER
+                ),
+                _view("plot_events", "plot", plugin_args=_LOADER),
             ],
         ),
         (
             ProteinController,
             [
                 ActionDeclaration(RESET_ACTION, "reset", figure_from="mode"),
-                _additive("update_individual_distribution", "individual"),
-                _additive("update_ensemble_distribution", "ensemble"),
-                _view("plot_events", "events"),
-                _view("plot_event_histograms", "events"),
+                _additive(
+                    "update_individual_distribution", "individual", plugin_args=_LOADER
+                ),
+                _additive(
+                    "update_ensemble_distribution", "ensemble", plugin_args=_LOADER
+                ),
+                _view("plot_events", "events", plugin_args=_LOADER),
+                _view("plot_event_histograms", "events", plugin_args=_LOADER),
             ],
         ),
     ],
@@ -488,3 +532,34 @@ def test_each_tab_declares_what_a_restore_keeps_of_its_actions(
     assert declarations_of(controller_class) == {
         declaration.name: declaration for declaration in expected
     }
+
+
+#: The parameter names a recorded action uses for a data plugin's key.
+_PLUGIN_PARAMETERS = {"reader", "eventfinder", "eventfitter", "loader", "data_filter"}
+
+
+@pytest.mark.parametrize(
+    "controller_class",
+    [
+        RawDataController,
+        EventAnalysisController,
+        ClusteringController,
+        MetadataController,
+        ProteinController,
+    ],
+    ids=lambda value: value.__name__,
+)
+def test_every_parameter_that_names_a_plugin_is_declared_as_one(
+    controller_class: type,
+) -> None:
+    """
+    Deleting, renaming or editing a plugin finds the entries naming it through
+    ``plugin_args``; a plugin parameter left out would keep entries the plugin no longer
+    backs, and anything else listed could be rewritten by mistake.
+    """
+    for attribute, name in declared_actions(controller_class):
+        parameters = list(
+            inspect.signature(getattr(controller_class, attribute)).parameters
+        )
+        declared = declarations_of(controller_class)[name].plugin_args
+        assert set(declared) == _PLUGIN_PARAMETERS & set(parameters), name

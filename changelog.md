@@ -176,6 +176,8 @@
 
 * `MetaView.clear_figure` and `MetaView.ask_after_replay_failure` are new, `MainView` has `replay_actions_requested` and `set_replay_available`, and `MainController.show_tab_text` puts each tab's lines on the status panel
 
+* `register_action` takes `plugin_args`, the parameters whose values are data plugins' keys, and every recorded action declares them
+
 ### User-Facing Behaviour:
 
 #### General:

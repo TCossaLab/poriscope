@@ -59,6 +59,10 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   says which, ``figure_from="mode"``. Figure names only need to agree within one tab. A
   declaration with a wrong field or a name that is not a parameter fails when the module is
   imported, with a message naming the action
+- ``plugin_args`` names every parameter whose value is a data plugin's key,
+  ``plugin_args=("reader", "data_filter")``, so that deleting, renaming or editing a plugin finds
+  the entries that name it. A test fails any recorded action whose ``reader``, ``eventfinder``,
+  ``eventfitter``, ``loader`` or ``data_filter`` parameter is not listed
 - Every value is saved under its parameter name in ``kwargs``, defaults included, however the
   call passed it, so a saved file says what each value is. Keep a recorded method's parameters
   nameable: a method with ``*args`` or a positional-only parameter is saved as it was called.

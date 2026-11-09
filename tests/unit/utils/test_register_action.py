@@ -270,6 +270,27 @@ def test_the_declaration_says_whether_false_means_the_call_did_nothing() -> None
     assert getattr(_Tab.acts, ACTION_DECLARATION_ATTR).skip_on_false is True
 
 
+def test_the_declaration_says_which_parameters_name_a_plugin() -> None:
+    """Deleting or renaming a plugin finds the entries that name it through these."""
+
+    class _Tab(_Recorder):
+        @register_action(
+            "trace", kind="view", figure="plot", plugin_args=("reader", "data_filter")
+        )
+        def trace(self, reader: str, channel: int, data_filter: str) -> None:
+            pass
+
+        @register_action(RESET_ACTION, kind="reset", figure="plot")
+        def reset(self) -> None:
+            pass
+
+    assert getattr(_Tab.trace, ACTION_DECLARATION_ATTR).plugin_args == (
+        "reader",
+        "data_filter",
+    )
+    assert getattr(_Tab.reset, ACTION_DECLARATION_ATTR).plugin_args == ()
+
+
 def test_a_figure_can_be_named_by_a_parameter() -> None:
     class _Tab(_Recorder):
         @register_action(RESET_ACTION, kind="reset", figure_from="mode")
@@ -320,6 +341,10 @@ def _declare(**fields: Any) -> None:
         (
             {"kind": "view", "figure": "plot", "depends_on": ("plugin", "chan")},
             "chan is not a parameter",
+        ),
+        (
+            {"kind": "view", "figure": "plot", "plugin_args": ("plugin", "loader")},
+            "loader is not a parameter",
         ),
     ],
 )

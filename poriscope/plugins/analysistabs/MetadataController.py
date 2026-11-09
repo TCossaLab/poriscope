@@ -309,7 +309,9 @@ class MetadataController(MetaSubsetTabController):
                 self.update_tab_actions(None, True)
 
     @log(logger=logger)
-    @register_action("overlay_plot", kind="additive", figure="plot")
+    @register_action(
+        "overlay_plot", kind="additive", figure="plot", plugin_args=("loader",)
+    )
     def overlay_plot(
         self,
         loader: str,
@@ -797,7 +799,13 @@ class MetadataController(MetaSubsetTabController):
         return options_changed
 
     @log(logger=logger)
-    @register_action("plot_events", kind="view", figure="plot", skip_on_false=True)
+    @register_action(
+        "plot_events",
+        kind="view",
+        figure="plot",
+        skip_on_false=True,
+        plugin_args=("loader",),
+    )
     def plot_events(
         self,
         loader: str,

@@ -77,6 +77,7 @@ class ActionDeclaration:
     figure_from: str = ""
     depends_on: Tuple[str, ...] = ()
     skip_on_false: bool = False
+    plugin_args: Tuple[str, ...] = ()
 
 
 @overload
@@ -302,6 +303,7 @@ def _checked_declaration(
         declaration.key
         + declaration.depends_on
         + ((declaration.figure_from,) if declaration.figure_from else ())
+        + declaration.plugin_args
     )
     unknown = [parameter for parameter in named if parameter not in parameters]
     if unknown:
@@ -320,6 +322,7 @@ def register_action(
     figure_from: str = "",
     depends_on: Tuple[str, ...] = (),
     skip_on_false: bool = False,
+    plugin_args: Tuple[str, ...] = (),
 ) -> Callable[[F], F]:
     """
     @register_action(name, kind=...): record each call of the decorated method as a named action that a saved history can replay.
@@ -343,6 +346,9 @@ def register_action(
     the declaration too, so a replay can read ``False`` from such a method as a call that
     did nothing.
 
+    ``plugin_args`` names the parameters whose values are data plugins' keys, so that
+    deleting, renaming or editing a plugin can find every entry that names it.
+
     ``kind`` and the fields after it say what a restored session keeps of the action
     (see :py:data:`ACTION_KINDS`). They are stored on the wrapper as an
     ``ActionDeclaration`` under :py:data:`ACTION_DECLARATION_ATTR`, never in the
@@ -363,6 +369,8 @@ def register_action(
     :type depends_on: Tuple[str, ...]
     :param skip_on_false: do not record a call whose method returned ``False``
     :type skip_on_false: bool
+    :param plugin_args: the parameters whose values are data plugins' keys
+    :type plugin_args: Tuple[str, ...]
     :return: the decorator
     :rtype: Callable[[F], F]
     """
@@ -372,7 +380,14 @@ def register_action(
         signature = inspect.signature(func)
         declaration = _checked_declaration(
             ActionDeclaration(
-                name, kind, key, figure, figure_from, depends_on, skip_on_false
+                name,
+                kind,
+                key,
+                figure,
+                figure_from,
+                depends_on,
+                skip_on_false,
+                plugin_args,
             ),
             signature,
         )
