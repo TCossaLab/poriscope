@@ -18,6 +18,50 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-05 - Metadata's Reset button empties the history; Undo straight after brings it back
+
+**Context.** Reset was one more recorded `reset`, shared with the resets the tab makes itself (a new figure, the first
+Plot Events). Every earlier entry stayed, so Save, the saved session and Go back carried the whole history: in a manual
+test, Go back re-ran every plot since the tab opened.
+
+**Decision** (Carolina, 2026-11-05). The button calls `MetadataController.clear_history`, which records nothing, clears
+the figure and calls `MetaController.set_history_aside`: the history is emptied and kept aside. Undo on the emptied
+history replays it; anything recorded and kept first drops it (a refused plot, discarded, does not). A Reset of an empty
+history keeps what was set aside. The panel says each turn: "Reset: plot and history cleared; Undo now will bring it
+back", then "Reset: plot and history cleared" when a kept entry drops it, "Reset: Undo now will bring it back" when a
+refused plot puts it back, and "Reset: plot cleared" with nothing to set aside. Memory only: the session file keeps only
+what followed the Reset. Automatic resets stay recorded.
+
+**Rejected.** Each Reset stacked, so repeated Undo walks back through them: the history only ever grows and can never be
+cleared. Recording the button's reset with a flag: the entry would still carry the cleared history in every save.
+
+**Revisit if** another tab gains a Reset button, or a session must restore an Undo across a restart.
+
+---
+
+## 2026-11-05 - A replayed step fails when it raises, does nothing, or leaves no finished run with results; 0 results is a failure
+
+**Context.** A replay (`MetaController.start_replay`, `poriscope/utils/replay_sequence.py`) runs a tab's history one
+entry at a time and has to decide when to stop and ask the user Go back or Keep. Telling a cancelled run from a failed
+one needs the plugin's outcome, which the plugins do not report yet (queued in `future_fixes.md`). Kyle proposed
+treating a run with 0 events the same as a failed run, since it would only happen from a settings issue; a Fit that ends
+with 0 good fits is read the same way.
+
+**Decision** (Kyle's ruling, Carolina 2026-11-04 and 2026-11-05). A replayed entry fails when it raises; when an action
+declared `skip_on_false` returns `False`; or, for a Find or Fit, when its run does not leave a finished channel with
+results: the status method is False (cancelled, failed, 0 events) or, for a Fit, `get_num_events` is 0. A cancel is a
+failure too, for now. An entry that names no action or whose values no longer fit is reported and skipped, as before.
+Live behaviour is unchanged: a 0-good-fits Fit still marks the channel fitted, is recorded and can be written.
+
+**Rejected.** Any `False` as a failure: a recorded overlay that drew nothing would fail every replay (`overlay_plot` is
+recorded either way). Making the overlay `skip_on_false`: changes live recording.
+
+**Revisit if** a run with 0 results turns out to be a legitimate outcome, or when the queued outcome tracking lands (a
+cancel could then carry on). The rule is one check in `ReplaySequence._left_results` plus its tests; telling 0 events
+from a cancel or an error for Find needs the plugin's outcome (queued in `future_fixes.md`).
+
+---
+
 ## 2026-11-04 - The Python floor is 3.12 with no cap, both ends of every range are tested, and 3.10 is out
 
 **Context.** `requires-python = ">=3.12.10"` came from a README note that named no dependency (`7f8cbdeb`), and the
@@ -307,6 +351,22 @@ another's and the plot is nonsense - that is the case the guards were added for.
 writer's fitter has not fitted is still reported and skipped per channel (changelog 2.0.0).
 
 **Revisit if** a writer ever takes the loader from the tab rather than from its fitter's parents.
+
+---
+
+## 2026-10-17 - Go back clears every tab's state, and rebuilds the history from before the replay
+
+**Context.** When a replay stops on a failed step, the user can Go back. By then the replay has redrawn the figure,
+changed the tab's own state and may have finished runs on channels, so the tab has to be put back as it was before the
+replay started.
+
+**Decision.** Each tab clears its state through `MetaController.clear_for_replay`: the default clears the figure (Raw
+Data, Event Analysis); Metadata also forgets what the figure held, Clustering drops `ClusteringModel.result`, Protein
+clears both modes' figures and both fits. Go back resets each channel a run of the replay finished, then replays the
+history from before the replay through the sequencer; if that fails, the tab is left cleared with an empty history and
+the panel says so.
+
+**Rejected.** Clear only, without rebuilding: the user loses the state they had before the replay.
 
 ---
 
