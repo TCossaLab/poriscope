@@ -360,8 +360,8 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `MultiSelectFilterComboBox` supplying their own get/set; modal dialogs stay out of scope. A
   direct snapshot, not an event-sourced log like `@register_action`. Restore with signals
   blocked, after the tab's plugins exist and before the restore dialog offers a replay. A
-  replayed action already writes its recorded values back into the panel; this is for a tab
-  the user does not replay.
+  replay writes each step's recorded values back into the panel (`ReplaySequence`, through
+  `MetaView.write_back`); this is for a tab the user does not replay.
 - **`@register_action` has no overwrite mode**: every call appends (`MetaController.py:391`),
   so an action whose final call is all that matters is replayed once per intermediate call.
   Decide the dedup key (name alone, or name plus identifying arguments) and whether a

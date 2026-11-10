@@ -111,7 +111,8 @@ ticked. **Replay** replays the ticked tabs at once; you can switch between tabs 
 and each tab's messages appear together when it is done. **Not now**, or closing the dialog,
 replays none. A tab you leave out keeps its saved actions, and **Replay Actions** (below)
 replays it later. Replaying runs the finders, fitters and plots again; nothing is committed,
-exported or saved to a file or database.
+exported or saved to a file or database. Each tab's panel then shows the values its replayed
+steps used, so your next click starts from them.
 
 The tab showing after the load is the one you last worked in when the session was saved. A
 replay does not change that: a session saved after a replay still opens on the tab you last

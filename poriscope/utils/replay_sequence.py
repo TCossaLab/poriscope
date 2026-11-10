@@ -303,6 +303,9 @@ class ReplaySequence:
             return
         try:
             with replaying():
+                # The panel shows what the step ran with, so a restored tab shows the values
+                # that produced its result and the next click starts from them.
+                self._controller.view.write_back(declaration.name, tuple(args), kwargs)
                 value = method(*args, **kwargs)
         except Exception as e:
             logger.warning(f"Replaying {declaration.name} raised: {e!r}")

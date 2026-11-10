@@ -47,17 +47,10 @@ PLOT_CONFIGURATION_FORMAT = "poriscope.plot_configuration"
 PLOT_CONFIGURATION_FORMAT_VERSION = 1
 
 
+# A file that is not a plot configuration this version can replay. ``reason`` follows
+# "cannot be replayed:"; ``earlier`` is True when the file does not name the plot
+# configuration format, as one saved by an earlier version does not.
 class PlotConfigurationRefused(Exception):
-    """
-    A file that is not a plot configuration this version can replay, carrying the reason.
-
-    :param reason: why, in words that follow "cannot be replayed:"
-    :type reason: str
-    :param earlier: True when the file does not name the plot configuration format, as
-        one saved by an earlier version does not
-    :type earlier: bool
-    """
-
     def __init__(self, reason: str, earlier: bool = False) -> None:
         super().__init__(reason)
         self.reason = reason

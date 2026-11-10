@@ -80,7 +80,9 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   ``kept_actions()`` through the Model (``MetaModel.save_plot_configuration``), in a file that
   names its format, version and tab, and ``load_actions_from_json`` reads it back through
   ``MetaModel.read_plot_configuration``, which refuses an earlier, foreign or other tab's file
-  whole. A loaded file replays through ``start_replay``, one entry at a time on the event loop (``poriscope.utils.replay_sequence``):
+  whole. A loaded file replays through ``start_replay``, one entry at a time on the event loop
+  (``poriscope.utils.replay_sequence``). Each step first shows its recorded values in the panel
+  through the View's ``write_back``, which a tab overrides to write its own widgets;
   a ``result`` entry waits for its run to end and carries on only if the run finished with
   results, and the replay stops at the first entry that raises or, for a ``skip_on_false``
   action, returns ``False``. The user is then asked to go back or keep (``MetaView.ask_after_replay_failure``);

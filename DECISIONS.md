@@ -33,7 +33,8 @@ and Load Filter already work in the tab's Model. `format` names the file because
 
 **Rejected.** A session file with one tab (Load Session would accept it and clear the workspace). A version key of its
 own name (each format inventing its key). Today's layout plus a version (keys by position; collides with the
-session's `format_version`). The live history (replays plots a later one replaced).
+session's `format_version`). The live history (replays plots a later one replaced). Telling a session from an
+earlier plot configuration at Load Plot Configuration (the tab's Model would have to know the session layout).
 
 **Revisit** with the Step 10 versioning policy (`future_fixes.md`), which may change both formats.
 

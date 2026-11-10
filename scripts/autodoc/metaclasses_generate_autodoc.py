@@ -238,7 +238,7 @@ for filename in os.listdir(FOLDER_ORIGIN):
             docstring = ast.get_docstring(node)
             # A class without a docstring is skipped. A page is for a base class that
             # contributors build on; a supporting type or helper in utils/ has no docstring
-            # (RawRun, FigureKind, OverlayState, ErrorCollector). A module gets one page and one toctree
+            # (RawRun, FigureKind, OverlayState, ErrorCollector, PlotConfigurationRefused). A module gets one page and one toctree
             # entry per documented class, so a second documented class in the same module
             # would list it twice and fail ``sphinx-build -W``.
             if not docstring:
