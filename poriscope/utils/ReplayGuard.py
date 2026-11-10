@@ -66,9 +66,8 @@ def replaying() -> Iterator[None]:
         _replaying.reset(token)
 
 
+# Something that may take an error a dialog would show: a running replay.
 class ErrorCollector(Protocol):
-    """Something that may take an error a dialog would show: a running replay."""
-
     def take_error(self, text: str) -> bool:
         """
         Take an error, if still collecting.
