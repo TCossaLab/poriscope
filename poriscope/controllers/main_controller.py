@@ -763,9 +763,6 @@ class MainController(QObject):
             self.analysis_tabs[subclass].update_tab_action_history.connect(
                 self.update_tab_action_history
             )
-            self.analysis_tabs[subclass].save_tab_action_history.connect(
-                self.save_tab_action_history
-            )
             # Instances before names, for the reason given in
             # update_available_plugins. A tab created after the plugins already exist -
             # which is what restoring a session does - would otherwise get a populated
@@ -819,13 +816,6 @@ class MainController(QObject):
     def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
         self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, save_file, self.last_tab)
-
-    @log(logger=logger)
-    @Slot(object, str)
-    def save_tab_action_history(
-        self, history: Any, save_file: Optional[Union[str, Path]] = None
-    ) -> None:
-        self.main_model.save_tab_actions(history, save_file)
 
     def _report_unloadable_session(
         self, file_name: Optional[Union[str, Path]], refused: SessionRefused

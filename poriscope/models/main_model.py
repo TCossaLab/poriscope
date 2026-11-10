@@ -62,7 +62,7 @@ from poriscope.utils.MetaEventFinder import MetaEventFinder
 from poriscope.utils.MetaEventFitter import MetaEventFitter
 from poriscope.utils.MetaEventLoader import MetaEventLoader
 from poriscope.utils.MetaFilter import MetaFilter
-from poriscope.utils.MetaModel import MetaModel
+from poriscope.utils.MetaModel import PLOT_CONFIGURATION_FORMAT, MetaModel
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
@@ -123,7 +123,7 @@ class LoadedSession:
 
 class MainModel(QObject):
     """
-    App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
+    App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores the session.
     """
 
     add_text_to_display = Signal(str, str)
@@ -576,44 +576,6 @@ class MainModel(QObject):
         }
 
     @log(logger=logger)
-    def save_tab_actions(
-        self,
-        plugin_history: Dict[str, Any],
-        save_file: Optional[Union[str, Path]] = None,
-    ) -> None:
-        """
-        Write the tab action history to disk as JSON
-
-        Failures are handled exactly as in :py:meth:`save_session`, and for the same
-        reasons: logged rather than raised because the callers are Qt slots, at
-        WARNING plus a status-panel message for an autosave, and at ERROR for a save
-        to a path the user chose.
-
-        :param plugin_history: the tab action history to persist
-        :type plugin_history: Dict[str, Any]
-        :param save_file: path to write to, or None to use the default session file
-        :type save_file: Optional[Union[str, Path]]
-        """
-        json_dump = copy.deepcopy(plugin_history)
-        self.replace_classes_with_class_names(json_dump)
-        user_specified = save_file is not None
-        if save_file is None:
-            save_file = Path(self.session_path, "tab_action_history.json")
-        try:
-            write_json_atomically(json_dump, save_file)
-        except Exception as e:
-            message = f"Unable to save tab action history to {save_file}: {e}"
-            if user_specified:
-                self.logger.error(message)
-            else:
-                self.logger.warning(message)
-                self.add_text_to_display.emit(
-                    f"Tab action autosave failed: {e}. Tab state is no longer being "
-                    "saved automatically until this is resolved.",
-                    self.__class__.__name__,
-                )
-
-    @log(logger=logger)
     def load_session(
         self, file_name: Optional[Union[str, Path]] = None
     ) -> LoadedSession:
@@ -659,6 +621,16 @@ class MainModel(QObject):
         :rtype: LoadedSession
         """
         if not isinstance(content, dict):
+            raise SessionRefused(_NOT_A_SESSION)
+        named = content.get("format")
+        if isinstance(named, str):
+            # Another kind of file this version writes names its format; a
+            # session does not. A 2.0 plugin called `format` holds an entry here.
+            if named == PLOT_CONFIGURATION_FORMAT:
+                raise SessionRefused(
+                    "it is a plot configuration, not a session; load it with "
+                    "Metadata's Load Plot Configuration"
+                )
             raise SessionRefused(_NOT_A_SESSION)
         if not isinstance(content.get("format_version"), int):
             return self._session_from_2_0_file(content)

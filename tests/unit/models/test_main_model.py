@@ -8,6 +8,7 @@ import pytest
 
 from poriscope.constants import __VERSION__
 from poriscope.models.main_model import LoadedSession, MainModel, SessionRefused
+from poriscope.utils.MetaModel import PLOT_CONFIGURATION_FORMAT
 from poriscope.utils.QtHandler import QtHandler
 
 # Set up logging for the tests
@@ -351,18 +352,6 @@ def test_a_failed_session_save_keeps_the_previous_file(main_model, tmp_path):
     assert not list(tmp_path.glob("*.tmp")), "the failed save left its temp file"
 
 
-def test_a_failed_tab_action_save_keeps_the_previous_file(main_model, tmp_path):
-    """The tab action history is written the same way, for the same reason."""
-    path = tmp_path / "actions.json"
-    main_model.save_tab_actions({"Tab": {"0": {"function": "f"}}}, path)
-    before = path.read_text()
-
-    main_model.save_tab_actions({"Tab": {"0": {"function": object()}}}, path)
-
-    assert path.read_text() == before
-    assert not list(tmp_path.glob("*.tmp")), "the failed save left its temp file"
-
-
 def test_load_session_nonexistent(main_model):
     """
     Test loading a session when the session file doesn't exist.
@@ -509,16 +498,6 @@ def test_a_target_that_stays_locked_is_reported_and_left_intact(
 
     assert path.read_text() == before
     assert not list(tmp_path.glob("*.tmp"))
-
-
-def test_save_tab_actions(main_model, tmp_path):
-    """A saved tab action history reads back as what was saved."""
-    history = {"Tab": {"0": {"function": "f", "parameters": {}}}}
-    path = tmp_path / "actions.json"
-
-    main_model.save_tab_actions(history, path)
-
-    assert json.loads(path.read_text()) == history
 
 
 def test_get_available_plugins(main_model):
@@ -910,3 +889,49 @@ def test_the_old_action_autosave_is_found_and_left_alone(main_model):
 
     assert main_model.old_action_history_exists()
     assert old.read_text() == "{}"
+
+
+def test_a_plot_configuration_is_refused_as_a_session(main_model, tmp_path):
+    """Load Session of a plot configuration says what it is, and loads nothing."""
+    path = tmp_path / "plots.json"
+    path.write_text(
+        json.dumps(
+            {
+                "format": PLOT_CONFIGURATION_FORMAT,
+                "format_version": 1,
+                "poriscope_version": "2.1.0",
+                "tab": "MetadataController",
+                "actions": [],
+            }
+        )
+    )
+
+    with pytest.raises(SessionRefused) as refused:
+        main_model.load_session(path)
+
+    assert refused.value.reason == (
+        "it is a plot configuration, not a session; load it with Metadata's Load Plot "
+        "Configuration"
+    )
+
+
+def test_a_file_of_another_named_format_is_refused_as_a_session(main_model, tmp_path):
+    path = tmp_path / "other.json"
+    path.write_text(json.dumps({"format": "something.else", "format_version": 2}))
+
+    with pytest.raises(SessionRefused) as refused:
+        main_model.load_session(path)
+
+    assert refused.value.reason == "it does not hold a Poriscope session"
+
+
+def test_a_2_0_session_with_a_plugin_called_format_still_loads(main_model, tmp_path):
+    """In the 2.0 layout a plugin's name is a top-level key, so `format` can be one."""
+    path = tmp_path / "session.json"
+    path.write_text(
+        json.dumps({"format": {"metaclass": "MetaFilter", "subclass": "BesselFilter"}})
+    )
+
+    loaded = main_model.load_session(path)
+
+    assert list(loaded.plugin_history) == ["format"]

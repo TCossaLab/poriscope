@@ -24,6 +24,7 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
+import json
 import logging
 from abc import abstractmethod
 from typing import Any, Dict, Generator, List, Mapping, Optional, Sequence, Tuple
@@ -33,9 +34,34 @@ import numpy.typing as npt
 import pandas as pd
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
+from poriscope.constants import __VERSION__
 from poriscope.utils.EventWorker import Worker, WorkerThread
+from poriscope.utils.json_files import write_json_atomically
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
+
+#: What a plot configuration file names itself, so a reader can refuse any other file.
+PLOT_CONFIGURATION_FORMAT = "poriscope.plot_configuration"
+
+#: The layout of the plot configuration this version writes; a file in another is refused.
+PLOT_CONFIGURATION_FORMAT_VERSION = 1
+
+
+class PlotConfigurationRefused(Exception):
+    """
+    A file that is not a plot configuration this version can replay, carrying the reason.
+
+    :param reason: why, in words that follow "cannot be replayed:"
+    :type reason: str
+    :param earlier: True when the file does not name the plot configuration format, as
+        one saved by an earlier version does not
+    :type earlier: bool
+    """
+
+    def __init__(self, reason: str, earlier: bool = False) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.earlier = earlier
 
 
 class MetaModel(QObject, metaclass=QObjectABCMeta):
@@ -418,6 +444,84 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             df.columns = list(self.cache_labels)
             return df
         return None
+
+    @log(logger=logger)
+    def save_plot_configuration(
+        self, path: str, tab: str, entries: Sequence[Mapping[str, Any]]
+    ) -> None:
+        """
+        Write a tab's recorded entries as a plot configuration file.
+
+        The file names its format and version, the Poriscope that wrote it (for messages
+        only) and the tab, before the entries, so :py:meth:`read_plot_configuration` can
+        refuse any other file. It is written so that a failure leaves the earlier file.
+
+        :param path: the file to write
+        :type path: str
+        :param tab: the class name of the tab the entries belong to
+        :type tab: str
+        :param entries: the entries, ``{"action": name, "args": [...], "kwargs": {...}}``
+        :type entries: Sequence[Mapping[str, Any]]
+        """
+        write_json_atomically(
+            {
+                "format": PLOT_CONFIGURATION_FORMAT,
+                "format_version": PLOT_CONFIGURATION_FORMAT_VERSION,
+                "poriscope_version": __VERSION__,
+                "tab": tab,
+                "actions": [dict(entry) for entry in entries],
+            },
+            path,
+        )
+
+    @log(logger=logger)
+    def read_plot_configuration(self, path: str, tab: str) -> List[Dict[str, Any]]:
+        """
+        Read a plot configuration file, checking all of it before anything is replayed.
+
+        A file that does not name the plot configuration format - one saved by an earlier
+        version, a session, anything else - is refused, as is one in another version of
+        the format, one saved for another tab, and one whose entries are not a list of
+        objects. Keys this version does not know are ignored.
+
+        :param path: the file to read
+        :type path: str
+        :param tab: the class name of the tab reading it
+        :type tab: str
+        :raises PlotConfigurationRefused: if the file cannot be replayed; its reason is
+            for the user
+        :return: the recorded entries, oldest first
+        :rtype: List[Dict[str, Any]]
+        """
+        with open(path, "r") as handle:
+            content = json.load(handle)
+        if (
+            not isinstance(content, dict)
+            or content.get("format") != PLOT_CONFIGURATION_FORMAT
+        ):
+            raise PlotConfigurationRefused(
+                "it was saved by an earlier version of Poriscope, or is not a plot "
+                "configuration",
+                earlier=True,
+            )
+        version = content.get("format_version")
+        if version != PLOT_CONFIGURATION_FORMAT_VERSION:
+            written_by = content.get("poriscope_version")
+            by = f" by Poriscope {written_by}" if isinstance(written_by, str) else ""
+            raise PlotConfigurationRefused(
+                f"it was saved{by} in a plot configuration format this version does "
+                f"not read (format {version})"
+            )
+        if content.get("tab") != tab:
+            raise PlotConfigurationRefused(
+                f"it holds the plot configuration of {content.get('tab')}"
+            )
+        entries = content.get("actions")
+        if not isinstance(entries, list) or not all(
+            isinstance(entry, dict) for entry in entries
+        ):
+            raise PlotConfigurationRefused("it does not hold a plot configuration")
+        return entries
 
     @log(logger=logger)
     def stop_workers(

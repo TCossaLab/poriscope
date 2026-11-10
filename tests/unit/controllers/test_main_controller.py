@@ -14,7 +14,6 @@ Covers:
 - _lookup_historical_settings (found in current, found in previous, not found)
 - update_available_plugins caches and pushes to tabs
 - save_session (with file, without file, tab state synced first)
-- save_tab_action_history delegates to model
 - load_session (restore tabs, plugins and subset filters, reset first, None history,
   tab error, plugin ValueError, plugin other error, report of unrestored entries)
 - send_analysis_tabs (tabs present, tabs empty)
@@ -315,7 +314,6 @@ def test_a_history_change_saves_the_session_with_each_tabs_kept_actions(
     mock_main_model.save_session.assert_called_once_with(
         controller.plugin_history, last_tab="MetadataController"
     )
-    mock_main_model.save_tab_actions.assert_not_called()
 
 
 def test_every_open_tab_saves_its_actions_with_any_session_save(
@@ -822,23 +820,6 @@ def test_update_plugin_history_syncs_tab_session_state(
     }
 
 
-def test_save_tab_action_history_delegates_to_model(
-    controller: MainController,
-    mock_main_model: MagicMock,
-) -> None:
-    """
-    Forward the tab action history dict and save file to the model.
-
-    :param controller: Controller under test.
-    :param mock_main_model: Mocked main model.
-    """
-    history = {"SomeTab": {"action": "opened"}}
-
-    controller.save_tab_action_history(history, save_file="session.json")
-
-    mock_main_model.save_tab_actions.assert_called_once_with(history, "session.json")
-
-
 def test_send_analysis_tabs_emits_to_view(
     controller: MainController,
     mock_main_view: MagicMock,
@@ -910,7 +891,6 @@ def test_load_session_restores_tabs_and_plugins(
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
-    tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_available_plugins = mocker.Mock()
     tab_instance.get_session_state.return_value = {}
 
@@ -960,7 +940,6 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
-    tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_available_plugins = mocker.Mock()
     # instantiate_analysis_tab's own update_plugin_history() call syncs session state
     # from every open tab, so this needs a real dict back, not an unconfigured Mock.
@@ -1022,7 +1001,6 @@ def test_load_session_persists_restored_tab_state_before_returning(
         "plugin_state_changed",
         "add_text_to_display",
         "update_tab_action_history",
-        "save_tab_action_history",
     ):
         setattr(tab_instance, signal, mocker.Mock(connect=mocker.Mock()))
     tab_instance.update_available_plugins = mocker.Mock()
@@ -1421,7 +1399,6 @@ class TestResetSession:
         controller.reset_session()
 
         assert not controller.main_model.save_session.called
-        assert not controller.main_model.save_tab_actions.called
 
     def test_saving_resumes_after_the_reset(self, controller):
         controller.data_plugin_controller.delete_all_plugins.return_value = []

@@ -18,6 +18,20 @@ from PySide6.QtCore import QObject, Signal
 
 from poriscope.utils.LogDecorator import register_action
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaModel import PLOT_CONFIGURATION_FORMAT, MetaModel
+
+
+def _plot_configuration(tab: str, entries: List[Dict[str, Any]]) -> str:
+    """A plot configuration file's text, as Save Plot Configuration writes it."""
+    return json.dumps(
+        {
+            "format": PLOT_CONFIGURATION_FORMAT,
+            "format_version": 1,
+            "poriscope_version": "2.1.0",
+            "tab": tab,
+            "actions": entries,
+        }
+    )
 
 
 class _Model(QObject):
@@ -26,6 +40,9 @@ class _Model(QObject):
     run_finished = Signal(int, str)
     update_progressbar = Signal(float, str)
     add_text_to_display = Signal(str, str)
+
+    #: The real reader, so a loaded file is checked as the tab's Model checks it.
+    read_plot_configuration = MetaModel.read_plot_configuration
 
     def __init__(self) -> None:
         super().__init__()
@@ -111,8 +128,8 @@ def test_a_loaded_file_is_replayed_one_entry_at_a_time(
 ) -> None:
     path = tmp_path / "actions.json"
     path.write_text(
-        json.dumps(
-            {"_Tab": {"0": _entry("draw", label="a"), "1": _entry("draw", label="b")}}
+        _plot_configuration(
+            "_Tab", [_entry("draw", label="a"), _entry("draw", label="b")]
         ),
         encoding="utf-8",
     )
@@ -148,7 +165,9 @@ def test_a_file_loaded_during_a_replay_is_refused(
     tab: _Tab, panel: List[str], qtbot: Any, tmp_path: Any
 ) -> None:
     path = tmp_path / "actions.json"
-    path.write_text(json.dumps({"0": _entry("draw", label="late")}), encoding="utf-8")
+    path.write_text(
+        _plot_configuration("_Tab", [_entry("draw", label="late")]), encoding="utf-8"
+    )
     tab.start_replay([_entry("find", "A", 1)])
     qtbot.waitUntil(lambda: tab.calls == ["find:A/1"])
 

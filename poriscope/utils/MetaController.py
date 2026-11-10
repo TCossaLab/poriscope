@@ -25,7 +25,6 @@
 # Alejandra Carolina González González
 
 import inspect
-import json
 import logging
 from abc import abstractmethod
 from collections import OrderedDict
@@ -52,7 +51,7 @@ from poriscope.utils.LogDecorator import (
     ActionDeclaration,
     log,
 )
-from poriscope.utils.MetaModel import MetaModel
+from poriscope.utils.MetaModel import MetaModel, PlotConfigurationRefused
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.utils.replay_sequence import ReplaySequence
@@ -103,23 +102,6 @@ def declarations_of(cls: type) -> Dict[str, ActionDeclaration]:
     }
 
 
-def _saved_before_named_values(entry: Any) -> bool:
-    """
-    Is this a recorded entry from before every value was saved by name?
-
-    Poriscope 2.0 saved a View method's name under ``function``; until values were saved by
-    name, an entry carried them unlabelled in ``args``, which is empty in every entry since.
-
-    :param entry: one entry of a saved file
-    :type entry: Any
-    :return: True if it is in an earlier format
-    :rtype: bool
-    """
-    return isinstance(entry, Mapping) and (
-        "function" in entry or bool(entry.get("args"))
-    )
-
-
 class MetaController(QObject, metaclass=QObjectABCMeta):
     """
     Base controller class that manages exactly one MetaView and MetaModel instance
@@ -137,7 +119,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     update_tab_action_history = Signal(
         str, object
     )  # name of tab subclass, OrderedDict of actions to take
-    save_tab_action_history = Signal(object, str)  # dict of actions, save file name
     create_plugin = Signal(str, str)  # metaclass, subclass
     edit_plugin = Signal(str, str)  # metaclass, key
     delete_plugin = Signal(str, str)  # metaclass, key
@@ -335,32 +316,33 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @Slot(str)
     def load_actions_from_json(self, filename: str) -> None:
         """
-        Load and apply tab actions from a JSON file.
+        Replay a saved plot configuration, refusing a file this version cannot replay.
 
-        A file saved before every recorded value was saved by name - by 2.0, or by a build
-        of 2.1 before then - is refused whole, with an error the user sees as a dialog:
-        its entries name View methods or carry their values unlabelled, so none of it can
-        replay as recorded.
+        The file is read and checked whole by the Model
+        (:py:meth:`~poriscope.utils.MetaModel.MetaModel.read_plot_configuration`): one saved
+        by an earlier version, one saved for another tab or one that is not a plot
+        configuration at all replays nothing, with an error the user sees as a dialog.
 
-        :param filename: Path to the JSON file containing saved actions.
+        :param filename: the plot configuration file
         :type filename: str
         """
         try:
-            with open(filename, "r") as json_file:
-                actions = json.load(json_file)
-        except Exception as e:
-            self.logger.error(f"Error loading action history: {e}")
-            return None
-        if self.__class__.__name__ in actions.keys():
-            actions = actions[self.__class__.__name__]  # allow loading from base file
-        if any(_saved_before_named_values(entry) for entry in actions.values()):
-            self.logger.error(
-                f"{filename} was saved by an earlier version of Poriscope and cannot be "
-                "replayed. To keep these plots, draw them again and save them with Save "
-                "Plot Configuration."
+            entries = self.model.read_plot_configuration(
+                filename, self.__class__.__name__
             )
-            return None
-        if not self.start_replay(actions.values()):
+        except PlotConfigurationRefused as refused:
+            message = f"{filename} cannot be replayed: {refused.reason}."
+            if refused.earlier:
+                message += (
+                    " To keep these plots, draw them again and save them with Save "
+                    "Plot Configuration."
+                )
+            self.logger.error(message)
+            return
+        except (OSError, ValueError) as e:
+            self.logger.error(f"Error loading plot configuration: {e}")
+            return
+        if not self.start_replay(entries):
             self._panel_text_now = True
             try:
                 self.add_text_to_display.emit(
@@ -883,14 +865,25 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str)
-    def save_tab_actions(self, save_file: Optional[str] = None) -> None:
+    def save_tab_actions(self, save_file: str) -> None:
         """
-        Emit a signal to save the current tab action history to the specified file.
+        Save this tab's kept actions as a plot configuration, to a file the user chose.
 
-        :param save_file: Optional path to the file where actions should be saved.
-        :type save_file: Optional[str]
+        What is saved is what a restored session replays for this tab
+        (:py:meth:`kept_actions`), so a superseded plot is left out. A save that fails
+        leaves any earlier file, and logs an error the user sees as a dialog.
+
+        :param save_file: the file to write
+        :type save_file: str
         """
-        self.save_tab_action_history.emit(self.tab_action_history, save_file)
+        try:
+            self.model.save_plot_configuration(
+                save_file, self.__class__.__name__, self.kept_actions()
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to save the plot configuration to {save_file}: {e}"
+            )
 
     @log(logger=logger)
     @Slot(object, bool)
