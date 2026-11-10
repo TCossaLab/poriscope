@@ -998,8 +998,11 @@ class MainController(QObject):
         """
         What the load message adds when the session's tabs hold no saved actions.
 
-        A session saved before actions were kept says so; on Restore, the action history
-        2.0 kept in its own file is said to be unreplayable, if it is there.
+        A session saved before actions were kept says so. On Restore, the action history
+        2.0 kept in its own file is said to be unreplayable, if it is there, and the line
+        says the autosave has been saved in this version's format: this restore wrote each
+        tab's ``actions`` into it, so the note does not come back. A file the user loaded is
+        not rewritten, so a load says neither.
 
         :param loaded_entries: the session's entries as loaded
         :type loaded_entries: List[Dict[str, Any]]
@@ -1014,12 +1017,17 @@ class MainController(QObject):
         if not loaded_tabs or any("actions" in entry for entry in loaded_tabs):
             return ""
         note = " This session has no saved actions to replay."
-        if not file_name and self.main_model.old_action_history_exists():
+        if file_name:
+            return note
+        if self.main_model.old_action_history_exists():
             note += (
                 " The action history saved by an earlier version "
                 "(tab_action_history.json) cannot be replayed."
             )
-        return note
+        return note + (
+            " The autosave has been saved in this version's format, so this note will "
+            "not appear again."
+        )
 
     @log(logger=logger)
     @Slot()

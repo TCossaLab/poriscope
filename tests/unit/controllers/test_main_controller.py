@@ -2025,7 +2025,35 @@ def test_a_restore_with_the_old_action_autosave_says_it_cannot_be_replayed(
     assert messages[-1] == (
         "Restored last saved session. This session has no saved actions to replay. "
         "The action history saved by an earlier version (tab_action_history.json) "
-        "cannot be replayed."
+        "cannot be replayed. The autosave has been saved in this version's format, so "
+        "this note will not appear again."
+    )
+
+
+def test_a_restore_without_the_old_file_still_says_the_autosave_was_converted(
+    mocker: MockerFixture, mock_main_model: MagicMock, mock_main_view: MagicMock
+) -> None:
+    """
+    Restore rewrites the autosave with each tab's actions, so the note does not come back.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    ctrl = _loading_controller(
+        mocker,
+        mock_main_model,
+        mock_main_view,
+        {"MetadataController": _tab_entry("MetadataController")},
+    )
+
+    ctrl.load_session(None)
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert messages[-1] == (
+        "Restored last saved session. This session has no saved actions to replay. "
+        "The autosave has been saved in this version's format, so this note will not "
+        "appear again."
     )
 
 

@@ -112,6 +112,12 @@ Step 10 waits for both tracks.
 
 ### Step 10 - docs dead-link gate and release prep
 
+- **Tell users, before 2.1 ships, what opens in which version (2026-11-09).** One page or
+  release-notes section, gathered from the 2.1 changelog's breaking lines: 2.1 sessions do not open in
+  2.0, and the first 2.1 Restore rewrites the 2.0 autosave; a 2.0 session opens in 2.1 without actions;
+  `tab_action_history.json` and plot configurations saved by 2.0 or early 2.1 builds are refused; a
+  plugin cannot take a tab's name. Write it once every 2.1 step has landed, so it is complete.
+
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved
   because `conf.py` has no `nitpicky`. Third-party names resolve since 2026-10-09 (`-n` 1,476 → 97);
   the 97 left are ours - wrong-owner `:meth:` targets (`MetaFilter.apply_settings` ×8), unqualified
