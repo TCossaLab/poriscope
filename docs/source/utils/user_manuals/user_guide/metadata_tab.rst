@@ -121,6 +121,8 @@ Step 4: Generate and Export
      time. The tab's messages appear together when it is done. If a step cannot be replayed,
      you are asked whether to **Go back** to the plot you had before loading, or **Keep** what
      was replayed and continue later with **Replay Actions** (see :ref:`replay_actions`).
+     A plot configuration saved by Poriscope 2.0, or by an earlier 2.1 build, is refused
+     with an error and nothing is replayed.
    - **Reset**: Clear the plot and the tab's history of plots. Plotting anything after it
      makes the clear final. The message panel says which: whether **Undo** will bring the
      plots back, or that they are cleared for good.

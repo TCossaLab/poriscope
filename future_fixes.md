@@ -85,12 +85,6 @@ Step 10 waits for both tracks.
     - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
       history no longer holds them, so a restore does not redraw them.
 
-- **Editing a plugin leaves history entries recorded with its old settings (2026-11-03).** An edit keeps the
-  plugin's old results on screen while the plugin history keeps only the new settings (`BaseDataPlugin.apply_settings`,
-  `BaseDataPlugin.py:444`), so replaying its entries would use settings they were never run with. Drop the entries
-  naming the edited plugin and the plugins built on it, as deleting one should, and say so on the status panel.
-  Telling the tabs about an edit is a signal change.
-
 - **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
   `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
   `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
@@ -339,10 +333,6 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Session and settings persistence
 
-- **Load Actions has no shortcut to the autosaved `session/tab_action_history.json`**: the
-  user must find it in the app-data folder. Replay stays explicit and per tab by design
-  (`DECISIONS.md` 2026-09-27), so this is a convenience - offer the autosave in each tab's
-  Load Actions - not automatic replay.
 - **A reloaded session restores plugins but not what the control panels showed.** Snapshot and
   restore each panel's widget state on `MetaControls` by walking its children keyed by
   `objectName` (not every control sets one today), with `MultiSelectComboBox` and
