@@ -214,7 +214,7 @@
 
 * A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session
 
-* Load and Restore Session read each tab's saved actions once and keep them; until a tab's history changes, the autosave keeps them too, so a Restore after a crash still has them
+* Load and Restore Session read each tab's saved actions once and keep them; until you replay or work in a tab, the autosave keeps them too, so a Restore after a crash still has them
 
 * A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
 

@@ -392,7 +392,16 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             and not self.replay_sequence.has_remaining()
             and self.replay_sequence.replay_available()
         ):
-            return self.replay_sequence.start(self.session_actions(), from_session=True)
+            started = self.replay_sequence.start(
+                self.session_actions(), from_session=True
+            )
+            if started:
+                # A tab replaying its loaded actions saves what it runs from now on, even
+                # if a step fails and records nothing: the main window is told at once.
+                self.update_tab_action_history.emit(
+                    self.__class__.__name__, self.tab_action_history
+                )
+            return started
         return self.replay_sequence.start(entries)
 
     @log(logger=logger)

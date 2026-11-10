@@ -530,6 +530,38 @@ class TestTheLoadedSession:
     def _until_ended(tab: _Tab, qtbot: Any) -> None:
         qtbot.waitUntil(lambda: not tab.replay_sequence.running)
 
+    def test_replaying_them_hands_the_main_window_the_live_history_at_once(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """
+        A tab that replays its loaded actions saves what it runs from then on, even if its
+        first step fails and records nothing.
+        """
+        self._answer(tab, "keep")
+        tab.hold_session_actions([_entry("boom"), _entry("draw", "a")], "session.json")
+        sent: List[Any] = []
+        tab.update_tab_action_history.connect(
+            lambda name, history: sent.append(dict(history))
+        )
+
+        assert tab.start_replay()
+        assert sent == [{}]
+        self._until_ended(tab, qtbot)
+
+        assert sent == [{}]
+
+    def test_a_plot_configuration_replay_does_not_count_as_one(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.hold_session_actions([_entry("draw", "z")], "session.json")
+        sent: List[Any] = []
+        tab.update_tab_action_history.connect(lambda name, history: sent.append(name))
+
+        tab.start_replay([_entry("draw", "a")])
+        self._until_ended(tab, qtbot)
+
+        assert sent == ["_Tab"]  # the draw's own recording, nothing at the start
+
     def test_holding_loaded_actions_makes_replay_available(self, tab: _Tab) -> None:
         states: List[bool] = []
         tab.replay_state_changed.connect(states.append)
