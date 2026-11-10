@@ -93,7 +93,12 @@ def _make(
     controller.tab_action_history = OrderedDict()
     controller.runs = []  # type: ignore[attr-defined]
     controller.calls = []  # type: ignore[attr-defined]
-    for signal in ("add_text_to_display", "update_tab_action_history"):
+    controller.replay_sequence = mocker.Mock()  # type: ignore[attr-defined]
+    for signal in (
+        "add_text_to_display",
+        "update_tab_action_history",
+        "replay_state_changed",
+    ):
         mock_signal = mocker.Mock()
         mock_signal.emit = mocker.Mock()
         setattr(controller, signal, mock_signal)
