@@ -196,7 +196,9 @@ def test_another_tabs_configuration_is_refused(
     with pytest.raises(PlotConfigurationRefused) as refused:
         model.read_plot_configuration(path, TAB)
 
-    assert refused.value.reason == "it holds the plot configuration of ProteinController"
+    assert (
+        refused.value.reason == "it holds the plot configuration of ProteinController"
+    )
     assert not refused.value.earlier
 
 
