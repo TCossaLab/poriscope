@@ -322,7 +322,9 @@ def test_a_plot_configuration_saved_before_2_1_is_refused_whole(
 
     controller.start_replay.assert_not_called()  # type: ignore[attr-defined]
     controller.logger.error.assert_called_once_with(  # type: ignore[attr-defined]
-        "old.json was saved by an earlier version of Poriscope and cannot be replayed"
+        "old.json was saved by an earlier version of Poriscope and cannot be replayed. "
+        "To keep these plots, draw them again and save them with Save Plot "
+        "Configuration."
     )
 
 

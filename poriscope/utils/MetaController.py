@@ -356,7 +356,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         if any(_saved_before_named_values(entry) for entry in actions.values()):
             self.logger.error(
                 f"{filename} was saved by an earlier version of Poriscope and cannot be "
-                "replayed"
+                "replayed. To keep these plots, draw them again and save them with Save "
+                "Plot Configuration."
             )
             return None
         if not self.start_replay(actions.values()):

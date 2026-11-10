@@ -106,7 +106,7 @@
 
 * **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
 
-* **Breaking:** Load Plot Configuration refuses a file saved by Poriscope 2.0, or by an earlier 2.1 build with unlabelled values, with one error, and replays none of it
+* **Breaking:** Load Plot Configuration refuses a file saved by Poriscope 2.0, or by an earlier 2.1 build with unlabelled values, with one error saying to draw the plots again and save them anew, and replays none of it
 
 ### Developer Tooling:
 
@@ -212,7 +212,7 @@
 
 * A session that cannot be loaded or restored now says why, and loading one restores its data plugins before its tabs
 
-* A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session
+* A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session; an error dialog says so
 
 * Load and Restore Session read each tab's saved actions once and keep them; until you replay or work in a tab, the autosave keeps them too, so a Restore after a crash still has them
 

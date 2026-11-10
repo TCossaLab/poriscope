@@ -999,10 +999,11 @@ class DataPluginController(QObject):
         :rtype: bool
         """
         if key in self.model.available_plugins.get(TAB_METACLASS, {}):
+            # At ERROR, so a dialog says it as well as the panel: the name must change.
             self._report(
-                self.logger.warning,
-                f"Plugin name '{key}' is the name of an analysis tab. Please use another name.",
-                display_message=f"Plugin name '{key}' is the name of an analysis tab. Please choose a different name.",
+                self.logger.error,
+                f"Plugin name '{key}' is the name of an analysis tab. Please choose a "
+                "different name.",
             )
             return False
         for meta, existing_keys in self.model.get_instantiated_plugins_list().items():

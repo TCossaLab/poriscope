@@ -2177,6 +2177,11 @@ class TestKeyIsUnused:
 
         assert ctrl._key_is_unused("MetadataController") is False
         assert "analysis tab" in ctrl.add_text_to_display.emit.call_args[0][0]
+        # At ERROR, which QtHandler shows as a dialog: the name has to be changed.
+        ctrl.logger.error.assert_called_once_with(
+            "Plugin name 'MetadataController' is the name of an analysis tab. Please "
+            "choose a different name."
+        )
         assert ctrl._key_is_unused("Metadata") is True
 
 

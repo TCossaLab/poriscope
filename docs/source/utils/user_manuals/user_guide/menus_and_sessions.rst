@@ -45,7 +45,8 @@ plugins and filters but no actions; the action history 2.0 kept beside it,
 ``tab_action_history.json``, cannot be replayed, and the first Restore says so. That Restore
 saves the autosave again in 2.1's format, says so, and the note does not appear again; Poriscope
 2.0 can then no longer restore that autosave. **Load Session** never rewrites the file you
-picked. A plugin cannot be given the name of an analysis tab, such as ``MetadataController``.
+picked. A plugin cannot be given the name of an analysis tab, such as ``MetadataController``;
+an error says so.
 
 - **Reset Session**
   Closes every open analysis tab and removes every configured plugin, returning the workspace to the same clean state as a fresh launch — without restarting Poriscope. Your saved session files are left untouched, so **Restore Session** still brings the workspace back, as long as it is the next thing you do; opening a tab or adding a plugin afterward replaces what Restore would have loaded.
