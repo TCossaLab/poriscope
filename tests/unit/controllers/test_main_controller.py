@@ -307,6 +307,7 @@ def test_a_history_change_saves_the_session_with_each_tabs_kept_actions(
     tab = mocker.Mock()
     tab.get_session_state.return_value = {}
     tab.kept_actions.return_value = kept
+    tab.history_change_from_restore_replay.return_value = False
     controller.analysis_tabs = {"MetadataController": tab}
 
     controller.update_tab_action_history("MetadataController", OrderedDict())
@@ -2188,6 +2189,7 @@ def _named_view_tab(mocker: MockerFixture, view_name: str) -> MagicMock:
     tab.session_actions.return_value = None
     tab.kept_actions.return_value = []
     tab.replay_available.return_value = False
+    tab.history_change_from_restore_replay.return_value = False
     return tab
 
 
@@ -2334,7 +2336,9 @@ def test_only_the_ticked_tabs_replay(
         with_actions=("ProteinController", "RawDataController"),
     )
 
-    controller.analysis_tabs["RawDataController"].start_replay.assert_called_once_with()
+    controller.analysis_tabs["RawDataController"].start_replay.assert_called_once_with(
+        restore=True
+    )
     controller.analysis_tabs["ProteinController"].start_replay.assert_not_called()
 
 

@@ -77,6 +77,9 @@ class MainController(QObject):
         self.plugin_history: Dict[str, Any] = {}
         #: The analysis tab whose history changed last, saved with the session.
         self.last_tab: str = ""
+        #: Set while a plugin change rewrites the tabs' entries, which is not where the
+        #: user acted, so it leaves last_tab alone.
+        self._rewriting_plugins = False
         #: The tabs whose history has changed since the session was loaded. Until it
         #: does, a tab saves the actions it was loaded with; after, what it ran.
         self._changed_since_load: Set[str] = set()
@@ -582,9 +585,13 @@ class MainController(QObject):
         :rtype: bool
         """
         changed = False
-        for tab in self.analysis_tabs.values():
-            if tab is not None and tab.rewrite_plugin_entries(key, new_key):
-                changed = True
+        self._rewriting_plugins = True
+        try:
+            for tab in self.analysis_tabs.values():
+                if tab is not None and tab.rewrite_plugin_entries(key, new_key):
+                    changed = True
+        finally:
+            self._rewriting_plugins = False
         return changed
 
     @log(logger=logger)
@@ -682,7 +689,12 @@ class MainController(QObject):
         :param history: its live history, as the tab sends it
         :type history: Any
         """
-        self.last_tab = key
+        tab = self.analysis_tabs.get(key)
+        made_for_the_user = self._rewriting_plugins or (
+            tab is not None and tab.history_change_from_restore_replay()
+        )
+        if not made_for_the_user:
+            self.last_tab = key
         self._changed_since_load.add(key)
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
@@ -984,7 +996,7 @@ class MainController(QObject):
         """
         for tab in self.analysis_tabs.values():
             if tab.view.__class__.__name__ == page:
-                tab.start_replay()
+                tab.start_replay(restore=True)
                 return
 
     def _show_last_tab(self) -> None:
