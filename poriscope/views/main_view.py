@@ -34,6 +34,9 @@ from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QCloseEvent, QResizeEvent, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -66,6 +69,21 @@ from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughMixin,
     WalkthroughStep,
 )
+
+
+def tab_display_name(view_name: str) -> str:
+    """
+    Name an analysis tab as users read it, from its View's class name.
+
+    The camel case is split into words and the ``View`` suffix dropped, so there is no
+    list of names to keep: ``RawDataView`` is "Raw Data".
+
+    :param view_name: the tab's View class name, which is also its page's name
+    :type view_name: str
+    :return: the tab's name in words
+    :rtype: str
+    """
+    return re.sub(r"(?<!^)(?=[A-Z])", " ", view_name.removesuffix("View"))
 
 
 class MainView(QMainWindow, WalkthroughMixin):
@@ -1167,7 +1185,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         names = []
         view = self.get_expected_next_view("MainView")
         while view is not None:
-            names.append(re.sub(r"(?<!^)(?=[A-Z])", " ", view.removesuffix("View")))
+            names.append(tab_display_name(view))
             view = self.get_expected_next_view(view)
         return names
 
@@ -1286,6 +1304,61 @@ class MainView(QMainWindow, WalkthroughMixin):
     def on_replay_actions_click(self) -> None:
         """Ask for the replay of the page showing to be continued."""
         self.replay_actions_requested.emit(self.get_current_view())
+
+    @log(logger=logger)
+    def ask_which_tabs_to_replay(self, pages: Sequence[str]) -> List[str]:
+        """
+        Ask which of a loaded session's tabs to replay now; every one is ticked at first.
+
+        Not now, Escape and closing the dialog replay none. Replay is disabled while no
+        tab is ticked, since it would then do what Not now does.
+
+        :param pages: the pages of the tabs with saved actions to replay, in their order
+        :type pages: Sequence[str]
+        :return: the pages of the ticked tabs, in the same order, or [] for none
+        :rtype: List[str]
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Replay the session")
+        layout = QVBoxLayout(dialog)
+        intro = QLabel(
+            "These tabs have saved actions. The ticked tabs replay now, all at the same "
+            "time. You can switch between tabs while they run.",
+            dialog,
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        boxes: List[Tuple[str, QCheckBox]] = []
+        for page in pages:
+            box = QCheckBox(tab_display_name(page), dialog)
+            box.setChecked(True)
+            layout.addWidget(box)
+            boxes.append((page, box))
+        for text in (
+            "Replaying runs the finders, fitters and plots again. Nothing is committed, "
+            "exported or saved to a file or database.",
+            "A tab you leave unticked can be replayed later with Replay Actions, under "
+            "the message panel.",
+        ):
+            note = QLabel(text, dialog)
+            note.setWordWrap(True)
+            layout.addWidget(note)
+        buttons = QDialogButtonBox(dialog)
+        buttons.addButton("Not now", QDialogButtonBox.ButtonRole.RejectRole)
+        replay = buttons.addButton("Replay", QDialogButtonBox.ButtonRole.AcceptRole)
+        replay.setDefault(True)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        def enable_replay() -> None:
+            replay.setEnabled(any(box.isChecked() for _, box in boxes))
+
+        for _, box in boxes:
+            box.toggled.connect(enable_replay)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return []
+        return [page for page, box in boxes if box.isChecked()]
 
     def _reset_walkthrough_flag(
         self, view_name: str, completed_successfully: bool

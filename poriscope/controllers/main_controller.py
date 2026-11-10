@@ -77,6 +77,9 @@ class MainController(QObject):
         self.plugin_history: Dict[str, Any] = {}
         #: The analysis tab whose history changed last, saved with the session.
         self.last_tab: str = ""
+        #: Set while a plugin change rewrites the tabs' entries, which is not where the
+        #: user acted, so it leaves last_tab alone.
+        self._rewriting_plugins = False
         #: The tabs whose history has changed since the session was loaded. Until it
         #: does, a tab saves the actions it was loaded with; after, what it ran.
         self._changed_since_load: Set[str] = set()
@@ -582,9 +585,13 @@ class MainController(QObject):
         :rtype: bool
         """
         changed = False
-        for tab in self.analysis_tabs.values():
-            if tab is not None and tab.rewrite_plugin_entries(key, new_key):
-                changed = True
+        self._rewriting_plugins = True
+        try:
+            for tab in self.analysis_tabs.values():
+                if tab is not None and tab.rewrite_plugin_entries(key, new_key):
+                    changed = True
+        finally:
+            self._rewriting_plugins = False
         return changed
 
     @log(logger=logger)
@@ -682,7 +689,12 @@ class MainController(QObject):
         :param history: its live history, as the tab sends it
         :type history: Any
         """
-        self.last_tab = key
+        tab = self.analysis_tabs.get(key)
+        made_for_the_user = self._rewriting_plugins or (
+            tab is not None and tab.history_change_from_restore_replay()
+        )
+        if not made_for_the_user:
+            self.last_tab = key
         self._changed_since_load.add(key)
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
@@ -763,9 +775,6 @@ class MainController(QObject):
             self.analysis_tabs[subclass].update_tab_action_history.connect(
                 self.update_tab_action_history
             )
-            self.analysis_tabs[subclass].save_tab_action_history.connect(
-                self.save_tab_action_history
-            )
             # Instances before names, for the reason given in
             # update_available_plugins. A tab created after the plugins already exist -
             # which is what restoring a session does - would otherwise get a populated
@@ -819,13 +828,6 @@ class MainController(QObject):
     def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
         self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, save_file, self.last_tab)
-
-    @log(logger=logger)
-    @Slot(object, str)
-    def save_tab_action_history(
-        self, history: Any, save_file: Optional[Union[str, Path]] = None
-    ) -> None:
-        self.main_model.save_tab_actions(history, save_file)
 
     def _report_unloadable_session(
         self, file_name: Optional[Union[str, Path]], refused: SessionRefused
@@ -948,6 +950,7 @@ class MainController(QObject):
         self._changed_since_load.clear()
         self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
+        self._show_last_tab()
 
         if file_name:
             message = f"Loaded session from {file_name}."
@@ -965,6 +968,52 @@ class MainController(QObject):
                 f"({', '.join(unrestored)}); see the messages above."
             )
         self.main_view.add_text_to_display(message, "MainController")
+        self._offer_restore_replays()
+
+    def _offer_restore_replays(self) -> None:
+        """
+        Ask which of the loaded tabs with saved actions to replay now, and start those.
+
+        Every tab with actions is offered, ticked; the ticked ones start at once, each on
+        its own, as Replay Actions starts one. A tab left out keeps its Replay Actions.
+        """
+        pages = [
+            tab.view.__class__.__name__
+            for tab in self.analysis_tabs.values()
+            if tab.replay_available()
+        ]
+        if not pages:
+            return
+        for page in self.main_view.ask_which_tabs_to_replay(pages):
+            self._start_restore_replay(page)
+
+    def _start_restore_replay(self, page: str) -> None:
+        """
+        Start the replay of the tab whose page this is, as the restore dialog asked.
+
+        :param page: the tab's page name
+        :type page: str
+        """
+        for tab in self.analysis_tabs.values():
+            if tab.view.__class__.__name__ == page:
+                tab.start_replay(restore=True)
+                return
+
+    def _show_last_tab(self) -> None:
+        """
+        Show the tab the user last worked in before the session was saved.
+
+        Restoring opens the tabs one after another, and each opening shows its page, so the
+        last tab restored would otherwise be the one showing. With no last tab, or one that
+        did not restore, the page is left as the restore left it. The highlight goes first:
+        a page switch a walkthrough refuses puts it back on the page showing.
+        """
+        tab = self.analysis_tabs.get(self.last_tab)
+        if tab is None:
+            return
+        page = tab.view.__class__.__name__
+        self.main_view.sync_sidebar_highlight(page)
+        self.main_view.switch_to_page(page)
 
     def _restore_tab(
         self,

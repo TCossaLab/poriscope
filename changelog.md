@@ -106,7 +106,9 @@
 
 * **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
 
-* **Breaking:** Load Plot Configuration refuses a file saved by Poriscope 2.0, or by an earlier 2.1 build with unlabelled values, with one error saying to draw the plots again and save them anew, and replays none of it
+* **Breaking:** a plot configuration now names its format and version, and Load Plot Configuration refuses one saved by Poriscope 2.0 or by any earlier 2.1 build, one saved for another tab, and a session file, with one error saying why, and replays none of it
+
+* **Breaking:** the plot configuration is read and written by the tab's Model (`MetaModel.save_plot_configuration`, `read_plot_configuration`): `MetaController.save_tab_action_history`, `MainController.save_tab_action_history` and `MainModel.save_tab_actions` are removed, and `MetaController.save_tab_actions` requires the file
 
 ### Developer Tooling:
 
@@ -166,13 +168,13 @@
 
 * The Metadata and Protein tabs' event plots resolve the Event ID through one `MetaSubsetTabView._resolve_events`, which refuses the scope with `_refuse_scope` before it builds the filtered-event cache
 
-* Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel, though nothing calls it yet
+* Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel
 
 * A replayed action whose saved values no longer fit its parameters is reported on the status panel and skipped, and the rest of the file still replays
 
-* `MetadataView.write_back` shows a recorded overlay's or Plot Events' values in the panel and the tab's scope, selecting a filter only if it still holds the recorded SQL, though nothing calls it yet
+* `MetadataView.write_back` shows a recorded overlay's or Plot Events' values in the panel and the tab's scope, selecting a filter only if it still holds the recorded SQL
 
-* `ProteinView.write_back` shows a recorded Update Plot's, Plot Events' or Plot Histogram's values in the panel and the tab's scope, with a distribution plot's mode and its page, though nothing calls it yet
+* `ProteinView.write_back` shows a recorded Update Plot's, Plot Events' or Plot Histogram's values in the panel and the tab's scope, with a distribution plot's mode and its page
 
 * The write-back setters `set_loader`, `set_bins`, `set_event_count`, `set_raw` and `set_filters` move from `MetadataControls` to `MetaSubsetTabControls`, and `_write_back_filters` from `MetadataView` to `MetaSubsetTabView`; `ProteinControls` adds `set_pore`, `set_n_values` and `set_mode`
 
@@ -219,6 +221,12 @@
 * A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
 
 * After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
+
+* After Load or Restore Session, the tab you last worked in is showing, and a dialog lists the tabs with saved actions, all ticked: **Replay** replays the ticked ones at once, and a tab left out keeps its **Replay Actions**; replaying redoes no commit, export or save
+
+* A replay shows each step's recorded values in its tab's panel - plugins, channels, ranges, filters and plot settings - so a restored tab shows what produced its result, and the next click starts from those values
+
+* Save Plot Configuration saves only the plots on screen, not the ones a later plot replaced, and Load Session of a plot configuration says what it is
 
 * Deleting a plugin removes the recorded actions that use it from every tab's history and saved session; renaming one without changing its settings makes them follow the new name; editing a setting removes them, with those of the plugins built on it, and the status panel says so
 

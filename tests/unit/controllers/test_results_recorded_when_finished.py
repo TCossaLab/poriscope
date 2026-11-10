@@ -63,6 +63,8 @@ def tab(mocker: MockerFixture) -> _Tab:
     controller.model.call.return_value = True
     controller.logger = mocker.Mock()  # type: ignore[attr-defined]
     controller.tab_action_history = OrderedDict()
+    # Every tab has a replay sequence; here none is running.
+    controller.replay_sequence = mocker.Mock(running=False, waiting_for=None)
     for signal in ("add_text_to_display", "update_tab_action_history"):
         setattr(controller, signal, mocker.Mock())
     return controller

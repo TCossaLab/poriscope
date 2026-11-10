@@ -425,6 +425,82 @@ def test_a_saved_plot_configuration_replays_raw_plots_on_their_own_channels(
     assert plotted_row_count(metadata_tab) == CHANNEL_0 + CHANNEL_1
 
 
+def test_a_saved_configuration_holds_only_the_plots_on_screen_and_redraws_them(
+    metadata_tab: Triad, tmp_path: Path, mocker: Any, qtbot: Any
+) -> None:
+    """
+    A plot replaced by a new figure is not saved; loading the file redraws what was shown.
+
+    The file names its format and the tab, and holds what a restored session would replay:
+    the histogram of channel 0 was cleared when the bins changed, so only the reset and
+    channel 1's plot are saved. Loaded into a cleared tab, they redraw the same figure and
+    leave the same history.
+    """
+    saved = tmp_path / "config.json"
+    mocker.patch(
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
+        return_value=(str(saved), ""),
+    )
+    mocker.patch(
+        "poriscope.utils.MetaView.QFileDialog.getOpenFileName",
+        return_value=(str(saved), ""),
+    )
+    view = metadata_tab.tab_view
+    controller = metadata_tab.tab_controller
+    plot(metadata_tab, "own_raw", "0")
+    select(metadata_tab, "own_raw", "1")
+    view.handle_parameter_change(
+        "metadatacontrols",
+        "update_plot",
+        (
+            {
+                "db_loader": LOADER,
+                "plot_type": "Histogram",
+                "x_axis": "duration",
+                "y_axis": "duration",
+                "z_axis": "duration",
+                "x_log": False,
+                "y_log": False,
+                "z_log": False,
+                "bins": [30],
+                "sizes": False,
+            },
+        ),
+    )
+    assert on_figure(metadata_tab) == {(1, "own_raw")}
+    assert [entry["action"] for entry in controller.tab_action_history.values()] == [
+        "reset",
+        "overlay_plot",
+        "reset",
+        "overlay_plot",
+    ]
+    shown_rows = plotted_row_count(metadata_tab)
+
+    view.handle_parameter_change("metadatacontrols", "save_plot_config", ({},))
+
+    content = json.loads(saved.read_text(encoding="utf-8"))
+    assert content["format"] == "poriscope.plot_configuration"
+    assert content["format_version"] == 1
+    assert content["tab"] == "MetadataController"
+    assert [entry["action"] for entry in content["actions"]] == [
+        "reset",
+        "overlay_plot",
+    ]
+    assert content["actions"][1]["kwargs"]["bins"] == [30]
+
+    view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
+    assert on_figure(metadata_tab) == set()
+    view.handle_parameter_change("metadatacontrols", "load_plot", ({},))
+    qtbot.waitUntil(lambda: not controller.is_replaying())
+
+    assert on_figure(metadata_tab) == {(1, "own_raw")}
+    assert plotted_row_count(metadata_tab) == shown_rows
+    # Compared as JSON: in memory an entry's args are a tuple, which a file holds as a list.
+    assert json.loads(json.dumps(list(controller.tab_action_history.values()))) == (
+        content["actions"]
+    )
+
+
 # ------------------------------------------------- the event_id question and replay
 
 #: A raw filter written for a column plot: it does not return event_id.
@@ -614,19 +690,21 @@ def broken_configuration(triad: Triad, saved: Path) -> None:
         "metadatacontrols", "save_plot_config", ({},)
     )
     data = json.loads(saved.read_text(encoding="utf-8"))
-    data[str(len(data))] = {
-        "action": "plot_events",
-        "args": [],
-        "kwargs": {
-            "loader": "no_such_loader",
-            "event_ids": [0],
-            "experiment": "exp_a",
-            "channel": "0",
-            "subset_name": "own_raw",
-            "sql_filter": "",
-            "raw": False,
-        },
-    }
+    data["actions"].append(
+        {
+            "action": "plot_events",
+            "args": [],
+            "kwargs": {
+                "loader": "no_such_loader",
+                "event_ids": [0],
+                "experiment": "exp_a",
+                "channel": "0",
+                "subset_name": "own_raw",
+                "sql_filter": "",
+                "raw": False,
+            },
+        }
+    )
     saved.write_text(json.dumps(data), encoding="utf-8")
 
 

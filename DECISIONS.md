@@ -18,6 +18,28 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-10 - A plot configuration names its format, and the tab's Model reads and writes it
+
+**Context.** Save Plot Configuration wrote the live history, keyed by position, with no version, through the main
+window's model; the tab read it back itself. Load Session accepted an empty one as an empty session, and a JSON list
+raised in the slot.
+
+**Decision** (Carolina, 2026-11-10). `{"format": "poriscope.plot_configuration", "format_version": 1,
+"poriscope_version", "tab", "actions": [...]}`, holding the tab's kept actions. `MetaModel.save_plot_configuration`
+writes it (atomically, `json_files.write_json_atomically`) and `read_plot_configuration` checks the whole file first:
+another format, version or tab, or no format at all - 2.0 and every earlier 2.1 build - is refused with the reason.
+The session reader refuses a file that names another format. The route through the main window is removed, as Save
+and Load Filter already work in the tab's Model. `format` names the file because `kind` already means an action's kind.
+
+**Rejected.** A session file with one tab (Load Session would accept it and clear the workspace). A version key of its
+own name (each format inventing its key). Today's layout plus a version (keys by position; collides with the
+session's `format_version`). The live history (replays plots a later one replaced). Telling a session from an
+earlier plot configuration at Load Plot Configuration (the tab's Model would have to know the session layout).
+
+**Revisit** with the Step 10 versioning policy (`future_fixes.md`), which may change both formats.
+
+---
+
 ## 2026-11-09 - The session file versions the whole file, lists the plugins in order, and keeps the tabs apart
 
 **Context.** Each tab's recorded actions go in the session file, which then needs a format version and the last tab.
@@ -399,6 +421,25 @@ history to the main window, so decorating a Controller method would have sent it
 
 ---
 
+## 2026-10-25 - After a load, a dialog replays the tabs the user ticks
+
+**Context.** 2026-09-27 kept replay a per-tab step, with no "replay everything". Since 2026-11-09 a load hands each
+tab its saved actions, and Replay Actions replays one tab at a time.
+
+**Decision.** After Load or Restore Session, a dialog lists every tab with actions to replay, all ticked; Replay starts
+the ticked tabs at once, each its own replay, and every tab keeps Replay Actions. It opens last, over the tab the user
+lands on, and says that replaying commits, exports and saves nothing. `MainView.ask_which_tabs_to_replay` returns the
+ticked pages, so no signal was added. The two rules of 2026-09-27 still hold: a control's options never depend on
+replayed state, and no tab's replay needs another's. The one cross-tab source, an Event Analysis fitter's event
+loader, reads a database on disk (`SQLiteEventLoader`, the only event loader), and a replay redoes no commit.
+
+**Rejected.** A yes/no "restore the state as well?" (no choice of tabs). A File-menu item of its own (two ways to load
+one session). Replaying without asking (it can take long).
+
+**Revisit if** a tab's replay comes to need another tab's results in memory, or replays must run one tab after another.
+
+---
+
 ## 2026-10-20 - The Event Analysis commit is not gated on the selected loader; fitting and plotting are
 
 **Context.** 2.0.0 made `EventAnalysisController.write_events` refuse a commit when the selected
@@ -416,6 +457,30 @@ another's and the plot is nonsense - that is the case the guards were added for.
 writer's fitter has not fitted is still reported and skipped per channel (changelog 2.0.0).
 
 **Revisit if** a writer ever takes the loader from the tab rather than from its fitter's parents.
+
+---
+
+## 2026-10-17 - A loaded session shows the tab the user last acted in
+
+**Context.** After a load, the page showing was the tab restored last, an accident of restore order. The user is left
+where they were when the session was saved, not moved as replays start.
+
+**Decision** (Carolina, 2026-10-17). The session saves `last_tab`, the tab whose history last changed, and a load
+shows it. *Settled 2026-11-10:* a change the user did not make leaves it alone. Every replayed step records itself, so
+after the restore dialog replays several tabs, whichever finished last - a background Find, say - would become the
+last tab by timing alone, and a plugin delete, rename or edit would move it to the tab whose entries it rewrote. A
+replay the dialog starts is marked (`start_replay(restore=True)`); the tab says whether a change is that replay's own -
+its start, a step, or the run it waits for (`MetaController.history_change_from_restore_replay`) - and the main window
+leaves `last_tab` alone for those, and while plugin changes rewrite the tabs. Undo, a plot by hand, Replay Actions,
+Load Plot Configuration and Go back still move it. Measured 2026-11-10 on real tab Controllers: nine cases
+(`tests/unit/controllers/test_last_tab.py`).
+
+**Rejected.** The view following replays as they start (they start together; there is nothing to follow). A list of
+the dialog's tabs in the main window, dropped at the user's first change (the rest of that replay then moved it back).
+Every change during a restore replay counted as the replay's (Undo and plots by hand would not count). The page
+showing when the file is written (where the user looked, not what they did).
+
+**Revisit if** another kind of change is made for the user rather than by them.
 
 ---
 
@@ -1438,6 +1503,8 @@ from loader plugins, not from replay.
 
 **Revisit if** a user needs a whole session's plots back in one step, or a tab starts
 populating a control from something only replay creates.
+*Superseded in part 2026-10-25: after a load, a dialog replays the tabs the user ticks (see that entry); the
+two rules above still hold.*
 
 ---
 

@@ -104,13 +104,18 @@ class ReplaySequence:
         #: Whether the entries are the actions the tab was loaded with, which the autosave
         #: holds only once they have run.
         self.from_session = False
+        #: Whether the restore dialog started this run, not the user.
+        self.restore = False
         #: Whether the replay going back was one of the loaded actions.
         self._back_from_session = False
         #: The errors logged since the step the replay is on began, shown in its question.
         self._step_errors: List[str] = []
 
     def start(
-        self, entries: Optional[Iterable[Any]] = None, from_session: bool = False
+        self,
+        entries: Optional[Iterable[Any]] = None,
+        from_session: bool = False,
+        restore: bool = False,
     ) -> bool:
         """
         Start replaying, from the first of new entries or from where the last replay ended.
@@ -120,6 +125,9 @@ class ReplaySequence:
         :type entries: Optional[Iterable[Any]]
         :param from_session: the entries are the actions the tab was loaded with
         :type from_session: bool
+        :param restore: the restore dialog started it; a start of its own, Replay
+            Actions continuing it included, is the user's
+        :type restore: bool
         :return: False if a replay is already running, or there is nothing left to continue
         :rtype: bool
         """
@@ -135,6 +143,7 @@ class ReplaySequence:
         elif not self.has_remaining():
             return False
         self.failed_at = None
+        self.restore = restore
         self.running = True
         collect_errors(self)
         self._controller.replay_state_changed.emit(False)
@@ -294,6 +303,9 @@ class ReplaySequence:
             return
         try:
             with replaying():
+                # The panel shows what the step ran with, so a restored tab shows the values
+                # that produced its result and the next click starts from them.
+                self._controller.view.write_back(declaration.name, tuple(args), kwargs)
                 value = method(*args, **kwargs)
         except Exception as e:
             logger.warning(f"Replaying {declaration.name} raised: {e!r}")

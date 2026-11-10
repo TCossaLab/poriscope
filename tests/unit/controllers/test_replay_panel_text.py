@@ -21,12 +21,29 @@ from pytest_mock import MockerFixture
 from poriscope.controllers.main_controller import MainController
 from poriscope.utils.LogDecorator import register_action
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaModel import PLOT_CONFIGURATION_FORMAT, MetaModel
+
+
+def _plot_configuration(tab: str, entries: List[Dict[str, Any]]) -> str:
+    """A plot configuration file's text, as Save Plot Configuration writes it."""
+    return json.dumps(
+        {
+            "format": PLOT_CONFIGURATION_FORMAT,
+            "format_version": 1,
+            "poriscope_version": "2.1.0",
+            "tab": tab,
+            "actions": entries,
+        }
+    )
 
 
 class _Model(QObject):
     run_finished = Signal(int, str)
     update_progressbar = Signal(float, str)
     add_text_to_display = Signal(str, str)
+
+    #: The real reader, so a loaded file is checked as the tab's Model checks it.
+    read_plot_configuration = MetaModel.read_plot_configuration
 
     def __init__(self) -> None:
         super().__init__()
@@ -181,7 +198,10 @@ def test_a_refused_load_is_shown_at_once(
     tab = _replay_up_to_the_find(main, qtbot)
     path = tmp_path / "actions.json"
     path.write_text(
-        json.dumps({"0": {"action": "draw", "args": [], "kwargs": {"label": "late"}}}),
+        _plot_configuration(
+            tab.__class__.__name__,
+            [{"action": "draw", "args": [], "kwargs": {"label": "late"}}],
+        ),
         encoding="utf-8",
     )
 

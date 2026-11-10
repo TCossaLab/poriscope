@@ -3,12 +3,12 @@ Tests for poriscope.utils.MetaController.MetaController.
 
 Covers:
 - export_plot_data (data present, data absent, no filename given)
-- load_actions_from_json (success, file error, class name key present)
+- load_actions_from_json (a saved plot configuration replays; unreadable, earlier and other-tab files refused)
 - relay_add_text_to_display delegation
 - handle_kill_worker (valid identifier, invalid format, key missing, channel missing)
 - handle_kill_all_workers (matching subclass, non-matching subclass)
 - update_available_plugins delegation
-- save_tab_actions emits signal
+- save_tab_actions writes the kept actions as a plot configuration
 - update_tab_actions (add history, undo normal, undo empty, undo skips reset_actions)
 - _relay_create_plugin emits create_plugin signal
 """
@@ -19,7 +19,7 @@ import json
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, override
-from unittest.mock import MagicMock, mock_open
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -119,7 +119,6 @@ def controller(
     for sig in [
         "add_text_to_display",
         "update_tab_action_history",
-        "save_tab_action_history",
         "create_plugin",
     ]:
         mock_sig = mocker.Mock()
@@ -217,65 +216,60 @@ def test_export_plot_data_does_not_save_when_no_filename(
 # ------------------- load_actions_from_json --------------------------
 
 
-def test_load_actions_from_json_updates_view_on_success(
-    controller: MetaController,
-    mock_view: MagicMock,
-    mocker: MockerFixture,
-) -> None:
+class _RealModel(MetaModel):
+    """A concrete MetaModel, so the plot configuration is read and written for real."""
+
+    @override
+    def _init(self) -> None:
+        pass
+
+
+@pytest.fixture
+def real_model(controller: MetaController, qapp: Any) -> MetaModel:
     """
-    Parse a JSON file and pass the actions to the view.
+    Give the controller a real Model, as the tab has, for the file it reads and writes.
 
     :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    :param mocker: Pytest-mock fixture.
+    :param qapp: pytest-qt's application, which a QObject needs.
+    :return: the model now on the controller
     """
-    actions = {"step1": {"action": "do_something"}}
-    mocker.patch("builtins.open", mock_open(read_data=json.dumps(actions)))
-
-    controller.load_actions_from_json("actions.json")
-
-    controller.start_replay.assert_called_once()  # type: ignore[attr-defined]
-    assert list(controller.start_replay.call_args[0][0]) == list(actions.values())  # type: ignore[attr-defined]
+    model = _RealModel()
+    controller.model = model
+    return model
 
 
-def test_load_actions_from_json_returns_none_on_file_error(
-    controller: MetaController,
-    mocker: MockerFixture,
+ENTRIES: List[Dict[str, Any]] = [
+    {"action": "reset", "args": [], "kwargs": {"axis_type": "2d"}},
+    {"action": "overlay_plot", "args": [], "kwargs": {"loader": "DB1"}},
+]
+
+
+def _tab(controller: MetaController) -> str:
+    return controller.__class__.__name__
+
+
+def test_a_saved_plot_configuration_is_replayed(
+    controller: MetaController, real_model: MetaModel, tmp_path: Path
 ) -> None:
-    """
-    Return None and log an error when the JSON file cannot be read.
+    path = str(tmp_path / "plots.json")
+    real_model.save_plot_configuration(path, _tab(controller), ENTRIES)
 
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    mocker.patch("builtins.open", side_effect=OSError("not found"))
+    controller.load_actions_from_json(path)
 
-    result = controller.load_actions_from_json("missing.json")
+    controller.start_replay.assert_called_once_with(ENTRIES)  # type: ignore[attr-defined]
+    controller.logger.error.assert_not_called()  # type: ignore[attr-defined]
 
-    assert result is None
+
+def test_a_file_that_cannot_be_read_replays_nothing(
+    controller: MetaController, real_model: MetaModel, tmp_path: Path
+) -> None:
+    controller.load_actions_from_json(str(tmp_path / "missing.json"))
+
+    controller.start_replay.assert_not_called()  # type: ignore[attr-defined]
     controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
-
-
-def test_load_actions_from_json_unwraps_class_name_key(
-    controller: MetaController,
-    mock_view: MagicMock,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Unwrap the actions when the JSON is keyed by the controller class name.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    :param mocker: Pytest-mock fixture.
-    """
-    inner = {"step1": {"action": "do_something"}}
-    actions = {controller.__class__.__name__: inner}
-    mocker.patch("builtins.open", mock_open(read_data=json.dumps(actions)))
-
-    controller.load_actions_from_json("actions.json")
-
-    controller.start_replay.assert_called_once()  # type: ignore[attr-defined]
-    assert list(controller.start_replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
+    assert controller.logger.error.call_args[0][0].startswith(  # type: ignore[attr-defined]
+        "Error loading plot configuration:"
+    )
 
 
 #: An overlay and its reset as Poriscope 2.0.2's Save Plot Configuration saved them: the
@@ -300,31 +294,57 @@ _SAVED_BEFORE_NAMED_VALUES = {
     },
 }
 
+#: As develop saved it once values were named, before the file named its format.
+_SAVED_WITHOUT_A_FORMAT = {
+    "0": {"action": "reset", "args": [], "kwargs": {"axis_type": "2d"}},
+    "1": {"action": "overlay_plot", "args": [], "kwargs": {"loader": "DB1"}},
+}
+
 
 @pytest.mark.parametrize(
     "saved",
-    [_SAVED_BY_2_0, _SAVED_BEFORE_NAMED_VALUES],
-    ids=["2.0", "before-named-values"],
+    [_SAVED_BY_2_0, _SAVED_BEFORE_NAMED_VALUES, _SAVED_WITHOUT_A_FORMAT, [ENTRIES]],
+    ids=["2.0", "before-named-values", "no-format", "a-list"],
 )
-def test_a_plot_configuration_saved_before_2_1_is_refused_whole(
-    controller: MetaController, mocker: MockerFixture, saved: Dict[str, Any]
+def test_an_earlier_plot_configuration_is_refused_whole(
+    controller: MetaController,
+    real_model: MetaModel,
+    tmp_path: Path,
+    saved: Any,
 ) -> None:
     """
-    Nothing replays and one error, a dialog, says why.
+    Nothing replays, and one error, a dialog, says why and how to keep the plots.
 
     :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
+    :param real_model: the controller's real Model.
+    :param tmp_path: pytest's temporary folder.
     :param saved: the file's content
     """
-    mocker.patch("builtins.open", mock_open(read_data=json.dumps(saved)))
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(saved), encoding="utf-8")
 
-    controller.load_actions_from_json("old.json")
+    controller.load_actions_from_json(str(path))
 
     controller.start_replay.assert_not_called()  # type: ignore[attr-defined]
     controller.logger.error.assert_called_once_with(  # type: ignore[attr-defined]
-        "old.json was saved by an earlier version of Poriscope and cannot be replayed. "
-        "To keep these plots, draw them again and save them with Save Plot "
-        "Configuration."
+        f"{path} cannot be replayed: it was saved by an earlier version of Poriscope, or "
+        "is not a plot configuration. To keep these plots, draw them again and save "
+        "them with Save Plot Configuration."
+    )
+
+
+def test_another_tabs_plot_configuration_is_refused(
+    controller: MetaController, real_model: MetaModel, tmp_path: Path
+) -> None:
+    path = str(tmp_path / "protein.json")
+    real_model.save_plot_configuration(path, "ProteinController", ENTRIES)
+
+    controller.load_actions_from_json(path)
+
+    controller.start_replay.assert_not_called()  # type: ignore[attr-defined]
+    controller.logger.error.assert_called_once_with(  # type: ignore[attr-defined]
+        f"{path} cannot be replayed: it holds the plot configuration of "
+        "ProteinController."
     )
 
 
@@ -505,32 +525,51 @@ def test_update_available_plugins_delegates_to_view_and_model(
 # ----------------------- save_tab_actions ----------------------------
 
 
-def test_save_tab_actions_emits_signal_with_history_and_file(
+def test_save_tab_actions_writes_the_kept_actions_as_this_tabs_configuration(
     controller: MetaController,
+    real_model: MetaModel,
+    tmp_path: Path,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Emit save_tab_action_history with the current history and save file path.
+    What a restored session would replay is saved, not the live history.
 
     :param controller: Controller under test.
+    :param real_model: the controller's real Model.
+    :param tmp_path: pytest's temporary folder.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.tab_action_history = OrderedDict({"0": {"action": "do_something"}})
-    controller.save_tab_actions("session.json")
-    controller.save_tab_action_history.emit.assert_called_once_with(
-        controller.tab_action_history, "session.json"
+    controller.tab_action_history = OrderedDict(
+        enumerate(ENTRIES + [{"action": "superseded", "args": [], "kwargs": {}}])
+    )
+    controller.kept_actions = mocker.Mock(return_value=ENTRIES)  # type: ignore[method-assign]
+    path = str(tmp_path / "plots.json")
+
+    controller.save_tab_actions(path)
+
+    assert real_model.read_plot_configuration(path, _tab(controller)) == ENTRIES
+    controller.logger.error.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_a_failed_save_says_so_and_leaves_the_earlier_file(
+    controller: MetaController,
+    real_model: MetaModel,
+    tmp_path: Path,
+    mocker: MockerFixture,
+) -> None:
+    path = str(tmp_path / "plots.json")
+    real_model.save_plot_configuration(path, _tab(controller), ENTRIES)
+    before = Path(path).read_text()
+    controller.kept_actions = mocker.Mock(  # type: ignore[method-assign]
+        return_value=[{"action": "x", "args": [], "kwargs": {"bad": object()}}]
     )
 
+    controller.save_tab_actions(path)
 
-def test_save_tab_actions_emits_signal_with_none_when_no_file(
-    controller: MetaController,
-) -> None:
-    """
-    Emit save_tab_action_history with None when no file path is provided.
-
-    :param controller: Controller under test.
-    """
-    controller.save_tab_actions()
-    controller.save_tab_action_history.emit.assert_called_once_with(
-        controller.tab_action_history, None
+    assert Path(path).read_text() == before
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    assert controller.logger.error.call_args[0][0].startswith(  # type: ignore[attr-defined]
+        f"Unable to save the plot configuration to {path}:"
     )
 
 

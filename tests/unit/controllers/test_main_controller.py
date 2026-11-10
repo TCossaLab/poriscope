@@ -14,7 +14,6 @@ Covers:
 - _lookup_historical_settings (found in current, found in previous, not found)
 - update_available_plugins caches and pushes to tabs
 - save_session (with file, without file, tab state synced first)
-- save_tab_action_history delegates to model
 - load_session (restore tabs, plugins and subset filters, reset first, None history,
   tab error, plugin ValueError, plugin other error, report of unrestored entries)
 - send_analysis_tabs (tabs present, tabs empty)
@@ -26,7 +25,7 @@ from __future__ import annotations
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -105,6 +104,8 @@ def mock_main_view(mocker: MockerFixture) -> MagicMock:
     view.set_user_plugin_location = mocker.Mock()
     view.populate_plugins_menu = mocker.Mock()
     view.add_page = mocker.Mock()
+    # The restore dialog: by default nothing is ticked, as Not now answers.
+    view.ask_which_tabs_to_replay = mocker.Mock(return_value=[])
     return view
 
 
@@ -306,6 +307,7 @@ def test_a_history_change_saves_the_session_with_each_tabs_kept_actions(
     tab = mocker.Mock()
     tab.get_session_state.return_value = {}
     tab.kept_actions.return_value = kept
+    tab.history_change_from_restore_replay.return_value = False
     controller.analysis_tabs = {"MetadataController": tab}
 
     controller.update_tab_action_history("MetadataController", OrderedDict())
@@ -315,7 +317,6 @@ def test_a_history_change_saves_the_session_with_each_tabs_kept_actions(
     mock_main_model.save_session.assert_called_once_with(
         controller.plugin_history, last_tab="MetadataController"
     )
-    mock_main_model.save_tab_actions.assert_not_called()
 
 
 def test_every_open_tab_saves_its_actions_with_any_session_save(
@@ -822,23 +823,6 @@ def test_update_plugin_history_syncs_tab_session_state(
     }
 
 
-def test_save_tab_action_history_delegates_to_model(
-    controller: MainController,
-    mock_main_model: MagicMock,
-) -> None:
-    """
-    Forward the tab action history dict and save file to the model.
-
-    :param controller: Controller under test.
-    :param mock_main_model: Mocked main model.
-    """
-    history = {"SomeTab": {"action": "opened"}}
-
-    controller.save_tab_action_history(history, save_file="session.json")
-
-    mock_main_model.save_tab_actions.assert_called_once_with(history, "session.json")
-
-
 def test_send_analysis_tabs_emits_to_view(
     controller: MainController,
     mock_main_view: MagicMock,
@@ -910,7 +894,6 @@ def test_load_session_restores_tabs_and_plugins(
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
-    tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_available_plugins = mocker.Mock()
     tab_instance.get_session_state.return_value = {}
 
@@ -960,7 +943,6 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
-    tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_available_plugins = mocker.Mock()
     # instantiate_analysis_tab's own update_plugin_history() call syncs session state
     # from every open tab, so this needs a real dict back, not an unconfigured Mock.
@@ -1022,7 +1004,6 @@ def test_load_session_persists_restored_tab_state_before_returning(
         "plugin_state_changed",
         "add_text_to_display",
         "update_tab_action_history",
-        "save_tab_action_history",
     ):
         setattr(tab_instance, signal, mocker.Mock(connect=mocker.Mock()))
     tab_instance.update_available_plugins = mocker.Mock()
@@ -1421,7 +1402,6 @@ class TestResetSession:
         controller.reset_session()
 
         assert not controller.main_model.save_session.called
-        assert not controller.main_model.save_tab_actions.called
 
     def test_saving_resumes_after_the_reset(self, controller):
         controller.data_plugin_controller.delete_all_plugins.return_value = []
@@ -2192,3 +2172,199 @@ def test_what_is_no_edit_changes_no_entry(
     shell.update_plugin_history(history, "")
 
     assert _rewrites(shell) == []
+
+
+# ------------- the starting tab after a load ---------------------------------
+def _named_view_tab(mocker: MockerFixture, view_name: str) -> MagicMock:
+    """
+    A restored tab whose View's class is named as the real one is, which names its page.
+
+    :param mocker: Pytest-mock fixture.
+    :param view_name: the View class name, e.g. "ProteinView"
+    :return: the tab
+    """
+    tab = mocker.Mock()
+    tab.view = type(view_name, (), {})()
+    tab.get_session_state.return_value = {}
+    tab.session_actions.return_value = None
+    tab.kept_actions.return_value = []
+    tab.replay_available.return_value = False
+    tab.history_change_from_restore_replay.return_value = False
+    return tab
+
+
+def _load_with_tabs(
+    controller: MainController,
+    mocker: MockerFixture,
+    last_tab: str,
+    failing: str = "",
+    with_actions: Tuple[str, ...] = (),
+) -> None:
+    """
+    Load a session holding the Raw Data and Protein tabs, with the given last tab.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :param last_tab: the session's last tab
+    :param failing: a tab whose opening raises, as a tab that cannot be restored does
+    :param with_actions: the tabs that hold saved actions to replay
+    """
+    controller.data_plugin_controller.delete_all_plugins.return_value = []
+    views = {"ProteinController": "ProteinView", "RawDataController": "RawDataView"}
+
+    def instantiate(subclass: str) -> None:
+        if subclass == failing:
+            raise RuntimeError("cannot be opened")
+        tab = _named_view_tab(mocker, views[subclass])
+        tab.replay_available.return_value = subclass in with_actions
+        controller.analysis_tabs[subclass] = tab
+
+    controller.instantiate_analysis_tab = mocker.Mock(side_effect=instantiate)  # type: ignore[method-assign]
+    history = OrderedDict(
+        (name, {"metaclass": "MetaController", "subclass": name})
+        for name in ("ProteinController", "RawDataController")
+    )
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(history, last_tab)
+    )
+    controller.load_session("session.json")
+
+
+def _page_calls(controller: MainController) -> List[str]:
+    """
+    The page and highlight calls the load made, and its messages, in order.
+
+    Reset Session's own return to the landing page, which every load starts with, is left
+    out.
+
+    :param controller: Controller under test.
+    :return: "method:first argument" for each call
+    """
+    return [
+        f"{call[0]}:{call[1][0]}"
+        for call in controller.main_view.mock_calls
+        if call[0]
+        in ("sync_sidebar_highlight", "switch_to_page", "add_text_to_display")
+        and call[1][0] != "MainView"
+    ]
+
+
+def test_after_a_load_the_sessions_last_tab_is_showing(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    """
+    Its button is highlighted and its page switched to, after every tab is restored.
+
+    Raw Data is restored after Protein, so without this Raw Data's page would show.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    _load_with_tabs(controller, mocker, "ProteinController")
+
+    calls = _page_calls(controller)
+    assert calls[-3:-1] == [
+        "sync_sidebar_highlight:ProteinView",
+        "switch_to_page:ProteinView",
+    ]
+    assert calls[-1].startswith("add_text_to_display:Loaded session from session.json.")
+
+
+@pytest.mark.parametrize(
+    "last_tab, failing",
+    [
+        ("", ""),
+        ("ProteinController", "ProteinController"),
+        ("ClusteringController", ""),
+    ],
+    ids=["none", "not-restored", "not-in-the-session"],
+)
+def test_a_last_tab_that_cannot_be_shown_leaves_the_page_as_it_was(
+    controller: MainController, mocker: MockerFixture, last_tab: str, failing: str
+) -> None:
+    """
+    With no last tab, or one that is not open, the page is left as the restore left it.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :param last_tab: the session's last tab
+    :param failing: a tab whose opening raises
+    """
+    _load_with_tabs(controller, mocker, last_tab, failing)
+
+    assert [
+        call for call in _page_calls(controller) if not call.startswith("add_text")
+    ] == []
+
+
+# ------------- the restore dialog after a load ---------------------------------
+def test_after_a_load_the_tabs_with_actions_are_offered_last(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    """
+    Asked once, with those tabs' pages in restore order, after the page and the message.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    _load_with_tabs(
+        controller,
+        mocker,
+        "ProteinController",
+        with_actions=("ProteinController", "RawDataController"),
+    )
+
+    view = controller.main_view
+    view.ask_which_tabs_to_replay.assert_called_once_with(
+        ["ProteinView", "RawDataView"]
+    )
+    names = [call[0] for call in view.mock_calls]
+    asked = names.index("ask_which_tabs_to_replay")
+    assert names.index("switch_to_page", names.index("sync_sidebar_highlight")) < asked
+    assert max(i for i, n in enumerate(names) if n == "add_text_to_display") < asked
+
+
+def test_only_the_ticked_tabs_replay(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    controller.main_view.ask_which_tabs_to_replay.return_value = ["RawDataView"]
+
+    _load_with_tabs(
+        controller,
+        mocker,
+        "ProteinController",
+        with_actions=("ProteinController", "RawDataController"),
+    )
+
+    controller.analysis_tabs["RawDataController"].start_replay.assert_called_once_with(
+        restore=True
+    )
+    controller.analysis_tabs["ProteinController"].start_replay.assert_not_called()
+
+
+def test_not_now_replays_nothing(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    _load_with_tabs(
+        controller, mocker, "ProteinController", with_actions=("ProteinController",)
+    )
+
+    controller.main_view.ask_which_tabs_to_replay.assert_called_once()
+    for tab in controller.analysis_tabs.values():
+        tab.start_replay.assert_not_called()
+
+
+def test_a_session_whose_tabs_have_nothing_to_replay_asks_nothing(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    _load_with_tabs(controller, mocker, "ProteinController")
+
+    controller.main_view.ask_which_tabs_to_replay.assert_not_called()
+
+
+def test_a_refused_load_asks_nothing(controller: MainController) -> None:
+    controller.main_model.load_session.side_effect = SessionRefused("it is broken")
+
+    controller.load_session("broken.json")
+
+    controller.main_view.ask_which_tabs_to_replay.assert_not_called()
