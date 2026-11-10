@@ -85,6 +85,12 @@ Step 10 waits for both tracks.
     - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
       history no longer holds them, so a restore does not redraw them.
 
+- **A "Skip this step" choice when a replayed step fails (2026-11-09).** Today a replay stops at the
+  first failed step and asks Go back or Keep (`ReplaySequence._fail`, `MetaView.ask_after_replay_failure`); a later
+  step that does not depend on it (a trace after a failed Find) never runs. A third button would skip the failed step
+  and the steps declared as depending on it, and carry on. Declare first what the declarations miss: Clustering's
+  Merge needs the run before it (both only `additive` on `clusters`), and an Event Analysis fit needs the Raw Data
+  tab's Find (another tab). Changes the replay rule (`DECISIONS.md` 2026-11-05 and 2026-10-17), so it needs a ruling before it is built.
 - **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
   `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
   `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
