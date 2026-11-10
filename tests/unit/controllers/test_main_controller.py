@@ -2049,3 +2049,118 @@ def test_loading_a_chosen_file_never_mentions_the_old_action_autosave(
 
     messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
     assert "tab_action_history.json" not in messages[-1]
+
+
+# ------------- a plugin deleted, renamed or edited -------------------
+def _plugin(key: str, value: object = 1, reader: str = "R1") -> Dict[str, object]:
+    return {
+        "key": key,
+        "metaclass": "MetaEventFinder",
+        "subclass": "SomeFinder",
+        "settings": {
+            "Threshold": {"Type": float, "Value": value},
+            "MetaReader": {"Type": None, "Value": reader},
+        },
+    }
+
+
+def _stored(entry: Dict[str, object]) -> Dict[str, object]:
+    return {name: value for name, value in entry.items() if name != "key"}
+
+
+@pytest.fixture
+def shell(controller: MainController, mocker: MockerFixture) -> MainController:
+    """
+    A shell holding finder F1 on reader R1, writer W1 on F1, and one open tab.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :return: the controller
+    """
+    controller.main_model.get_available_plugins.return_value = {
+        "MetaReader": [],
+        "MetaEventFinder": [],
+        "MetaWriter": [],
+    }
+    controller.plugin_history = {"F1": _stored(_plugin("F1"))}
+    finder, writer = mocker.Mock(), mocker.Mock()
+    finder.get_dependents.return_value = {("MetaWriter", "W1")}
+    writer.get_dependents.return_value = set()
+    controller.data_plugin_controller.get_plugin_instances.return_value = {
+        "MetaEventFinder": {"F1": finder, "F2": finder},
+        "MetaWriter": {"W1": writer},
+    }
+    tab = mocker.Mock()
+    tab.get_session_state.return_value = {}
+    tab.session_actions.return_value = None
+    tab.kept_actions.return_value = []
+    tab.rewrite_plugin_entries.return_value = True
+    controller.analysis_tabs = {"RawDataController": tab}
+    return controller
+
+
+def _rewrites(shell: MainController) -> List[object]:
+    tab = shell.analysis_tabs["RawDataController"]
+    return [call.args for call in tab.rewrite_plugin_entries.call_args_list]
+
+
+def test_deleting_a_plugin_drops_its_entries_without_a_word(
+    shell: MainController,
+) -> None:
+    shell.update_plugin_history({}, "F1")
+
+    assert _rewrites(shell) == [("F1", None)]
+    shell.main_view.add_text_to_display.assert_not_called()
+
+
+def test_renaming_a_plugin_without_changing_a_setting_rewrites_its_entries(
+    shell: MainController,
+) -> None:
+    shell.update_plugin_history(_plugin("F2"), "F1")
+
+    assert _rewrites(shell) == [("F1", "F2")]
+
+
+def test_editing_a_setting_drops_the_plugin_s_entries_and_its_dependents(
+    shell: MainController,
+) -> None:
+    shell.update_plugin_history(_plugin("F1", value=2), "")
+
+    assert _rewrites(shell) == [("F1", None), ("W1", None)]
+    shell.main_view.add_text_to_display.assert_called_once_with(
+        "F1 was edited, so its earlier runs are removed from the history: run them "
+        "again to save them in the session.",
+        "MainController",
+    )
+
+
+def test_a_rename_with_a_changed_setting_drops_under_the_old_name(
+    shell: MainController,
+) -> None:
+    shell.update_plugin_history(_plugin("F2", value=2), "F1")
+
+    assert _rewrites(shell) == [("F1", None), ("W1", None)]
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        _plugin("F1", reader="R2"),
+        _plugin("F1"),
+        _plugin("F9"),
+        {"key": "MetadataController", "metaclass": "MetaController", "subclass": "M"},
+    ],
+    ids=["a-parent-renamed", "nothing-changed", "a-new-plugin", "a-tab-opened"],
+)
+def test_what_is_no_edit_changes_no_entry(
+    shell: MainController, history: Dict[str, object]
+) -> None:
+    """
+    A dependent re-saved after its parent's rename differs only in the parent it names.
+
+    :param shell: the shell
+    :param history: what the plugin controller sends
+    """
+    shell.update_plugin_history(history, "")
+
+    assert _rewrites(shell) == []

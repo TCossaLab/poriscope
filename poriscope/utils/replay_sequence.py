@@ -49,7 +49,15 @@ import inspect
 import logging
 from collections import OrderedDict
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+)
 
 from PySide6.QtCore import QTimer
 
@@ -154,6 +162,29 @@ class ReplaySequence:
             and self.failed_at is None
             and not self.has_remaining()
         )
+
+    def rewrite_entries(
+        self, rewrite: Callable[[List[Any]], Tuple[List[Any], bool]]
+    ) -> bool:
+        """
+        Apply a rewrite to the entries not replayed yet and to the history going back rebuilds.
+
+        The entry a running replay is on is left alone, so the replay stays where it is;
+        the entries already replayed are history already.
+
+        :param rewrite: takes entries, gives back the rewritten ones and whether any changed
+        :type rewrite: Callable[[List[Any]], Tuple[List[Any], bool]]
+        :return: True if anything changed
+        :rtype: bool
+        """
+        start = self._index + 1 if self.running else self._index
+        later, later_changed = rewrite(self._entries[start:])
+        if later_changed:
+            self._entries = self._entries[:start] + later
+        before, before_changed = rewrite(list(self._history_before.values()))
+        if before_changed:
+            self._history_before = OrderedDict(enumerate(before))
+        return later_changed or before_changed
 
     def has_remaining(self) -> bool:
         """

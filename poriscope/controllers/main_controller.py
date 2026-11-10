@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
-from poriscope.models.main_model import MainModel, SessionRefused
+from poriscope.models.main_model import TAB_METACLASS, MainModel, SessionRefused
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.views.main_view import MainView
@@ -455,6 +455,10 @@ class MainController(QObject):
         :param delete_key: The key being removed, or renamed away from, or None.
         :type delete_key: Optional[str]
         """
+        if history and history.get("metaclass") != TAB_METACLASS:
+            self._follow_plugin_change(history, delete_key)
+        elif not history and delete_key:
+            self._rewrite_tab_entries(delete_key, None)
         if history and not delete_key:
             self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
@@ -465,6 +469,107 @@ class MainController(QObject):
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
             self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
+
+    def _follow_plugin_change(
+        self, history: Dict[str, Any], delete_key: Optional[str]
+    ) -> None:
+        """
+        Keep every tab's recorded entries true to a plugin that was edited or renamed.
+
+        Told apart by comparing the incoming settings with the ones stored for the plugin,
+        leaving out the settings that name another plugin: the Edit dialog cannot change
+        those, so they differ only for a plugin whose parent was renamed. A real change is
+        an edit, and the entries naming the plugin and every plugin built on it are dropped,
+        since they would replay with settings they never ran with; the status panel says
+        so. No change but a new key is a rename, and the entries follow it. A new plugin
+        changes nothing.
+
+        :param history: the plugin's saved state, carrying its key
+        :type history: Dict[str, Any]
+        :param delete_key: the key it had before a rename, or "" or None
+        :type delete_key: Optional[str]
+        """
+        key = history["key"]
+        old_key = delete_key or key
+        stored = self.plugin_history.get(old_key)
+        if stored is None:
+            return
+        if self._settings_differ(stored.get("settings"), history.get("settings")):
+            dropped = [
+                self._rewrite_tab_entries(plugin, None)
+                for plugin in [
+                    old_key,
+                    *self._plugins_built_on(history["metaclass"], key),
+                ]
+            ]
+            if any(dropped):
+                self.main_view.add_text_to_display(
+                    f"{key} was edited, so its earlier runs are removed from the "
+                    "history: run them again to save them in the session.",
+                    self.__class__.__name__,
+                )
+        elif delete_key and delete_key != key:
+            self._rewrite_tab_entries(delete_key, key)
+
+    def _settings_differ(self, stored: Any, incoming: Any) -> bool:
+        """
+        Do two plugin settings differ in anything but the plugins they name?
+
+        :param stored: the settings stored for the plugin
+        :type stored: Any
+        :param incoming: the settings it reports now
+        :type incoming: Any
+        :return: True if a setting other than a plugin reference differs
+        :rtype: bool
+        """
+        if not isinstance(stored, dict) or not isinstance(incoming, dict):
+            return stored != incoming
+        references = set(self.main_model.get_available_plugins())
+        return {k: v for k, v in stored.items() if k not in references} != {
+            k: v for k, v in incoming.items() if k not in references
+        }
+
+    def _plugins_built_on(self, metaclass: str, key: str) -> List[str]:
+        """
+        Every plugin that depends on this one, directly or through another.
+
+        :param metaclass: the plugin's family
+        :type metaclass: str
+        :param key: the plugin's key
+        :type key: str
+        :return: the dependents' keys
+        :rtype: List[str]
+        """
+        instances = self.data_plugin_controller.get_plugin_instances()
+        found: List[str] = []
+        waiting = [(metaclass, key)]
+        while waiting:
+            family, name = waiting.pop()
+            instance = instances.get(family, {}).get(name)
+            if instance is None:
+                continue
+            for dependent in instance.get_dependents():
+                if dependent[1] not in found:
+                    found.append(dependent[1])
+                    waiting.append(dependent)
+        return found
+
+    def _rewrite_tab_entries(self, key: str, new_key: Optional[str]) -> bool:
+        """
+        Drop or rename, in every open tab, the recorded entries naming a plugin.
+
+        :param key: the plugin's key
+        :type key: str
+        :param new_key: its new key, or None to drop the entries
+        :type new_key: Optional[str]
+        :return: True if any tab changed
+        :rtype: bool
+        """
+        changed = False
+        for tab in self.analysis_tabs.values():
+            if tab is not None and tab.rewrite_plugin_entries(key, new_key):
+                changed = True
+        return changed
 
     @log(logger=logger)
     def _renamed_history(

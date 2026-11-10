@@ -10,6 +10,7 @@ it raises, or when an action that returns ``False`` for "did nothing" does so. T
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
@@ -89,7 +90,11 @@ class _Tab(MetaController):
         raise RuntimeError("the column is gone")
 
     @register_action(
-        "find", kind="result", key=("finder", "channel"), skip_on_false=True
+        "find",
+        kind="result",
+        key=("finder", "channel"),
+        skip_on_false=True,
+        plugin_args=("finder",),
     )
     def find(self, finder: str, channel: int) -> bool:
         self.calls.append(f"find:{finder}/{channel}")
@@ -638,3 +643,111 @@ class TestTheLoadedSession:
         self._until_ended(tab, qtbot)
 
         assert tab.calls == ["draw:b", "draw:b", "draw:a"]
+
+
+class TestAPluginThatChanged:
+    """
+    Deleting a plugin drops the entries naming it, renaming rewrites them, in every copy a
+    tab holds: so Undo, Replay Actions and Go back never reach for a plugin that is gone.
+    """
+
+    @staticmethod
+    def _history(tab: _Tab, *entries: Dict[str, Any]) -> None:
+        tab.tab_action_history = OrderedDict(enumerate(entries))
+
+    def test_the_live_history_drops_them_and_the_main_window_is_told(
+        self, tab: _Tab
+    ) -> None:
+        self._history(
+            tab, _entry("find", finder="A", channel=1), _entry("draw", label="a")
+        )
+        sent: List[Any] = []
+        tab.update_tab_action_history.connect(
+            lambda name, history: sent.append(history)
+        )
+
+        assert tab.rewrite_plugin_entries("A", None)
+
+        assert list(tab.tab_action_history.values()) == [_entry("draw", label="a")]
+        assert len(sent) == 1
+
+    def test_a_rename_rewrites_them_everywhere(self, tab: _Tab) -> None:
+        self._history(tab, _entry("find", finder="A", channel=1))
+        tab.set_history_aside()
+        tab.hold_session_actions([_entry("find", finder="A", channel=2)], None)
+
+        assert tab.rewrite_plugin_entries("A", "A2")
+
+        assert tab._history_set_aside is not None
+        assert list(tab._history_set_aside.values()) == [
+            _entry("find", finder="A2", channel=1)
+        ]
+        assert tab.session_actions() == [_entry("find", finder="A2", channel=2)]
+
+    def test_a_reset_s_set_aside_history_left_empty_is_nothing_to_bring_back(
+        self, tab: _Tab
+    ) -> None:
+        self._history(tab, _entry("find", finder="A", channel=1))
+        tab.set_history_aside()
+
+        tab.rewrite_plugin_entries("A", None)
+
+        assert tab._history_set_aside is None
+
+    def test_an_entry_naming_no_plugin_or_another_one_is_kept(self, tab: _Tab) -> None:
+        self._history(
+            tab, _entry("find", finder="B", channel=1), _entry("draw", label="A")
+        )
+
+        assert not tab.rewrite_plugin_entries("A", None)
+        assert len(tab.tab_action_history) == 2
+
+    def test_a_stopped_replay_continues_without_them(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        tab.draws["b"] = False
+        tab.start_replay(
+            [
+                _entry("draw", "b"),
+                _entry("find", finder="A", channel=1),
+                _entry("draw", "c"),
+            ]
+        )
+        qtbot.waitUntil(lambda: not tab.replay_sequence.running)
+
+        tab.rewrite_plugin_entries("A", None)
+        tab.draws["b"] = True
+        tab.start_replay()
+        qtbot.waitUntil(lambda: not tab.replay_sequence.running)
+
+        assert tab.calls == ["draw:b", "draw:b", "draw:c"]
+
+    def test_the_entry_a_running_replay_is_on_stays(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.start_replay([_entry("find", finder="A", channel=1), _entry("draw", "c")])
+        qtbot.waitUntil(lambda: tab.replay_sequence.waiting_for is not None)
+
+        tab.rewrite_plugin_entries("A", None)
+        _run_ends(tab, tab.replay_sequence, 1, "A")
+        qtbot.waitUntil(lambda: not tab.replay_sequence.running)
+
+        assert tab.calls == ["find:A/1", "draw:c"]
+
+    def test_going_back_rebuilds_without_them(self, tab: _Tab, qtbot: Any) -> None:
+        tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
+        self._history(
+            tab, _entry("draw", label="x"), _entry("find", finder="A", channel=1)
+        )
+
+        def ask(*args: Any) -> str:
+            tab.rewrite_plugin_entries("A", None)
+            return "back"
+
+        tab.view.ask_after_replay_failure = MagicMock(side_effect=ask)
+        tab.start_replay([_entry("boom")])
+        qtbot.waitUntil(lambda: "draw:x" in tab.calls)
+        qtbot.waitUntil(lambda: not tab.replay_sequence.running)
+
+        assert tab.calls == ["boom", "draw:x"]

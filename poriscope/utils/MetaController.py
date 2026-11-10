@@ -1007,6 +1007,89 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         )
 
     @log(logger=logger)
+    def rewrite_plugin_entries(self, key: str, new_key: Optional[str]) -> bool:
+        """
+        Drop or rename the recorded entries that name a plugin, in every copy this tab holds.
+
+        An entry names a plugin when one of its ``plugin_args`` holds the key. The copies are
+        the live history, what the Reset button set aside, the actions the tab was loaded
+        with, and a replay's entries not reached yet and the history going back rebuilds. So
+        Undo, Replay Actions and Go back never replay an entry for a plugin that is gone,
+        renamed or no longer run with the settings it recorded.
+
+        :param key: the plugin's key the entries name
+        :type key: str
+        :param new_key: the key to name instead, or None to drop the entries
+        :type new_key: Optional[str]
+        :return: True if any copy changed
+        :rtype: bool
+        """
+
+        def rewrite(entries: List[Any]) -> Tuple[List[Any], bool]:
+            return self._entries_rewritten(entries, key, new_key)
+
+        live, live_changed = rewrite(list(self.tab_action_history.values()))
+        if live_changed:
+            self.tab_action_history = OrderedDict(enumerate(live))
+        changed = live_changed
+        for name in ("_history_set_aside", "_history_set_aside_dropped"):
+            kept: Optional["OrderedDict[int, Dict[str, Any]]"] = getattr(self, name)
+            if kept is not None:
+                entries, kept_changed = rewrite(list(kept.values()))
+                if kept_changed:
+                    setattr(self, name, OrderedDict(enumerate(entries)) or None)
+                    changed = True
+        if self._session_actions is not None:
+            loaded, loaded_changed = rewrite(self._session_actions)
+            if loaded_changed:
+                self._session_actions = loaded
+                changed = True
+        changed = self.replay_sequence.rewrite_entries(rewrite) or changed
+        if live_changed:
+            self.update_tab_action_history.emit(
+                self.__class__.__name__, self.tab_action_history
+            )
+        return changed
+
+    def _entries_rewritten(
+        self, entries: List[Any], key: str, new_key: Optional[str]
+    ) -> Tuple[List[Any], bool]:
+        """
+        The entries with those naming a plugin dropped, or named by its new key.
+
+        :param entries: recorded entries
+        :type entries: List[Any]
+        :param key: the plugin's key the entries name
+        :type key: str
+        :param new_key: the key to name instead, or None to drop the entries
+        :type new_key: Optional[str]
+        :return: the entries, and whether any changed
+        :rtype: Tuple[List[Any], bool]
+        """
+        declarations = self._declarations_of_tab()
+        rewritten: List[Any] = []
+        changed = False
+        for entry in entries:
+            name = entry.get("action") if isinstance(entry, Mapping) else None
+            declaration = declarations.get(name) if isinstance(name, str) else None
+            kwargs = entry.get("kwargs") if declaration is not None else None
+            naming = (
+                [arg for arg in declaration.plugin_args if kwargs.get(arg) == key]
+                if declaration is not None and isinstance(kwargs, Mapping)
+                else []
+            )
+            if not naming:
+                rewritten.append(entry)
+                continue
+            changed = True
+            if new_key is not None:
+                renamed = deepcopy(dict(entry))
+                for arg in naming:
+                    renamed["kwargs"][arg] = new_key
+                rewritten.append(renamed)
+        return rewritten, changed
+
+    @log(logger=logger)
     def kept_actions(self) -> List[Dict[str, Any]]:
         """
         The entries of this tab's history a restored session replays, for the session file.
