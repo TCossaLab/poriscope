@@ -44,7 +44,7 @@ It cannot see a direct ``.text()`` or ``.currentText()`` call on a widget; the s
 
 import contextlib
 import contextvars
-from typing import Iterator
+from typing import Iterator, List
 
 _replaying: contextvars.ContextVar[int] = contextvars.ContextVar(
     "poriscope_replaying", default=0
@@ -63,6 +63,54 @@ def replaying() -> Iterator[None]:
         yield
     finally:
         _replaying.reset(token)
+
+
+#: The lists each running replay collects errors into, while it runs; the window's thread
+#: alone touches it.
+_error_collectors: List[List[str]] = []
+
+
+def collect_errors(collector: List[str]) -> None:
+    """
+    Collect into this list every error a dialog would show, until told to stop.
+
+    A running replay collects them, so its own question can say what its step reported
+    instead of each error opening a dialog. Call it on the window's thread.
+
+    :param collector: the list to append each error's text to
+    :type collector: List[str]
+    """
+    if not any(existing is collector for existing in _error_collectors):
+        _error_collectors.append(collector)
+
+
+def stop_collecting_errors(collector: List[str]) -> None:
+    """
+    Stop collecting errors into this list.
+
+    :param collector: a list passed to :py:func:`collect_errors`
+    :type collector: List[str]
+    """
+    _error_collectors[:] = [
+        existing for existing in _error_collectors if existing is not collector
+    ]
+
+
+def hold_back_error(text: str) -> bool:
+    """
+    Hand an error to every running replay instead of a dialog, if any replay is running.
+
+    An error logged by a worker thread cannot be told apart by replay, so each running
+    replay gets it. Call it on the window's thread.
+
+    :param text: the error's text
+    :type text: str
+    :return: True if a replay took it, so no dialog should show it
+    :rtype: bool
+    """
+    for collector in _error_collectors:
+        collector.append(text)
+    return bool(_error_collectors)
 
 
 def is_replaying() -> bool:

@@ -112,8 +112,9 @@ held back and shown together when it ends, so they do not mix with other tabs' m
 that waits for an event finder or fitter carries on only if the run finishes with results.
 
 If a step fails, a dialog names it and asks the question below. It is the only dialog a
-replay opens: an error a replayed step logs goes to the log file, not to a dialog of its own,
-and what the step reports is on the message panel.
+replay opens: an error the step logs - a finder's or fitter's, say - goes to the log file and is
+shown in this dialog under "What the step reported", not in a dialog of its own, and what the
+step reports is on the message panel.
 
 - **Go back**: the tab is cleared and redrawn as it was before the replay.
 - **Keep**: what was replayed stays. **Replay Actions** is then enabled for that tab, and continues

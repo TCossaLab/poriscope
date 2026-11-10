@@ -62,7 +62,11 @@ from typing import (
 from PySide6.QtCore import QTimer
 
 from poriscope.utils.LogDecorator import ACTION_DECLARATION_ATTR, ActionDeclaration
-from poriscope.utils.ReplayGuard import replaying
+from poriscope.utils.ReplayGuard import (
+    collect_errors,
+    replaying,
+    stop_collecting_errors,
+)
 
 if TYPE_CHECKING:
     # MetaController creates a ReplaySequence for every tab, so it imports this module.
@@ -101,6 +105,8 @@ class ReplaySequence:
         self.from_session = False
         #: Whether the replay going back was one of the loaded actions.
         self._back_from_session = False
+        #: The errors logged since the step the replay is on began, shown in its question.
+        self._step_errors: List[str] = []
 
     def start(
         self, entries: Optional[Iterable[Any]] = None, from_session: bool = False
@@ -129,6 +135,7 @@ class ReplaySequence:
             return False
         self.failed_at = None
         self.running = True
+        collect_errors(self._step_errors)
         self._controller.replay_state_changed.emit(False)
         self._schedule()
         return True
@@ -252,6 +259,7 @@ class ReplaySequence:
         """
         if generation != self._generation:
             return
+        self._step_errors.clear()
         if not self.has_remaining():
             went_back = self._going_back
             self._end("back to before the replay" if went_back else "replay done")
@@ -381,7 +389,7 @@ class ReplaySequence:
         action = str(self._entries[self._index].get("action"))
         name = self._controller.__class__.__name__
         choice = self._controller.view.ask_after_replay_failure(
-            name, step, total, action, reason
+            name, step, total, action, reason, "\n".join(self._step_errors)
         )
         if choice == "back":
             self._go_back()
@@ -462,6 +470,7 @@ class ReplaySequence:
         :type text: Optional[str]
         """
         self.running = False
+        stop_collecting_errors(self._step_errors)
         self.waiting_for = None
         self._launched = False
         self._going_back = False

@@ -18,7 +18,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from poriscope.utils.QtHandler import MAX_PENDING_RECORDS, QtHandler
-from poriscope.utils.ReplayGuard import replaying
+from poriscope.utils.ReplayGuard import (
+    collect_errors,
+    replaying,
+    stop_collecting_errors,
+)
 
 
 def make_record(level: int, message: str = "something happened") -> logging.LogRecord:
@@ -243,3 +247,39 @@ class TestWhileReplaying:
         handler.emit(record)
 
         handler.emitter.emit_message.emit.assert_called_once_with(record)
+
+    def test_an_error_in_a_replayed_step_is_kept_for_the_replay_s_question(
+        self, handler: QtHandler
+    ) -> None:
+        handler.emitter = MagicMock()
+        collected: list = []
+        collect_errors(collected)
+        try:
+            with replaying():
+                handler.emit(make_record(logging.ERROR, "the column is gone"))
+        finally:
+            stop_collecting_errors(collected)
+
+        handler.emitter.emit_message.emit.assert_not_called()
+        assert collected == ["the column is gone"]
+
+    def test_an_error_from_a_worker_while_a_replay_runs_opens_no_dialog(
+        self, handler: QtHandler, mocker
+    ) -> None:
+        """
+        A finder's worker thread logs without the replaying flag; its record reaches the
+        window's thread while the replay waits on the run.
+        """
+        shown = mocker.patch.object(handler, "_show_dialog")
+        collected: list = []
+        collect_errors(collected)
+        try:
+            handler.show_message_box(make_record(logging.ERROR, "channel 5 is invalid"))
+        finally:
+            stop_collecting_errors(collected)
+
+        shown.assert_not_called()
+        assert collected == ["channel 5 is invalid"]
+
+        handler.show_message_box(make_record(logging.ERROR, "after the replay"))
+        shown.assert_called_once()

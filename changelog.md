@@ -206,7 +206,7 @@
 
 * Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back, and the status panel says which
 
-* A replay opens no error dialogs of its own: an error a replayed step logs goes to the log file, and a failed step is reported only by the Go back / Keep question
+* A replay opens no error dialogs of its own: an error a replayed step logs, its finder's or fitter's included, goes to the log file and into the Go back / Keep question, which says what the step reported
 
 * **Fixed cancelling Save Session showing an error dialog**; a cancelled dialog now saves nothing
 

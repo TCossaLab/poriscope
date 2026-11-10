@@ -10,6 +10,7 @@ it raises, or when an action that returns ``False`` for "did nothing" does so. T
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
@@ -20,6 +21,7 @@ from PySide6.QtCore import QTimer
 
 from poriscope.utils.LogDecorator import register_action
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.QtHandler import QtHandler
 from poriscope.utils.replay_sequence import ReplaySequence
 
 
@@ -82,6 +84,12 @@ class _Tab(MetaController):
     @register_action("overlay", kind="additive", figure="plot")
     def overlay(self, label: str) -> bool:
         self.calls.append(f"overlay:{label}")
+        return False
+
+    @register_action("complain", kind="view", figure="plot", skip_on_false=True)
+    def complain(self) -> bool:
+        self.calls.append("complain")
+        logging.getLogger("poriscope.test_replay_step").error("the column is gone")
         return False
 
     @register_action("boom", kind="view", figure="plot")
@@ -426,7 +434,7 @@ class TestAfterAFailure:
         _replay(tab, [_entry("draw", "a"), _entry("boom")], qtbot)
 
         ask.assert_called_once_with(
-            "_Tab", 2, 2, "boom", "boom raised RuntimeError: the column is gone"
+            "_Tab", 2, 2, "boom", "boom raised RuntimeError: the column is gone", ""
         )
         assert order[-2:] == [
             "replay stopped at step 2 of 2: boom raised RuntimeError: the "
@@ -751,3 +759,23 @@ class TestAPluginThatChanged:
         qtbot.waitUntil(lambda: not tab.replay_sequence.running)
 
         assert tab.calls == ["boom", "draw:x"]
+
+
+def test_a_failed_step_s_errors_are_in_the_one_dialog_and_open_none_of_their_own(
+    tab: _Tab, qtbot: Any, mocker: Any
+) -> None:
+    handler = QtHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    shown = mocker.patch.object(handler, "_show_dialog")
+    step_logger = logging.getLogger("poriscope.test_replay_step")
+    step_logger.addHandler(handler)
+    tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+    try:
+        tab.start_replay([_entry("complain")])
+        qtbot.waitUntil(lambda: not tab.replay_sequence.running)
+        qtbot.wait(20)
+    finally:
+        step_logger.removeHandler(handler)
+
+    shown.assert_not_called()
+    assert tab.view.ask_after_replay_failure.call_args.args[-1] == "the column is gone"

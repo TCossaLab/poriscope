@@ -318,7 +318,13 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     def ask_after_replay_failure(
-        self, tab: str, step: int, total: int, action: str, reason: str
+        self,
+        tab: str,
+        step: int,
+        total: int,
+        action: str,
+        reason: str,
+        details: str = "",
     ) -> str:
         """
         Ask the user whether to go back to before a replay that failed, or keep what it did.
@@ -336,6 +342,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         :type action: str
         :param reason: what went wrong
         :type reason: str
+        :param details: the errors the step logged, one per line, or ""; shown here, since a
+            replay opens no other dialog
+        :type details: str
         :return: "back" or "keep"
         :rtype: str
         """
@@ -345,8 +354,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         box.setText(
             f"{tab} could not replay step {step} of {total}, {action}: {reason}."
         )
+        reported = f"What the step reported:\n{details}\n\n" if details else ""
         box.setInformativeText(
-            "The status panel shows what the replayed actions reported.\n\n"
+            reported + "The status panel shows what the replayed actions reported.\n\n"
             "Go back returns the tab to how it was before this replay. Keep leaves what "
             "was replayed, and Replay Actions continues from this step."
         )
