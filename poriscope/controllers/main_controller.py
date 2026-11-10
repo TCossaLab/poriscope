@@ -29,7 +29,7 @@ import functools
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from PySide6.QtCore import QObject, Slot
 
@@ -77,6 +77,9 @@ class MainController(QObject):
         self.plugin_history: Dict[str, Any] = {}
         #: The analysis tab whose history changed last, saved with the session.
         self.last_tab: str = ""
+        #: The tabs whose history has changed since the session was loaded. Until it
+        #: does, a tab saves the actions it was loaded with; after, what it ran.
+        self._changed_since_load: Set[str] = set()
 
         # Both histories persist themselves on every change. Reset Session
         # empties them on its way to a clean workspace, and without this guard
@@ -336,6 +339,7 @@ class MainController(QObject):
             self.analysis_tabs.clear()
             self.plugin_history.clear()
             self.last_tab = ""
+            self._changed_since_load.clear()
         finally:
             self._suppress_session_save = False
 
@@ -513,7 +517,27 @@ class MainController(QObject):
             state = tab.get_session_state()
             if state:
                 entry.update(copy.deepcopy(state))
-            entry["actions"] = tab.kept_actions()
+            entry["actions"] = self._actions_to_save(subclass, tab)
+
+    def _actions_to_save(self, subclass: str, tab: MetaController) -> List[Any]:
+        """
+        The actions a tab's entry saves: what it was loaded with, until its history changes.
+
+        A tab loaded from a session that the user has not replayed or worked in saves the
+        session's actions, not yet replayed, so a Restore after a crash still offers them.
+        Once its history changes, it saves what it ran, as the kept history.
+
+        :param subclass: the tab's class name
+        :type subclass: str
+        :param tab: the tab
+        :type tab: MetaController
+        :return: the entries to save
+        :rtype: List[Any]
+        """
+        loaded = tab.session_actions()
+        if loaded is not None and subclass not in self._changed_since_load:
+            return loaded
+        return tab.kept_actions()
 
     @Slot(str, str, str)
     def handle_plugin_state_changed(
@@ -538,6 +562,7 @@ class MainController(QObject):
         :type history: Any
         """
         self.last_tab = key
+        self._changed_since_load.add(key)
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
             self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
@@ -749,6 +774,8 @@ class MainController(QObject):
         # change the dict it is iterating a copy of.
         entries = len(self.plugin_history)
         unrestored: List[str] = []
+        tabs_restored = 0
+        tabs_with_actions = 0
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
@@ -767,6 +794,14 @@ class MainController(QObject):
                 tab = self.analysis_tabs.get(subclass)
                 if tab is not None:
                     tab.restore_session_state(plugin)
+                    tabs_restored += 1
+                    if "actions" in plugin:
+                        tabs_with_actions += 1
+                    # Read once, from the loaded entry: opening the tab replaced its entry
+                    # in plugin_history with a bare one.
+                    tab.hold_session_actions(
+                        plugin.get("actions"), str(file_name) if file_name else None
+                    )
             else:
                 settings = plugin.get("settings")
                 try:
@@ -796,6 +831,8 @@ class MainController(QObject):
         # recorded it with no subset filters at all, and the restore after that one
         # lost them: Metadata kept its filters and Protein did not, purely because
         # Protein was opened second and so is restored second.
+        # Anything a tab recorded while it was being restored is part of the load.
+        self._changed_since_load.clear()
         self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
@@ -803,6 +840,13 @@ class MainController(QObject):
             message = f"Loaded session from {file_name}."
         else:
             message = "Restored last saved session."
+        if tabs_restored and not tabs_with_actions:
+            message += " This session has no saved actions to replay."
+            if not file_name and self.main_model.old_action_history_exists():
+                message += (
+                    " The action history saved by an earlier version "
+                    "(tab_action_history.json) cannot be replayed."
+                )
         if unrestored:
             # Each failure has already been reported individually, but those
             # messages scroll and several of them are usually consequences of one

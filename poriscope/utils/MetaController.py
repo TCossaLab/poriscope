@@ -30,7 +30,17 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -148,6 +158,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: What the last recorded entry dropped from :py:attr:`_history_set_aside`, put back
     #: if that entry is discarded: a refused plot leaves nothing kept after the Reset.
     _history_set_aside_dropped: Optional["OrderedDict[int, Dict[str, Any]]"] = None
+
+    #: The actions of the session this tab was loaded from, read once at the load; None
+    #: when the tab was not loaded from a session, or its entry held no actions.
+    _session_actions: Optional[List[Dict[str, Any]]] = None
+
+    #: The session file those actions came from, or None for the autosave (Restore).
+    session_source: Optional[str] = None
 
     def __init__(
         self,
@@ -926,6 +943,36 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.tab_action_history = OrderedDict()
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
+        )
+
+    @log(logger=logger)
+    def hold_session_actions(
+        self, entries: Optional[Sequence[Dict[str, Any]]], source: Optional[str]
+    ) -> None:
+        """
+        Keep the actions of the session this tab was just loaded from.
+
+        Called once, by the load. Replay Actions replays this copy, even after the user has
+        worked in the tab; the file is not read again.
+
+        :param entries: the tab's saved actions, or None if its entry held none
+        :type entries: Optional[Sequence[Dict[str, Any]]]
+        :param source: the session file they came from, or None for the autosave
+        :type source: Optional[str]
+        """
+        self._session_actions = None if entries is None else deepcopy(list(entries))
+        self.session_source = source
+
+    @log(logger=logger)
+    def session_actions(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        A copy of the actions of the session this tab was loaded from.
+
+        :return: the entries, or None if the tab was not loaded with any
+        :rtype: Optional[List[Dict[str, Any]]]
+        """
+        return (
+            None if self._session_actions is None else deepcopy(self._session_actions)
         )
 
     @log(logger=logger)

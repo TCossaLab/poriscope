@@ -732,7 +732,11 @@ class MainModel(QObject):
                 raise SessionRefused(_NOT_A_SESSION)
             history[key] = entry
         for name, state in tabs.items():
-            if not isinstance(state, dict) or name in history:
+            if (
+                not isinstance(state, dict)
+                or name in history
+                or not isinstance(state.get("actions", []), list)
+            ):
                 raise SessionRefused(_NOT_A_SESSION)
             history[name] = OrderedDict(
                 [("metaclass", TAB_METACLASS), ("subclass", name), *state.items()]
@@ -765,6 +769,21 @@ class MainModel(QObject):
             if entry["metaclass"] == TAB_METACLASS
         ]
         return LoadedSession(OrderedDict(plugins + tabs), "")
+
+    @log(logger=logger)
+    def old_action_history_exists(self) -> bool:
+        """
+        Is the action autosave 2.0 wrote, ``tab_action_history.json``, still in the session folder?
+
+        This version never reads it; a Restore says so. The file is not touched.
+
+        :return: True if it is there; False if not, or if the folder cannot be read
+        :rtype: bool
+        """
+        try:
+            return Path(self.session_path, "tab_action_history.json").exists()
+        except OSError:
+            return False
 
     @log(logger=logger)
     def replace_classes_with_class_names(self, d: Any) -> None:

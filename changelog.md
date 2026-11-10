@@ -208,6 +208,10 @@
 
 * A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session
 
+* Load and Restore Session read each tab's saved actions once and keep them; until a tab's history changes, the autosave keeps them too, so a Restore after a crash still has them
+
+* A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place
+
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency

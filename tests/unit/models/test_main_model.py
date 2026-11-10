@@ -300,6 +300,11 @@ def test_a_session_in_a_format_this_version_does_not_read_is_refused_whole(
         {"format_version": 2, "plugins": [], "tabs": {"MetadataController": []}},
         {
             "format_version": 2,
+            "plugins": [],
+            "tabs": {"MetadataController": {"actions": {"0": {}}}},
+        },
+        {
+            "format_version": 2,
             "plugins": [
                 {"key": "MetadataController", "metaclass": "M", "subclass": "S"}
             ],
@@ -314,6 +319,7 @@ def test_a_session_in_a_format_this_version_does_not_read_is_refused_whole(
         "plugin-without-key",
         "duplicate-key",
         "tab-not-an-object",
+        "actions-not-a-list",
         "tab-named-like-a-plugin",
         "not-an-object",
     ],
@@ -893,3 +899,14 @@ class TestTypeRoundTrip:
 
         assert settings["Surprise"]["Codec"] == "bool"
         assert "Codec" in caplog.text
+
+
+def test_the_old_action_autosave_is_found_and_left_alone(main_model):
+    """2.0 wrote the action history to its own file, which this version never reads."""
+    old = Path(main_model.session_path, "tab_action_history.json")
+    assert not main_model.old_action_history_exists()
+
+    old.write_text("{}")
+
+    assert main_model.old_action_history_exists()
+    assert old.read_text() == "{}"

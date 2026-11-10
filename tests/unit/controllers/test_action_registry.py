@@ -413,6 +413,38 @@ class TestReplayRunsInsideTheTripwire:
         forbid_while_replaying("after the replay")
 
 
+class TestSessionActions:
+    """A loaded session's actions, held on the tab: read once, handed out as copies."""
+
+    def test_a_tab_not_loaded_from_a_session_holds_none(
+        self, controller: _Controller
+    ) -> None:
+        assert controller.session_actions() is None
+
+    def test_it_holds_a_copy_of_what_the_load_handed_it(
+        self, controller: _Controller
+    ) -> None:
+        entries = [{"action": "overlay_plot", "args": [], "kwargs": {"label": "b"}}]
+
+        controller.hold_session_actions(entries, "session.json")
+        entries[0]["kwargs"]["label"] = "changed"
+        handed = controller.session_actions()
+        assert handed is not None
+        handed[0]["kwargs"]["label"] = "changed too"
+
+        assert controller.session_actions() == [
+            {"action": "overlay_plot", "args": [], "kwargs": {"label": "b"}}
+        ]
+        assert controller.session_source == "session.json"
+
+    def test_a_session_without_actions_for_the_tab_holds_none(
+        self, controller: _Controller
+    ) -> None:
+        controller.hold_session_actions(None, None)
+
+        assert controller.session_actions() is None
+
+
 class TestKeptActions:
     """What a tab gives the session file: the entries a restore replays."""
 
