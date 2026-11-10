@@ -88,14 +88,23 @@ class ReplaySequence:
         #: back resets.
         self._finished_runs: List[Tuple[str, str, int]] = []
         self._going_back = False
+        #: Whether the entries are the actions the tab was loaded with, which the autosave
+        #: holds only once they have run.
+        self.from_session = False
+        #: Whether the replay going back was one of the loaded actions.
+        self._back_from_session = False
 
-    def start(self, entries: Optional[Iterable[Any]] = None) -> bool:
+    def start(
+        self, entries: Optional[Iterable[Any]] = None, from_session: bool = False
+    ) -> bool:
         """
         Start replaying, from the first of new entries or from where the last replay ended.
 
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
             None continues the last replay from the entry it stopped or failed at
         :type entries: Optional[Iterable[Any]]
+        :param from_session: the entries are the actions the tab was loaded with
+        :type from_session: bool
         :return: False if a replay is already running, or there is nothing left to continue
         :rtype: bool
         """
@@ -104,6 +113,7 @@ class ReplaySequence:
         if entries is not None:
             self._entries = deepcopy(list(entries))
             self._index = 0
+            self.from_session = from_session
             if not self._going_back:
                 self._history_before = deepcopy(self._controller.tab_action_history)
                 self._finished_runs = []
@@ -114,6 +124,36 @@ class ReplaySequence:
         self._controller.replay_state_changed.emit(False)
         self._schedule()
         return True
+
+    def replay_available(self) -> bool:
+        """
+        Has this replay something Replay Actions would replay?
+
+        Entries left to continue, or the tab's loaded actions, until they have been replayed
+        to the end.
+
+        :return: True if Replay Actions would start or continue a replay
+        :rtype: bool
+        """
+        return self.has_remaining() or (
+            self._controller.holds_session_actions()
+            and not self.replayed_session_to_the_end()
+        )
+
+    def replayed_session_to_the_end(self) -> bool:
+        """
+        Did the last replay replay the tab's loaded actions to the end?
+
+        :return: True once the loaded actions have all been replayed, until another replay
+            starts, going back included
+        :rtype: bool
+        """
+        return (
+            self.from_session
+            and not self.running
+            and self.failed_at is None
+            and not self.has_remaining()
+        )
 
     def has_remaining(self) -> bool:
         """
@@ -182,9 +222,10 @@ class ReplaySequence:
         if generation != self._generation:
             return
         if not self.has_remaining():
-            self._end(
-                "back to before the replay" if self._going_back else "replay done"
-            )
+            went_back = self._going_back
+            self._end("back to before the replay" if went_back else "replay done")
+            if went_back:
+                self._say_loaded_actions_not_autosaved()
             return
         resolved = self._controller.resolve_replayed_entry(self._entries[self._index])
         if resolved is None:
@@ -303,6 +344,7 @@ class ReplaySequence:
                 f"left cleared"
             )
             self._clear_tab()
+            self._say_loaded_actions_not_autosaved()
             return
         self._end(f"replay stopped at step {step} of {total}: {reason}")
         action = str(self._entries[self._index].get("action"))
@@ -312,6 +354,13 @@ class ReplaySequence:
         )
         if choice == "back":
             self._go_back()
+        elif self.from_session:
+            kept = self._index
+            self._say(
+                f"{kept} of {total} steps are kept; the other {total - kept} are not "
+                f"saved in the autosave. Replay Actions continues them now; "
+                + self._how_to_get_them_back()
+            )
 
     def _go_back(self) -> None:
         """Clear the tab and replay its history from before the replay."""
@@ -319,6 +368,7 @@ class ReplaySequence:
             "going back to before the replay", self._controller.__class__.__name__
         )
         entries = list(self._history_before.values())
+        self._back_from_session = self.from_session
         self._clear_tab()
         self._going_back = True
         self.start(entries)
@@ -338,6 +388,41 @@ class ReplaySequence:
             controller.__class__.__name__, controller.tab_action_history
         )
 
+    def _say_loaded_actions_not_autosaved(self) -> None:
+        """After going back from a replay of the loaded actions, say the autosave lacks them."""
+        if not self._back_from_session:
+            return
+        self._back_from_session = False
+        self._say(
+            "the loaded actions are not saved in the autosave. Replay Actions replays "
+            "them now; " + self._how_to_get_them_back()
+        )
+
+    def _how_to_get_them_back(self) -> str:
+        """
+        How the loaded actions can be had again once the app is restarted or restored.
+
+        :return: the end of a status-panel line
+        :rtype: str
+        """
+        if self._controller.session_source:
+            return (
+                "after Restore Session or a restart, load the session file again to get "
+                "them back."
+            )
+        return "they cannot be brought back after Restore Session or a restart."
+
+    def _say(self, text: str) -> None:
+        """
+        Put a line on the status panel under the tab's name.
+
+        :param text: the line
+        :type text: str
+        """
+        self._controller.add_text_to_display.emit(
+            text, self._controller.__class__.__name__
+        )
+
     def _end(self, text: Optional[str]) -> None:
         """
         End the replay, say whether it can be continued, and unless ``text`` is None, say how.
@@ -350,7 +435,7 @@ class ReplaySequence:
         self._launched = False
         self._going_back = False
         self._generation += 1
-        self._controller.replay_state_changed.emit(self.has_remaining())
+        self._controller.replay_state_changed.emit(self.replay_available())
         if text is not None:
             self._controller.add_text_to_display.emit(
                 text, self._controller.__class__.__name__

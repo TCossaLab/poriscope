@@ -352,13 +352,43 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :py:meth:`replay` instead, all at once.
 
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
-            None continues the last replay from the entry it stopped or failed at
+            None continues the last replay from the entry it stopped or failed at, or, with
+            none to continue, replays the actions the tab was loaded with
         :type entries: Optional[Iterable[Any]]
         :return: False if a replay of this tab is already running, or there is nothing left
             to continue
         :rtype: bool
         """
+        if (
+            entries is None
+            and not self.replay_sequence.has_remaining()
+            and self.replay_sequence.replay_available()
+        ):
+            return self.replay_sequence.start(self.session_actions(), from_session=True)
         return self.replay_sequence.start(entries)
+
+    @log(logger=logger)
+    def replay_available(self) -> bool:
+        """
+        Has this tab something Replay Actions would replay?
+
+        A stopped replay to continue, or the actions it was loaded with, until they have been
+        replayed to the end; going back offers them again.
+
+        :return: True if Replay Actions would start or continue a replay
+        :rtype: bool
+        """
+        return self.replay_sequence.replay_available()
+
+    @log(logger=logger)
+    def holds_session_actions(self) -> bool:
+        """
+        Was this tab loaded with actions to replay?
+
+        :return: True if the session it was loaded from held at least one action for it
+        :rtype: bool
+        """
+        return bool(self._session_actions)
 
     @log(logger=logger)
     def is_replaying(self) -> bool:
@@ -962,6 +992,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         self._session_actions = None if entries is None else deepcopy(list(entries))
         self.session_source = source
+        self.replay_state_changed.emit(self.replay_available())
 
     @log(logger=logger)
     def session_actions(self) -> Optional[List[Dict[str, Any]]]:

@@ -495,3 +495,146 @@ class TestAfterAFailure:
             "left cleared"
         )
         assert not sequence.has_remaining()
+
+
+_FILE_TAIL = (
+    "after Restore Session or a restart, load the session file again to get them back."
+)
+_RESTORE_TAIL = "they cannot be brought back after Restore Session or a restart."
+
+
+class TestTheLoadedSession:
+    """
+    Replay Actions starts the actions a tab was loaded with, once; after Keep or Go back the
+    status panel says what the autosave, which holds only what ran, no longer holds.
+    """
+
+    @staticmethod
+    def _answer(tab: _Tab, choice: str) -> None:
+        tab.view.ask_after_replay_failure = MagicMock(return_value=choice)
+
+    @staticmethod
+    def _until_ended(tab: _Tab, qtbot: Any) -> None:
+        qtbot.waitUntil(lambda: not tab.replay_sequence.running)
+
+    def test_holding_loaded_actions_makes_replay_available(self, tab: _Tab) -> None:
+        states: List[bool] = []
+        tab.replay_state_changed.connect(states.append)
+
+        tab.hold_session_actions([_entry("draw", "a")], "session.json")
+
+        assert states == [True]
+        assert tab.replay_available()
+
+    def test_no_actions_or_an_empty_list_is_nothing_to_replay(self, tab: _Tab) -> None:
+        tab.hold_session_actions([], "session.json")
+        assert not tab.replay_available()
+        assert not tab.start_replay()
+
+        tab.hold_session_actions(None, "session.json")
+        assert not tab.replay_available()
+
+    def test_replay_actions_replays_them_and_then_has_nothing_left(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.hold_session_actions([_entry("draw", "a"), _entry("draw", "b")], None)
+        states: List[bool] = []
+        tab.replay_state_changed.connect(states.append)
+
+        assert tab.start_replay()
+        self._until_ended(tab, qtbot)
+
+        assert tab.calls == ["draw:a", "draw:b"]
+        assert states == [False, False]
+        assert not tab.replay_available()
+        assert not tab.start_replay()
+
+    def test_keep_says_what_the_autosave_does_not_hold_and_replay_continues(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        self._answer(tab, "keep")
+        tab.draws["b"] = False
+        tab.hold_session_actions(
+            [_entry("draw", "a"), _entry("draw", "b"), _entry("draw", "c")],
+            "session.json",
+        )
+
+        tab.start_replay()
+        self._until_ended(tab, qtbot)
+
+        assert panel[-1] == (
+            "1 of 3 steps are kept; the other 2 are not saved in the autosave. Replay "
+            "Actions continues them now; " + _FILE_TAIL
+        )
+        assert tab.replay_available()
+
+        tab.draws["b"] = True
+        assert tab.start_replay()
+        self._until_ended(tab, qtbot)
+
+        assert tab.calls == ["draw:a", "draw:b", "draw:b", "draw:c"]
+        assert not tab.replay_available()
+
+    def test_after_a_restore_the_line_says_they_cannot_be_brought_back(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        self._answer(tab, "keep")
+        tab.hold_session_actions([_entry("boom")], None)
+
+        tab.start_replay()
+        self._until_ended(tab, qtbot)
+
+        assert panel[-1] == (
+            "0 of 1 steps are kept; the other 1 are not saved in the autosave. Replay "
+            "Actions continues them now; " + _RESTORE_TAIL
+        )
+
+    def test_go_back_says_so_and_offers_the_loaded_actions_again(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
+        self._answer(tab, "back")
+        tab.hold_session_actions([_entry("draw", "a"), _entry("boom")], "session.json")
+
+        tab.start_replay()
+        qtbot.waitUntil(
+            lambda: bool(panel) and panel[-1].startswith("the loaded actions")
+        )
+        self._until_ended(tab, qtbot)
+
+        assert panel[-2:] == [
+            "back to before the replay",
+            "the loaded actions are not saved in the autosave. Replay Actions replays "
+            "them now; " + _FILE_TAIL,
+        ]
+        assert tab.replay_available()
+        assert tab.start_replay()
+        self._until_ended(tab, qtbot)
+        assert tab.calls.count("draw:a") == 2
+
+    def test_a_plot_configuration_replay_says_nothing_about_the_autosave(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        self._answer(tab, "keep")
+        tab.hold_session_actions([_entry("draw", "z")], "session.json")
+
+        tab.start_replay([_entry("draw", "a"), _entry("boom")])
+        self._until_ended(tab, qtbot)
+
+        assert not any("autosave" in line for line in panel)
+        assert tab.calls == ["draw:a", "boom"]
+
+    def test_a_stopped_replay_is_continued_before_the_loaded_actions(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        self._answer(tab, "keep")
+        tab.hold_session_actions([_entry("draw", "z")], "session.json")
+        tab.draws["b"] = False
+        tab.start_replay([_entry("draw", "b"), _entry("draw", "a")])
+        self._until_ended(tab, qtbot)
+
+        tab.draws["b"] = True
+        tab.start_replay()
+        self._until_ended(tab, qtbot)
+
+        assert tab.calls == ["draw:b", "draw:b", "draw:a"]

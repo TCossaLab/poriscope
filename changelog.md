@@ -184,6 +184,8 @@
 
 * `register_action` takes `plugin_args`, the parameters whose values are data plugins' keys, and every recorded action declares them
 
+* `MetaController.kept_actions`, `hold_session_actions`, `session_actions`, `holds_session_actions` and `replay_available` are new, `start_replay()` with nothing to continue replays the loaded actions, and `ReplaySequence.start` takes `from_session`
+
 ### User-Facing Behaviour:
 
 #### General:
@@ -211,6 +213,8 @@
 * Load and Restore Session read each tab's saved actions once and keep them; until a tab's history changes, the autosave keeps them too, so a Restore after a crash still has them
 
 * A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place
+
+* After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
 
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
