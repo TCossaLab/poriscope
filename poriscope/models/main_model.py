@@ -719,6 +719,23 @@ class MainModel(QObject):
             or not isinstance(last_tab, str)
         ):
             raise SessionRefused(_NOT_A_SESSION)
+        history = self._plugins_from_file(plugins)
+        self._add_tabs_from_file(tabs, history)
+        return LoadedSession(history, last_tab)
+
+    def _plugins_from_file(
+        self, plugins: List[Any]
+    ) -> "OrderedDict[str, Dict[str, Any]]":
+        """
+        The ``plugins`` list of a session file as history entries, keyed and in order.
+
+        :param plugins: the list as read
+        :type plugins: List[Any]
+        :raises SessionRefused: if an entry lacks its key, metaclass or subclass, or a key
+            repeats
+        :return: key -> entry, without the key inside
+        :rtype: OrderedDict[str, Dict[str, Any]]
+        """
         history: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         for plugin in plugins:
             if not isinstance(plugin, dict) or not all(
@@ -731,6 +748,21 @@ class MainModel(QObject):
             if key in history:
                 raise SessionRefused(_NOT_A_SESSION)
             history[key] = entry
+        return history
+
+    def _add_tabs_from_file(
+        self, tabs: Dict[str, Any], history: "OrderedDict[str, Dict[str, Any]]"
+    ) -> None:
+        """
+        Add the ``tabs`` of a session file to the history, after the plugins.
+
+        :param tabs: class name -> the tab's state, as read
+        :type tabs: Dict[str, Any]
+        :param history: the plugins' entries, which the tabs are added to
+        :type history: OrderedDict[str, Dict[str, Any]]
+        :raises SessionRefused: if a tab's state is not an object, its name is a plugin's,
+            or its actions are not a list
+        """
         for name, state in tabs.items():
             if (
                 not isinstance(state, dict)
@@ -741,7 +773,6 @@ class MainModel(QObject):
             history[name] = OrderedDict(
                 [("metaclass", TAB_METACLASS), ("subclass", name), *state.items()]
             )
-        return LoadedSession(history, last_tab)
 
     def _session_from_2_0_file(self, content: Dict[str, Any]) -> LoadedSession:
         """

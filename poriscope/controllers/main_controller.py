@@ -455,10 +455,7 @@ class MainController(QObject):
         :param delete_key: The key being removed, or renamed away from, or None.
         :type delete_key: Optional[str]
         """
-        if history and history.get("metaclass") != TAB_METACLASS:
-            self._follow_plugin_change(history, delete_key)
-        elif not history and delete_key:
-            self._rewrite_tab_entries(delete_key, None)
+        self._keep_tab_entries_true(history, delete_key)
         if history and not delete_key:
             self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
@@ -469,6 +466,25 @@ class MainController(QObject):
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
             self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
+
+    def _keep_tab_entries_true(
+        self, history: Optional[Dict[str, Any]], delete_key: Optional[str]
+    ) -> None:
+        """
+        Before a plugin change is stored, keep every tab's recorded entries true to it.
+
+        A deleted plugin's entries are dropped; an edited or renamed one is followed by
+        :py:meth:`_follow_plugin_change`. A tab's own entry changes nothing.
+
+        :param history: the plugin's saved state, or None when only deleting
+        :type history: Optional[Dict[str, Any]]
+        :param delete_key: the key being removed, or renamed away from, or None
+        :type delete_key: Optional[str]
+        """
+        if history and history.get("metaclass") != TAB_METACLASS:
+            self._follow_plugin_change(history, delete_key)
+        elif not history and delete_key:
+            self._rewrite_tab_entries(delete_key, None)
 
     def _follow_plugin_change(
         self, history: Dict[str, Any], delete_key: Optional[str]
@@ -879,8 +895,8 @@ class MainController(QObject):
         # change the dict it is iterating a copy of.
         entries = len(self.plugin_history)
         unrestored: List[str] = []
-        tabs_restored = 0
-        tabs_with_actions = 0
+        # The entries as loaded: opening a tab replaces its entry in the history.
+        loaded_entries = list(self.plugin_history.values())
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
@@ -898,15 +914,7 @@ class MainController(QObject):
                     continue
                 tab = self.analysis_tabs.get(subclass)
                 if tab is not None:
-                    tab.restore_session_state(plugin)
-                    tabs_restored += 1
-                    if "actions" in plugin:
-                        tabs_with_actions += 1
-                    # Read once, from the loaded entry: opening the tab replaced its entry
-                    # in plugin_history with a bare one.
-                    tab.hold_session_actions(
-                        plugin.get("actions"), str(file_name) if file_name else None
-                    )
+                    self._restore_tab(tab, plugin, file_name)
             else:
                 settings = plugin.get("settings")
                 try:
@@ -935,8 +943,8 @@ class MainController(QObject):
         # tab restored has no next tab, so the session saved during this loop
         # recorded it with no subset filters at all, and the restore after that one
         # lost them: Metadata kept its filters and Protein did not, purely because
-        # Protein was opened second and so is restored second.
-        # Anything a tab recorded while it was being restored is part of the load.
+        # Protein was opened second and so is restored second. Anything a tab
+        # recorded while it was being restored is part of the load, not the user's work.
         self._changed_since_load.clear()
         self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
@@ -945,13 +953,7 @@ class MainController(QObject):
             message = f"Loaded session from {file_name}."
         else:
             message = "Restored last saved session."
-        if tabs_restored and not tabs_with_actions:
-            message += " This session has no saved actions to replay."
-            if not file_name and self.main_model.old_action_history_exists():
-                message += (
-                    " The action history saved by an earlier version "
-                    "(tab_action_history.json) cannot be replayed."
-                )
+        message += self._no_actions_note(loaded_entries, file_name)
         if unrestored:
             # Each failure has already been reported individually, but those
             # messages scroll and several of them are usually consequences of one
@@ -963,6 +965,61 @@ class MainController(QObject):
                 f"({', '.join(unrestored)}); see the messages above."
             )
         self.main_view.add_text_to_display(message, "MainController")
+
+    def _restore_tab(
+        self,
+        tab: MetaController,
+        entry: Dict[str, Any],
+        file_name: Optional[Union[str, Path]],
+    ) -> None:
+        """
+        Give a freshly opened tab its saved state and, once, its saved actions.
+
+        Read from the loaded entry: opening the tab replaced its entry in
+        ``plugin_history`` with a bare one.
+
+        :param tab: the tab just opened
+        :type tab: MetaController
+        :param entry: its entry as loaded
+        :type entry: Dict[str, Any]
+        :param file_name: the session file, or None for the autosave
+        :type file_name: Optional[Union[str, Path]]
+        """
+        tab.restore_session_state(entry)
+        tab.hold_session_actions(
+            entry.get("actions"), str(file_name) if file_name else None
+        )
+
+    def _no_actions_note(
+        self,
+        loaded_entries: List[Dict[str, Any]],
+        file_name: Optional[Union[str, Path]],
+    ) -> str:
+        """
+        What the load message adds when the session's tabs hold no saved actions.
+
+        A session saved before actions were kept says so; on Restore, the action history
+        2.0 kept in its own file is said to be unreplayable, if it is there.
+
+        :param loaded_entries: the session's entries as loaded
+        :type loaded_entries: List[Dict[str, Any]]
+        :param file_name: the session file, or None for Restore
+        :type file_name: Optional[Union[str, Path]]
+        :return: the sentences to add, or ""
+        :rtype: str
+        """
+        loaded_tabs = [
+            entry for entry in loaded_entries if entry["metaclass"] == TAB_METACLASS
+        ]
+        if not loaded_tabs or any("actions" in entry for entry in loaded_tabs):
+            return ""
+        note = " This session has no saved actions to replay."
+        if not file_name and self.main_model.old_action_history_exists():
+            note += (
+                " The action history saved by an earlier version "
+                "(tab_action_history.json) cannot be replayed."
+            )
+        return note
 
     @log(logger=logger)
     @Slot()
