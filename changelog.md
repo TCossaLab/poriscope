@@ -73,7 +73,7 @@
 
 * **Breaking:** `EventAnalysisView.write_requested` and `EventAnalysisController.write_events` no longer carry the selected event loader as their first argument
 
-* **Breaking:** recorded tab actions now carry a declared name: `register_action` takes it as an argument and can decorate a Controller method, `MetaController.replay` dispatches through a per-tab registry in place of `MetaView.update_actions_from_json`, and an action file saved by an earlier version is reported entry by entry on the status panel and not replayed
+* **Breaking:** recorded tab actions now carry a declared name: `register_action` takes it as an argument and can decorate a Controller method, `MetaController.replay` dispatches through a per-tab registry in place of `MetaView.update_actions_from_json`, and an action file saved by an earlier version is refused
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
@@ -81,7 +81,7 @@
 
 * **Breaking:** Clustering's run and Merge are recorded actions on `ClusteringController`, and the clustering result is `ClusteringModel.result`: `ClusteringView.cluster_data` is gone, `cluster_commit_requested` no longer carries the frame, and `ClusteringController.commit_clusters` no longer takes `cluster_data`
 
-* **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
+* **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values is refused
 
 * **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name, in place of the View's `_overlay_plot`, and a plot configuration saved before this is reported and not replayed
 
@@ -105,6 +105,8 @@
 * **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
 
 * **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
+
+* **Breaking:** Load Plot Configuration refuses a file saved by Poriscope 2.0, or by an earlier 2.1 build with unlabelled values, with one error, and replays none of it
 
 ### Developer Tooling:
 

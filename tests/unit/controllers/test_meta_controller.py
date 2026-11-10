@@ -278,6 +278,54 @@ def test_load_actions_from_json_unwraps_class_name_key(
     assert list(controller.start_replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
 
 
+#: An overlay and its reset as Poriscope 2.0.2's Save Plot Configuration saved them: the
+#: View method's name under ``function``, the panel's values in one dict.
+_SAVED_BY_2_0 = {
+    "0": {"function": "_reset_actions", "args": [], "kwargs": {}},
+    "1": {
+        "function": "_overlay_plot",
+        "args": [{"db_loader": "DB1", "plot_type": "Histogram", "x_axis": "duration"}],
+        "kwargs": {},
+    },
+}
+
+#: The same as develop saved it after actions got declared names, before the overlay's
+#: values were saved by name.
+_SAVED_BEFORE_NAMED_VALUES = {
+    "0": {"action": "reset", "args": [], "kwargs": {"axis_type": "2d"}},
+    "1": {
+        "action": "overlay_plot",
+        "args": [{"db_loader": "DB1", "plot_type": "Histogram"}],
+        "kwargs": {},
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [_SAVED_BY_2_0, _SAVED_BEFORE_NAMED_VALUES],
+    ids=["2.0", "before-named-values"],
+)
+def test_a_plot_configuration_saved_before_2_1_is_refused_whole(
+    controller: MetaController, mocker: MockerFixture, saved: Dict[str, Any]
+) -> None:
+    """
+    Nothing replays and one error, a dialog, says why.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :param saved: the file's content
+    """
+    mocker.patch("builtins.open", mock_open(read_data=json.dumps(saved)))
+
+    controller.load_actions_from_json("old.json")
+
+    controller.start_replay.assert_not_called()  # type: ignore[attr-defined]
+    controller.logger.error.assert_called_once_with(  # type: ignore[attr-defined]
+        "old.json was saved by an earlier version of Poriscope and cannot be replayed"
+    )
+
+
 # ----------------- relay_add_text_to_display -------------------------
 
 

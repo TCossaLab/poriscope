@@ -177,7 +177,7 @@ def test_a_refused_load_is_shown_at_once(
 ) -> None:
     tab = _replay_up_to_the_find(main, qtbot)
     path = tmp_path / "actions.json"
-    path.write_text(json.dumps({"0": _entry("draw", "late")}), encoding="utf-8")
+    path.write_text(json.dumps({"0": {"action": "draw", "args": [], "kwargs": {"label": "late"}}}), encoding="utf-8")
 
     tab.load_actions_from_json(str(path))
 

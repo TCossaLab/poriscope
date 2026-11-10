@@ -103,6 +103,23 @@ def declarations_of(cls: type) -> Dict[str, ActionDeclaration]:
     }
 
 
+def _saved_before_named_values(entry: Any) -> bool:
+    """
+    Is this a recorded entry from before every value was saved by name?
+
+    Poriscope 2.0 saved a View method's name under ``function``; until values were saved by
+    name, an entry carried them unlabelled in ``args``, which is empty in every entry since.
+
+    :param entry: one entry of a saved file
+    :type entry: Any
+    :return: True if it is in an earlier format
+    :rtype: bool
+    """
+    return isinstance(entry, Mapping) and (
+        "function" in entry or bool(entry.get("args"))
+    )
+
+
 class MetaController(QObject, metaclass=QObjectABCMeta):
     """
     Base controller class that manages exactly one MetaView and MetaModel instance
@@ -320,6 +337,11 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         Load and apply tab actions from a JSON file.
 
+        A file saved before every recorded value was saved by name - by 2.0, or by a build
+        of 2.1 before then - is refused whole, with an error the user sees as a dialog:
+        its entries name View methods or carry their values unlabelled, so none of it can
+        replay as recorded.
+
         :param filename: Path to the JSON file containing saved actions.
         :type filename: str
         """
@@ -331,6 +353,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return None
         if self.__class__.__name__ in actions.keys():
             actions = actions[self.__class__.__name__]  # allow loading from base file
+        if any(_saved_before_named_values(entry) for entry in actions.values()):
+            self.logger.error(
+                f"{filename} was saved by an earlier version of Poriscope and cannot be "
+                "replayed"
+            )
+            return None
         if not self.start_replay(actions.values()):
             self._panel_text_now = True
             try:
