@@ -938,6 +938,7 @@ class MainController(QObject):
         self._changed_since_load.clear()
         self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
+        self._show_last_tab()
 
         if file_name:
             message = f"Loaded session from {file_name}."
@@ -955,6 +956,22 @@ class MainController(QObject):
                 f"({', '.join(unrestored)}); see the messages above."
             )
         self.main_view.add_text_to_display(message, "MainController")
+
+    def _show_last_tab(self) -> None:
+        """
+        Show the tab the user last worked in before the session was saved.
+
+        Restoring opens the tabs one after another, and each opening shows its page, so the
+        last tab restored would otherwise be the one showing. With no last tab, or one that
+        did not restore, the page is left as the restore left it. The highlight goes first:
+        a page switch a walkthrough refuses puts it back on the page showing.
+        """
+        tab = self.analysis_tabs.get(self.last_tab)
+        if tab is None:
+            return
+        page = tab.view.__class__.__name__
+        self.main_view.sync_sidebar_highlight(page)
+        self.main_view.switch_to_page(page)
 
     def _restore_tab(
         self,

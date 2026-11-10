@@ -2169,3 +2169,121 @@ def test_what_is_no_edit_changes_no_entry(
     shell.update_plugin_history(history, "")
 
     assert _rewrites(shell) == []
+
+
+# ------------- the starting tab after a load ---------------------------------
+def _named_view_tab(mocker: MockerFixture, view_name: str) -> MagicMock:
+    """
+    A restored tab whose View's class is named as the real one is, which names its page.
+
+    :param mocker: Pytest-mock fixture.
+    :param view_name: the View class name, e.g. "ProteinView"
+    :return: the tab
+    """
+    tab = mocker.Mock()
+    tab.view = type(view_name, (), {})()
+    tab.get_session_state.return_value = {}
+    tab.session_actions.return_value = None
+    tab.kept_actions.return_value = []
+    tab.replay_available.return_value = False
+    return tab
+
+
+def _load_with_tabs(
+    controller: MainController,
+    mocker: MockerFixture,
+    last_tab: str,
+    failing: str = "",
+) -> None:
+    """
+    Load a session holding the Raw Data and Protein tabs, with the given last tab.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :param last_tab: the session's last tab
+    :param failing: a tab whose opening raises, as a tab that cannot be restored does
+    """
+    controller.data_plugin_controller.delete_all_plugins.return_value = []
+    views = {"ProteinController": "ProteinView", "RawDataController": "RawDataView"}
+
+    def instantiate(subclass: str) -> None:
+        if subclass == failing:
+            raise RuntimeError("cannot be opened")
+        controller.analysis_tabs[subclass] = _named_view_tab(mocker, views[subclass])
+
+    controller.instantiate_analysis_tab = mocker.Mock(side_effect=instantiate)  # type: ignore[method-assign]
+    history = OrderedDict(
+        (name, {"metaclass": "MetaController", "subclass": name})
+        for name in ("ProteinController", "RawDataController")
+    )
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(history, last_tab)
+    )
+    controller.load_session("session.json")
+
+
+def _page_calls(controller: MainController) -> List[str]:
+    """
+    The page and highlight calls the load made, and its messages, in order.
+
+    Reset Session's own return to the landing page, which every load starts with, is left
+    out.
+
+    :param controller: Controller under test.
+    :return: "method:first argument" for each call
+    """
+    return [
+        f"{call[0]}:{call[1][0]}"
+        for call in controller.main_view.mock_calls
+        if call[0]
+        in ("sync_sidebar_highlight", "switch_to_page", "add_text_to_display")
+        and call[1][0] != "MainView"
+    ]
+
+
+def test_after_a_load_the_sessions_last_tab_is_showing(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    """
+    Its button is highlighted and its page switched to, after every tab is restored.
+
+    Raw Data is restored after Protein, so without this Raw Data's page would show.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    _load_with_tabs(controller, mocker, "ProteinController")
+
+    calls = _page_calls(controller)
+    assert calls[-3:-1] == [
+        "sync_sidebar_highlight:ProteinView",
+        "switch_to_page:ProteinView",
+    ]
+    assert calls[-1].startswith("add_text_to_display:Loaded session from session.json.")
+
+
+@pytest.mark.parametrize(
+    "last_tab, failing",
+    [
+        ("", ""),
+        ("ProteinController", "ProteinController"),
+        ("ClusteringController", ""),
+    ],
+    ids=["none", "not-restored", "not-in-the-session"],
+)
+def test_a_last_tab_that_cannot_be_shown_leaves_the_page_as_it_was(
+    controller: MainController, mocker: MockerFixture, last_tab: str, failing: str
+) -> None:
+    """
+    With no last tab, or one that is not open, the page is left as the restore left it.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :param last_tab: the session's last tab
+    :param failing: a tab whose opening raises
+    """
+    _load_with_tabs(controller, mocker, last_tab, failing)
+
+    assert [
+        call for call in _page_calls(controller) if not call.startswith("add_text")
+    ] == []
