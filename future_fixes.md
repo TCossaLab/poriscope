@@ -118,6 +118,14 @@ Step 10 waits for both tracks.
 
 ### Step 10 - docs dead-link gate and release prep
 
+- **Settle how every saved format is versioned, before 2.1 merges to main (2026-11-09).** One policy for
+  every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
+  whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
+  (load, convert, refuse, report). Today they differ: the session file has `format_version` 2 and refuses any other
+  (`main_model.py:82`, `:703-711`); the metadata database has `SCHEMA_VERSION` 1 and reads anything up to it
+  (`SQLiteDBLoader.py:112`, `:1079`); Save Plot Configuration files, the event database (`SQLiteEventWriter`) and
+  `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
+  release bump, so files saved by 2.1 development builds say 2.0.2.
 - **Tell users, before 2.1 ships, what opens in which version (2026-11-09).** One page or
   release-notes section, gathered from the 2.1 changelog's breaking lines: 2.1 sessions do not open in
   2.0, and the first 2.1 Restore rewrites the 2.0 autosave; a 2.0 session opens in 2.1 without actions;
