@@ -76,8 +76,11 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 - Replay goes through the tab's registry of declared actions, ``MetaController.action_registry``:
   a name that is not declared, an entry from an older file, or one whose saved values no longer
   fit its action's parameters, is reported on the status panel and not called
-- Can save and reload these actions from a JSON file. A loaded file replays through
-  ``start_replay``, one entry at a time on the event loop (``poriscope.utils.replay_sequence``):
+- Can save and reload these actions as a plot configuration: ``save_tab_actions(file)`` saves
+  ``kept_actions()`` through the Model (``MetaModel.save_plot_configuration``), in a file that
+  names its format, version and tab, and ``load_actions_from_json`` reads it back through
+  ``MetaModel.read_plot_configuration``, which refuses an earlier, foreign or other tab's file
+  whole. A loaded file replays through ``start_replay``, one entry at a time on the event loop (``poriscope.utils.replay_sequence``):
   a ``result`` entry waits for its run to end and carries on only if the run finished with
   results, and the replay stops at the first entry that raises or, for a ``skip_on_false``
   action, returns ``False``. The user is then asked to go back or keep (``MetaView.ask_after_replay_failure``);
@@ -85,8 +88,7 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   the View's figure (``MetaView.clear_figure``); override it if your tab keeps more, such as a
   result on its Model, and record nothing in it. While a tab replays, its status-panel lines
   are held and shown together when it ends, and ``replay_state_changed`` tells the main window
-  whether **Replay Actions** can continue it. A file saved before every value was saved by name
-  is refused whole
+  whether **Replay Actions** can continue it
 - Undo logic included (with safety checks and filtering): Undo replays the history from
   the last reset onward, and ``discard_last_tab_action`` drops a record without
   replaying anything, for an action that was refused and changed nothing. A tab's own
@@ -113,7 +115,10 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   ``get_session_state``: ``kept_actions()`` gives the entries a restore replays. At a load,
   MainController hands the tab its saved actions once, through ``hold_session_actions``; with
   nothing stopped to continue, ``start_replay()`` replays them, and ``replay_available()`` says
-  whether **Replay Actions** has anything to do. Deleting, renaming or editing a plugin reaches
+  whether **Replay Actions** has anything to do. After a load the main window offers every tab
+  whose ``replay_available()`` is True in its restore dialog and starts the ticked ones with
+  ``start_replay(restore=True)``; ``history_change_from_restore_replay()`` tells it which history
+  changes that replay made, so the session's last tab stays where the user last acted. Deleting, renaming or editing a plugin reaches
   every copy a tab holds through ``rewrite_plugin_entries``, by the parameters each action
   declares in ``plugin_args``
 

@@ -113,8 +113,8 @@ Step 4: Generate and Export
 
 2. You can then:
 
-   - **Save Plot Configuration**: Save the sequence of plots you have made since the last
-     **Reset** as a JSON file.
+   - **Save Plot Configuration**: Save the plots on screen as a JSON file: the ones made since
+     the last **Reset**, without those a later plot replaced.
    - **Undo**: Revert to the previous state. Straight after a **Reset**, Undo brings back
      everything the Reset cleared.
    - **Load Plot Configuration**: Replay a previously saved sequence of plots, one step at a
@@ -123,7 +123,8 @@ Step 4: Generate and Export
      was replayed and continue later with **Replay Actions** (see :ref:`replay_actions`).
      A plot configuration saved by Poriscope 2.0, or by an earlier 2.1 build, is refused
      with an error and nothing is replayed; to keep those plots, draw them again and save
-     them with **Save Plot Configuration**.
+     them with **Save Plot Configuration**. So is a file saved for another tab, or a session
+     file, which **Load Session** opens.
    - **Reset**: Clear the plot and the tab's history of plots. Plotting anything after it
      makes the clear final. The message panel says which: whether **Undo** will bring the
      plots back, or that they are cleared for good.

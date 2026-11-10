@@ -17,9 +17,9 @@ Session Options Overview
 
 - **Load Session**  
   Opens a previously saved session JSON file and restores its state: the plugins first, then
-  the analysis tabs. A file that is not a saved session - a tab's saved actions, for instance -
-  or one saved by a later version in a format this one cannot read is refused with a message
-  saying why, and the current workspace is left as it was.
+  the analysis tabs. A file that is not a saved session - a plot configuration, for instance,
+  which the message names - or one saved by a later version in a format this one cannot read
+  is refused with a message saying why, and the current workspace is left as it was.
 
 - **Save Session**
   Stores the current state — the readers, filters, finders, fitters, loaders and writers with
@@ -30,7 +30,8 @@ Each tab's **recorded actions** are kept in the session file: the plots and runs
 session needs to show what you had, without the ones a later run or plot replaced. The
 autosave is written whenever a tab's actions change, as well as whenever a plugin changes.
 After **Load Session** or **Restore Session**, each tab holds the actions it was saved with,
-and **Replay Actions** (below) replays them. Until you replay or work in a tab, the autosave
+the tab you last worked in is showing, and the **Replay the session** dialog (below) offers to
+replay them. Until you replay or work in a tab, the autosave
 keeps those actions for it, so a Restore after a crash still offers them; once you do, the
 autosave holds what that tab actually ran. A session whose tabs have no saved actions - one
 saved before Poriscope 2.1 - says so when it loads.
@@ -100,14 +101,30 @@ The *Analysis* menu allows you to:
   the message panel on the right-hand side of the main window, and says so there if it had
   nothing running.
 
+.. _restore_dialog:
+
+Replay the session
+------------------
+
+When a session you load or restore has tabs with saved actions, a dialog lists them, each
+ticked. **Replay** replays the ticked tabs at once; you can switch between tabs while they run,
+and each tab's messages appear together when it is done. **Not now**, or closing the dialog,
+replays none. A tab you leave out keeps its saved actions, and **Replay Actions** (below)
+replays it later. Replaying runs the finders, fitters and plots again; nothing is committed,
+exported or saved to a file or database.
+
+The tab showing after the load is the one you last worked in when the session was saved. A
+replay does not change that: a session saved after a replay still opens on the tab you last
+worked in.
+
 .. _replay_actions:
 
 Replay Actions
 --------------
 
 The **Replay Actions** button sits under the message panel. After **Load Session** or
-**Restore Session** it replays the showing tab's saved actions; once they have all replayed it is
-disabled for that tab, until **Go back** or another load. A tab replays its actions one step
+**Restore Session** it replays the showing tab's saved actions, if the dialog above did not;
+once they have all replayed it is disabled for that tab, until **Go back** or another load. A tab replays its actions one step
 at a time - Metadata's **Load Plot Configuration** does too - and while it does, its messages are
 held back and shown together when it ends, so they do not mix with other tabs' messages. A step
 that waits for an event finder or fitter carries on only if the run finishes with results.

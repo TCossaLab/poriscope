@@ -123,8 +123,9 @@ Step 10 waits for both tracks.
   whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
   (load, convert, refuse, report). Today they differ: the session file has `format_version` 2 and refuses any other
   (`main_model.py:82`, `:703-711`); the metadata database has `SCHEMA_VERSION` 1 and reads anything up to it
-  (`SQLiteDBLoader.py:112`, `:1079`); Save Plot Configuration files, the event database (`SQLiteEventWriter`) and
-  `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
+  (`SQLiteDBLoader.py:112`, `:1079`); a plot configuration names its `format` and has `format_version` 1, and
+  any other is refused (`MetaModel.py:478`); the event database (`SQLiteEventWriter`),
+  Save Filter files (`MetaSubsetTabModel.save_filters`) and `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
   release bump, so files saved by 2.1 development builds say 2.0.2.
 - **Tell users, before 2.1 ships, what opens in which version (2026-11-09).** One page or
   release-notes section, gathered from the 2.1 changelog's breaking lines: 2.1 sessions do not open in
@@ -358,9 +359,9 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `objectName` (not every control sets one today), with `MultiSelectComboBox` and
   `MultiSelectFilterComboBox` supplying their own get/set; modal dialogs stay out of scope. A
   direct snapshot, not an event-sourced log like `@register_action`. Restore with signals
-  blocked, after the tab's plugins exist and before any replay is offered (`DECISIONS.md`
-  2026-09-27: replay stays explicit and per tab). Replay itself is a synchronous loop on the GUI
-  thread (`MetaView.update_actions_from_json:389`), so a heavy log wants a worker.
+  blocked, after the tab's plugins exist and before the restore dialog offers a replay. A
+  replayed action already writes its recorded values back into the panel; this is for a tab
+  the user does not replay.
 - **`@register_action` has no overwrite mode**: every call appends (`MetaController.py:391`),
   so an action whose final call is all that matters is replayed once per intermediate call.
   Decide the dedup key (name alone, or name plus identifying arguments) and whether a

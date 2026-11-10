@@ -106,7 +106,9 @@
 
 * **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
 
-* **Breaking:** Load Plot Configuration refuses a file saved by Poriscope 2.0, or by an earlier 2.1 build with unlabelled values, with one error saying to draw the plots again and save them anew, and replays none of it
+* **Breaking:** a plot configuration now names its format and version, and Load Plot Configuration refuses one saved by Poriscope 2.0 or by any earlier 2.1 build, one saved for another tab, and a session file, with one error saying why, and replays none of it
+
+* **Breaking:** the plot configuration is read and written by the tab's Model (`MetaModel.save_plot_configuration`, `read_plot_configuration`): `MetaController.save_tab_action_history`, `MainController.save_tab_action_history` and `MainModel.save_tab_actions` are removed, and `MetaController.save_tab_actions` requires the file
 
 ### Developer Tooling:
 
@@ -219,6 +221,10 @@
 * A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
 
 * After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
+
+* After Load or Restore Session, the tab you last worked in is showing, and a dialog lists the tabs with saved actions, all ticked: **Replay** replays the ticked ones at once, and a tab left out keeps its **Replay Actions**; replaying redoes no commit, export or save
+
+* Save Plot Configuration saves only the plots on screen, not the ones a later plot replaced, and Load Session of a plot configuration says what it is
 
 * Deleting a plugin removes the recorded actions that use it from every tab's history and saved session; renaming one without changing its settings makes them follow the new name; editing a setting removes them, with those of the plugins built on it, and the status panel says so
 
