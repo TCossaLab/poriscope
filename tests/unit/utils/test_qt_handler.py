@@ -47,6 +47,20 @@ def make_record(level: int, message: str = "something happened") -> logging.LogR
     )
 
 
+class _Collector:
+    """Stands in for a replay: takes errors while it runs."""
+
+    def __init__(self, running: bool = True) -> None:
+        self.running = running
+        self.taken: list = []
+
+    def take_error(self, text: str) -> bool:
+        if not self.running:
+            return False
+        self.taken.append(text)
+        return True
+
+
 @pytest.fixture
 def handler() -> QtHandler:
     """
@@ -252,16 +266,16 @@ class TestWhileReplaying:
         self, handler: QtHandler
     ) -> None:
         handler.emitter = MagicMock()
-        collected: list = []
-        collect_errors(collected)
+        collector = _Collector()
+        collect_errors(collector)
         try:
             with replaying():
                 handler.emit(make_record(logging.ERROR, "the column is gone"))
         finally:
-            stop_collecting_errors(collected)
+            stop_collecting_errors(collector)
 
         handler.emitter.emit_message.emit.assert_not_called()
-        assert collected == ["the column is gone"]
+        assert collector.taken == ["the column is gone"]
 
     def test_an_error_from_a_worker_while_a_replay_runs_opens_no_dialog(
         self, handler: QtHandler, mocker
@@ -271,15 +285,29 @@ class TestWhileReplaying:
         window's thread while the replay waits on the run.
         """
         shown = mocker.patch.object(handler, "_show_dialog")
-        collected: list = []
-        collect_errors(collected)
+        collector = _Collector()
+        collect_errors(collector)
         try:
             handler.show_message_box(make_record(logging.ERROR, "channel 5 is invalid"))
         finally:
-            stop_collecting_errors(collected)
+            stop_collecting_errors(collector)
 
         shown.assert_not_called()
-        assert collected == ["channel 5 is invalid"]
+        assert collector.taken == ["channel 5 is invalid"]
 
         handler.show_message_box(make_record(logging.ERROR, "after the replay"))
+        shown.assert_called_once()
+
+    def test_a_replay_that_stopped_running_but_was_never_unregistered_holds_nothing_back(
+        self, handler: QtHandler, mocker
+    ) -> None:
+        """A replay left behind - its tab gone mid-run, say - must not hide every later error."""
+        shown = mocker.patch.object(handler, "_show_dialog")
+        collector = _Collector(running=False)
+        collect_errors(collector)
+        try:
+            handler.show_message_box(make_record(logging.ERROR, "after the replay"))
+        finally:
+            stop_collecting_errors(collector)
+
         shown.assert_called_once()

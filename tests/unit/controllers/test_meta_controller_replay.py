@@ -10,7 +10,7 @@ emits a real ``run_finished``.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -62,12 +62,17 @@ class _Tab(MetaController):
 
 
 @pytest.fixture
-def tab(qtbot: Any) -> _Tab:
+def tab(qtbot: Any) -> Iterator[_Tab]:
     """
+    A tab whose finder says every channel finished; a replay still waiting on a run at the
+    end of the test is stopped, as quitting does, so it collects no later test's errors.
+
     :param qtbot: pytest-qt fixture, for the application the timers run on
-    :return: a tab whose finder says every channel finished
+    :return: the tab
     """
-    return _Tab()
+    tab = _Tab()
+    yield tab
+    tab.replay_sequence.stop(quitting=True)
 
 
 @pytest.fixture

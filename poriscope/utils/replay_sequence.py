@@ -59,6 +59,7 @@ from typing import (
     Tuple,
 )
 
+import shiboken6
 from PySide6.QtCore import QTimer
 
 from poriscope.utils.LogDecorator import ACTION_DECLARATION_ATTR, ActionDeclaration
@@ -135,7 +136,7 @@ class ReplaySequence:
             return False
         self.failed_at = None
         self.running = True
-        collect_errors(self._step_errors)
+        collect_errors(self)
         self._controller.replay_state_changed.emit(False)
         self._schedule()
         return True
@@ -192,6 +193,20 @@ class ReplaySequence:
         if before_changed:
             self._history_before = OrderedDict(enumerate(before))
         return later_changed or before_changed
+
+    def take_error(self, text: str) -> bool:
+        """
+        Keep an error the step logged, for the question a failure asks, while running.
+
+        :param text: the error's text
+        :type text: str
+        :return: True if taken: the replay is running and its tab still exists
+        :rtype: bool
+        """
+        if not self.running or not shiboken6.isValid(self._controller):
+            return False
+        self._step_errors.append(text)
+        return True
 
     def has_remaining(self) -> bool:
         """
@@ -470,7 +485,7 @@ class ReplaySequence:
         :type text: Optional[str]
         """
         self.running = False
-        stop_collecting_errors(self._step_errors)
+        stop_collecting_errors(self)
         self.waiting_for = None
         self._launched = False
         self._going_back = False
