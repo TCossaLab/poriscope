@@ -25,7 +25,7 @@ from __future__ import annotations
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -104,6 +104,8 @@ def mock_main_view(mocker: MockerFixture) -> MagicMock:
     view.set_user_plugin_location = mocker.Mock()
     view.populate_plugins_menu = mocker.Mock()
     view.add_page = mocker.Mock()
+    # The restore dialog: by default nothing is ticked, as Not now answers.
+    view.ask_which_tabs_to_replay = mocker.Mock(return_value=[])
     return view
 
 
@@ -2194,6 +2196,7 @@ def _load_with_tabs(
     mocker: MockerFixture,
     last_tab: str,
     failing: str = "",
+    with_actions: Tuple[str, ...] = (),
 ) -> None:
     """
     Load a session holding the Raw Data and Protein tabs, with the given last tab.
@@ -2202,6 +2205,7 @@ def _load_with_tabs(
     :param mocker: Pytest-mock fixture.
     :param last_tab: the session's last tab
     :param failing: a tab whose opening raises, as a tab that cannot be restored does
+    :param with_actions: the tabs that hold saved actions to replay
     """
     controller.data_plugin_controller.delete_all_plugins.return_value = []
     views = {"ProteinController": "ProteinView", "RawDataController": "RawDataView"}
@@ -2209,7 +2213,9 @@ def _load_with_tabs(
     def instantiate(subclass: str) -> None:
         if subclass == failing:
             raise RuntimeError("cannot be opened")
-        controller.analysis_tabs[subclass] = _named_view_tab(mocker, views[subclass])
+        tab = _named_view_tab(mocker, views[subclass])
+        tab.replay_available.return_value = subclass in with_actions
+        controller.analysis_tabs[subclass] = tab
 
     controller.instantiate_analysis_tab = mocker.Mock(side_effect=instantiate)  # type: ignore[method-assign]
     history = OrderedDict(
@@ -2287,3 +2293,74 @@ def test_a_last_tab_that_cannot_be_shown_leaves_the_page_as_it_was(
     assert [
         call for call in _page_calls(controller) if not call.startswith("add_text")
     ] == []
+
+
+# ------------- the restore dialog after a load ---------------------------------
+def test_after_a_load_the_tabs_with_actions_are_offered_last(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    """
+    Asked once, with those tabs' pages in restore order, after the page and the message.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    _load_with_tabs(
+        controller,
+        mocker,
+        "ProteinController",
+        with_actions=("ProteinController", "RawDataController"),
+    )
+
+    view = controller.main_view
+    view.ask_which_tabs_to_replay.assert_called_once_with(
+        ["ProteinView", "RawDataView"]
+    )
+    names = [call[0] for call in view.mock_calls]
+    asked = names.index("ask_which_tabs_to_replay")
+    assert names.index("switch_to_page", names.index("sync_sidebar_highlight")) < asked
+    assert max(i for i, n in enumerate(names) if n == "add_text_to_display") < asked
+
+
+def test_only_the_ticked_tabs_replay(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    controller.main_view.ask_which_tabs_to_replay.return_value = ["RawDataView"]
+
+    _load_with_tabs(
+        controller,
+        mocker,
+        "ProteinController",
+        with_actions=("ProteinController", "RawDataController"),
+    )
+
+    controller.analysis_tabs["RawDataController"].start_replay.assert_called_once_with()
+    controller.analysis_tabs["ProteinController"].start_replay.assert_not_called()
+
+
+def test_not_now_replays_nothing(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    _load_with_tabs(
+        controller, mocker, "ProteinController", with_actions=("ProteinController",)
+    )
+
+    controller.main_view.ask_which_tabs_to_replay.assert_called_once()
+    for tab in controller.analysis_tabs.values():
+        tab.start_replay.assert_not_called()
+
+
+def test_a_session_whose_tabs_have_nothing_to_replay_asks_nothing(
+    controller: MainController, mocker: MockerFixture
+) -> None:
+    _load_with_tabs(controller, mocker, "ProteinController")
+
+    controller.main_view.ask_which_tabs_to_replay.assert_not_called()
+
+
+def test_a_refused_load_asks_nothing(controller: MainController) -> None:
+    controller.main_model.load_session.side_effect = SessionRefused("it is broken")
+
+    controller.load_session("broken.json")
+
+    controller.main_view.ask_which_tabs_to_replay.assert_not_called()

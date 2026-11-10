@@ -1,13 +1,22 @@
 import importlib
 import logging
+from typing import Any, Callable, List
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent
-from PySide6.QtWidgets import QWidget
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QLabel,
+    QPushButton,
+    QWidget,
+)
 
-from poriscope.views.main_view import MainView
+from poriscope.views.main_view import MainView, tab_display_name
 from poriscope.views.widgets.walkthrough import NoTutorialDialog
 from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
@@ -1654,3 +1663,157 @@ def test_the_click_asks_for_the_page_showing(main_view):
     main_view.replay_actions_button.click()
 
     assert asked == ["MetadataView"]
+
+
+# ------------- the restore dialog ---------------------------------------------
+#: The real ``QDialog.exec``, taken at import, before this directory's conftest patches it
+#: to return at once: these tests drive the dialog itself, with a timer.
+_REAL_EXEC = QDialog.exec
+
+
+@pytest.fixture
+def real_dialogs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Let ``QDialog.exec`` open its loop for real, so a test can answer the dialog.
+
+    :param monkeypatch: pytest's monkeypatch, which undoes this at teardown.
+    """
+    monkeypatch.setattr(QDialog, "exec", _REAL_EXEC)
+
+
+def _answer_restore_dialog(qtbot: Any, act: Callable[[QDialog], None]) -> List[Any]:
+    """
+    When the restore dialog opens, record what it shows, then act on it.
+
+    :param qtbot: pytest-qt fixture.
+    :param act: what to do with the dialog once it shows
+    :return: the dialog's state as it opened: (label, ticked) per box, then whether Replay
+        was enabled
+    """
+    seen: List[Any] = []
+
+    def answer() -> None:
+        dialog = QApplication.activeModalWidget()
+        if not isinstance(dialog, QDialog):
+            QTimer.singleShot(20, answer)
+            return
+        seen.extend(
+            (box.text(), box.isChecked()) for box in dialog.findChildren(QCheckBox)
+        )
+        seen.append(_button(dialog, "Replay").isEnabled())
+        act(dialog)
+
+    QTimer.singleShot(0, answer)
+    return seen
+
+
+def _button(dialog: QDialog, text: str) -> QPushButton:
+    return next(b for b in dialog.findChildren(QPushButton) if b.text() == text)
+
+
+PAGES = ["RawDataView", "EventAnalysisView", "MetadataView"]
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures("real_dialogs")
+def test_the_restore_dialog_lists_the_tabs_ticked_and_replays_them(main_view, qtbot):
+    seen = _answer_restore_dialog(
+        qtbot, lambda dialog: _button(dialog, "Replay").click()
+    )
+
+    chosen = main_view.ask_which_tabs_to_replay(PAGES)
+
+    assert seen == [
+        ("Raw Data", True),
+        ("Event Analysis", True),
+        ("Metadata", True),
+        True,
+    ]
+    assert chosen == PAGES
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures("real_dialogs")
+def test_an_unticked_tab_is_not_replayed(main_view, qtbot):
+    def untick_metadata_and_replay(dialog: QDialog) -> None:
+        dialog.findChildren(QCheckBox)[2].setChecked(False)
+        _button(dialog, "Replay").click()
+
+    _answer_restore_dialog(qtbot, untick_metadata_and_replay)
+
+    assert main_view.ask_which_tabs_to_replay(PAGES) == [
+        "RawDataView",
+        "EventAnalysisView",
+    ]
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures("real_dialogs")
+def test_with_every_tab_unticked_replay_is_disabled(main_view, qtbot):
+    states: List[bool] = []
+
+    def untick_all(dialog: QDialog) -> None:
+        for box in dialog.findChildren(QCheckBox):
+            box.setChecked(False)
+        states.append(_button(dialog, "Replay").isEnabled())
+        dialog.findChildren(QCheckBox)[0].setChecked(True)
+        states.append(_button(dialog, "Replay").isEnabled())
+        _button(dialog, "Not now").click()
+
+    _answer_restore_dialog(qtbot, untick_all)
+
+    assert main_view.ask_which_tabs_to_replay(PAGES) == []
+    assert states == [False, True]
+
+
+@pytest.mark.parametrize("how", ["not now", "escape", "close"])
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures("real_dialogs")
+def test_not_now_escape_or_closing_replays_nothing(main_view, qtbot, how):
+    def leave(dialog: QDialog) -> None:
+        if how == "not now":
+            _button(dialog, "Not now").click()
+        elif how == "escape":
+            QTest.keyClick(dialog, Qt.Key.Key_Escape)
+        else:
+            dialog.close()
+
+    _answer_restore_dialog(qtbot, leave)
+
+    assert main_view.ask_which_tabs_to_replay(PAGES) == []
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures("real_dialogs")
+def test_the_dialog_says_what_replaying_does_and_does_not(main_view, qtbot):
+    texts: List[str] = []
+
+    def read(dialog: QDialog) -> None:
+        texts.extend(label.text() for label in dialog.findChildren(QLabel))
+        texts.append(dialog.windowTitle())
+        _button(dialog, "Not now").click()
+
+    _answer_restore_dialog(qtbot, read)
+    main_view.ask_which_tabs_to_replay(PAGES)
+
+    assert texts == [
+        "These tabs have saved actions. The ticked tabs replay now, all at the same "
+        "time. You can switch between tabs while they run.",
+        "Replaying runs the finders, fitters and plots again. Nothing is committed, "
+        "exported or saved to a file or database.",
+        "A tab you leave unticked can be replayed later with Replay Actions, under the "
+        "message panel.",
+        "Replay the session",
+    ]
+
+
+@pytest.mark.parametrize(
+    "view_name, shown",
+    [
+        ("RawDataView", "Raw Data"),
+        ("ClusteringView", "Clustering"),
+        ("ProteinView", "Protein"),
+    ],
+)
+def test_a_tab_is_named_as_users_read_it(view_name, shown):
+    assert tab_display_name(view_name) == shown

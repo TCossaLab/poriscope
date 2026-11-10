@@ -956,6 +956,36 @@ class MainController(QObject):
                 f"({', '.join(unrestored)}); see the messages above."
             )
         self.main_view.add_text_to_display(message, "MainController")
+        self._offer_restore_replays()
+
+    def _offer_restore_replays(self) -> None:
+        """
+        Ask which of the loaded tabs with saved actions to replay now, and start those.
+
+        Every tab with actions is offered, ticked; the ticked ones start at once, each on
+        its own, as Replay Actions starts one. A tab left out keeps its Replay Actions.
+        """
+        pages = [
+            tab.view.__class__.__name__
+            for tab in self.analysis_tabs.values()
+            if tab.replay_available()
+        ]
+        if not pages:
+            return
+        for page in self.main_view.ask_which_tabs_to_replay(pages):
+            self._start_restore_replay(page)
+
+    def _start_restore_replay(self, page: str) -> None:
+        """
+        Start the replay of the tab whose page this is, as the restore dialog asked.
+
+        :param page: the tab's page name
+        :type page: str
+        """
+        for tab in self.analysis_tabs.values():
+            if tab.view.__class__.__name__ == page:
+                tab.start_replay()
+                return
 
     def _show_last_tab(self) -> None:
         """
