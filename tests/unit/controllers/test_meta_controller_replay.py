@@ -10,7 +10,7 @@ emits a real ``run_finished``.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -62,12 +62,17 @@ class _Tab(MetaController):
 
 
 @pytest.fixture
-def tab(qtbot: Any) -> _Tab:
+def tab(qtbot: Any) -> Iterator[_Tab]:
     """
+    A tab whose finder says every channel finished; a replay still waiting on a run at the
+    end of the test is stopped, as quitting does, so it collects no later test's errors.
+
     :param qtbot: pytest-qt fixture, for the application the timers run on
-    :return: a tab whose finder says every channel finished
+    :return: the tab
     """
-    return _Tab()
+    tab = _Tab()
+    yield tab
+    tab.replay_sequence.stop(quitting=True)
 
 
 @pytest.fixture
@@ -106,7 +111,9 @@ def test_a_loaded_file_is_replayed_one_entry_at_a_time(
 ) -> None:
     path = tmp_path / "actions.json"
     path.write_text(
-        json.dumps({"_Tab": {"0": _entry("draw", "a"), "1": _entry("draw", "b")}}),
+        json.dumps(
+            {"_Tab": {"0": _entry("draw", label="a"), "1": _entry("draw", label="b")}}
+        ),
         encoding="utf-8",
     )
 
@@ -119,11 +126,29 @@ def test_a_loaded_file_is_replayed_one_entry_at_a_time(
     assert panel == ["replay done"]
 
 
+def test_the_2_0_action_autosave_loaded_as_a_plot_configuration_is_refused(
+    tab: _Tab, qtbot: Any, tmp_path: Any, mocker: Any
+) -> None:
+    """2.0 kept each tab's history under the tab's name in ``tab_action_history.json``."""
+    path = tmp_path / "tab_action_history.json"
+    path.write_text(
+        json.dumps({"_Tab": {"0": {"function": "draw", "args": ["a"], "kwargs": {}}}}),
+        encoding="utf-8",
+    )
+    error = mocker.patch.object(tab.logger, "error")
+
+    tab.load_actions_from_json(str(path))
+
+    assert not tab.is_replaying()
+    assert tab.calls == []
+    error.assert_called_once()
+
+
 def test_a_file_loaded_during_a_replay_is_refused(
     tab: _Tab, panel: List[str], qtbot: Any, tmp_path: Any
 ) -> None:
     path = tmp_path / "actions.json"
-    path.write_text(json.dumps({"0": _entry("draw", "late")}), encoding="utf-8")
+    path.write_text(json.dumps({"0": _entry("draw", label="late")}), encoding="utf-8")
     tab.start_replay([_entry("find", "A", 1)])
     qtbot.waitUntil(lambda: tab.calls == ["find:A/1"])
 

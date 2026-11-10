@@ -73,7 +73,7 @@
 
 * **Breaking:** `EventAnalysisView.write_requested` and `EventAnalysisController.write_events` no longer carry the selected event loader as their first argument
 
-* **Breaking:** recorded tab actions now carry a declared name: `register_action` takes it as an argument and can decorate a Controller method, `MetaController.replay` dispatches through a per-tab registry in place of `MetaView.update_actions_from_json`, and an action file saved by an earlier version is reported entry by entry on the status panel and not replayed
+* **Breaking:** recorded tab actions now carry a declared name: `register_action` takes it as an argument and can decorate a Controller method, `MetaController.replay` dispatches through a per-tab registry in place of `MetaView.update_actions_from_json`, and an action file saved by an earlier version is refused
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
@@ -81,7 +81,7 @@
 
 * **Breaking:** Clustering's run and Merge are recorded actions on `ClusteringController`, and the clustering result is `ClusteringModel.result`: `ClusteringView.cluster_data` is gone, `cluster_commit_requested` no longer carries the frame, and `ClusteringController.commit_clusters` no longer takes `cluster_data`
 
-* **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
+* **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values is refused
 
 * **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name, in place of the View's `_overlay_plot`, and a plot configuration saved before this is reported and not replayed
 
@@ -99,6 +99,14 @@
 * **Breaking:** recorded actions are declared on Controllers only: `MetaView.record_action` is removed and `MetaController.action_registry` no longer reads the View, so a `@register_action` on a View method is neither recorded nor replayed
 
 * **Breaking:** `register_action` requires `kind=` (`result`, `view`, `additive` or `reset`) with the figure or key it acts on, so a tab that decorates a method without it no longer loads
+
+* **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 2.1 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
+
+* **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
+
+* **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
+
+* **Breaking:** Load Plot Configuration refuses a file saved by Poriscope 2.0, or by an earlier 2.1 build with unlabelled values, with one error saying to draw the plots again and save them anew, and replays none of it
 
 ### Developer Tooling:
 
@@ -176,6 +184,12 @@
 
 * `MetaView.clear_figure` and `MetaView.ask_after_replay_failure` are new, `MainView` has `replay_actions_requested` and `set_replay_available`, and `MainController.show_tab_text` puts each tab's lines on the status panel
 
+* `register_action` takes `plugin_args`, the parameters whose values are data plugins' keys, and every recorded action declares them
+
+* `MetaController.kept_actions`, `hold_session_actions`, `session_actions`, `holds_session_actions` and `replay_available` are new, `start_replay()` with nothing to continue replays the loaded actions, and `ReplaySequence.start` takes `from_session`
+
+* `MetaController.rewrite_plugin_entries` drops or renames the entries naming a plugin in every copy a tab holds, and `ReplaySequence.rewrite_entries` in a replay's
+
 ### User-Facing Behaviour:
 
 #### General:
@@ -192,7 +206,21 @@
 
 * Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back, and the status panel says which
 
-* A replay opens no error dialogs of its own: an error a replayed step logs goes to the log file, and a failed step is reported only by the Go back / Keep question
+* A replay opens no error dialogs of its own: an error a replayed step logs, its finder's or fitter's included, goes to the log file and into the Go back / Keep question, which says what the step reported
+
+* **Fixed cancelling Save Session showing an error dialog**; a cancelled dialog now saves nothing
+
+* A session that cannot be loaded or restored now says why, and loading one restores its data plugins before its tabs
+
+* A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session; an error dialog says so
+
+* Load and Restore Session read each tab's saved actions once and keep them; until you replay or work in a tab, the autosave keeps them too, so a Restore after a crash still has them
+
+* A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
+
+* After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
+
+* Deleting a plugin removes the recorded actions that use it from every tab's history and saved session; renaming one without changing its settings makes them follow the new name; editing a setting removes them, with those of the plugins built on it, and the status panel says so
 
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 

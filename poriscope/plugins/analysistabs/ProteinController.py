@@ -242,6 +242,7 @@ class ProteinController(MetaSubsetTabController):
         kind="additive",
         figure="ensemble",
         skip_on_false=True,
+        plugin_args=("loader",),
     )
     def update_ensemble_distribution(
         self,
@@ -479,7 +480,13 @@ class ProteinController(MetaSubsetTabController):
         return filtered
 
     @log(logger=logger)
-    @register_action("plot_events", kind="view", figure="events", skip_on_false=True)
+    @register_action(
+        "plot_events",
+        kind="view",
+        figure="events",
+        skip_on_false=True,
+        plugin_args=("loader",),
+    )
     def plot_events(
         self,
         loader: str,
@@ -526,7 +533,11 @@ class ProteinController(MetaSubsetTabController):
 
     @log(logger=logger)
     @register_action(
-        "plot_event_histograms", kind="view", figure="events", skip_on_false=True
+        "plot_event_histograms",
+        kind="view",
+        figure="events",
+        skip_on_false=True,
+        plugin_args=("loader",),
     )
     def plot_event_histograms(
         self,
@@ -703,6 +714,7 @@ class ProteinController(MetaSubsetTabController):
         kind="additive",
         figure="individual",
         skip_on_false=True,
+        plugin_args=("loader",),
     )
     def update_individual_distribution(
         self,

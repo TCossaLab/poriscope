@@ -76,6 +76,7 @@ class EventAnalysisController(MetaEventTabController):
         figure="plot",
         depends_on=("eventfitter", "channel"),
         skip_on_false=True,
+        plugin_args=("loader", "eventfitter", "data_filter"),
     )
     def load_event_plot(
         self,
@@ -574,6 +575,7 @@ class EventAnalysisController(MetaEventTabController):
         kind="result",
         key=("eventfitter", "channel"),
         skip_on_false=True,
+        plugin_args=("eventfitter", "data_filter"),
     )
     def fit_channel(self, eventfitter: str, channel: int, data_filter: str) -> bool:
         """

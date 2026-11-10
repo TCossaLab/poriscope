@@ -85,12 +85,12 @@ Step 10 waits for both tracks.
     - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
       history no longer holds them, so a restore does not redraw them.
 
-- **Editing a plugin leaves history entries recorded with its old settings (2026-11-03).** An edit keeps the
-  plugin's old results on screen while the plugin history keeps only the new settings (`BaseDataPlugin.apply_settings`,
-  `BaseDataPlugin.py:444`), so replaying its entries would use settings they were never run with. Drop the entries
-  naming the edited plugin and the plugins built on it, as deleting one should, and say so on the status panel.
-  Telling the tabs about an edit is a signal change.
-
+- **A "Skip this step" choice when a replayed step fails (2026-11-09).** Today a replay stops at the
+  first failed step and asks Go back or Keep (`ReplaySequence._fail`, `MetaView.ask_after_replay_failure`); a later
+  step that does not depend on it (a trace after a failed Find) never runs. A third button would skip the failed step
+  and the steps declared as depending on it, and carry on. Declare first what the declarations miss: Clustering's
+  Merge needs the run before it (both only `additive` on `clusters`), and an Event Analysis fit needs the Raw Data
+  tab's Find (another tab). Changes the replay rule (`DECISIONS.md` 2026-11-05 and 2026-10-17), so it needs a ruling before it is built.
 - **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
   `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
   `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
@@ -117,6 +117,20 @@ Step 10 waits for both tracks.
   wait note (`test_event_analysis_flow_no_gui.py`).
 
 ### Step 10 - docs dead-link gate and release prep
+
+- **Settle how every saved format is versioned, before 2.1 merges to main (2026-11-09).** One policy for
+  every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
+  whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
+  (load, convert, refuse, report). Today they differ: the session file has `format_version` 2 and refuses any other
+  (`main_model.py:82`, `:703-711`); the metadata database has `SCHEMA_VERSION` 1 and reads anything up to it
+  (`SQLiteDBLoader.py:112`, `:1079`); Save Plot Configuration files, the event database (`SQLiteEventWriter`) and
+  `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
+  release bump, so files saved by 2.1 development builds say 2.0.2.
+- **Tell users, before 2.1 ships, what opens in which version (2026-11-09).** One page or
+  release-notes section, gathered from the 2.1 changelog's breaking lines: 2.1 sessions do not open in
+  2.0, and the first 2.1 Restore rewrites the 2.0 autosave; a 2.0 session opens in 2.1 without actions;
+  `tab_action_history.json` and plot configurations saved by 2.0 or early 2.1 builds are refused; a
+  plugin cannot take a tab's name. Write it once every 2.1 step has landed, so it is complete.
 
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved
   because `conf.py` has no `nitpicky`. Third-party names resolve since 2026-10-09 (`-n` 1,476 → 97);
@@ -339,10 +353,6 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Session and settings persistence
 
-- **Load Actions has no shortcut to the autosaved `session/tab_action_history.json`**: the
-  user must find it in the app-data folder. Replay stays explicit and per tab by design
-  (`DECISIONS.md` 2026-09-27), so this is a convenience - offer the autosave in each tab's
-  Load Actions - not automatic replay.
 - **A reloaded session restores plugins but not what the control panels showed.** Snapshot and
   restore each panel's widget state on `MetaControls` by walking its children keyed by
   `objectName` (not every control sets one today), with `MultiSelectComboBox` and

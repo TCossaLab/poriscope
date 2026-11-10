@@ -30,10 +30,21 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.kept_history import build_kept_history
 from poriscope.utils.LogDecorator import (
     ACTION_DECLARATION_ATTR,
     ACTION_NAME_ATTR,
@@ -92,6 +103,23 @@ def declarations_of(cls: type) -> Dict[str, ActionDeclaration]:
     }
 
 
+def _saved_before_named_values(entry: Any) -> bool:
+    """
+    Is this a recorded entry from before every value was saved by name?
+
+    Poriscope 2.0 saved a View method's name under ``function``; until values were saved by
+    name, an entry carried them unlabelled in ``args``, which is empty in every entry since.
+
+    :param entry: one entry of a saved file
+    :type entry: Any
+    :return: True if it is in an earlier format
+    :rtype: bool
+    """
+    return isinstance(entry, Mapping) and (
+        "function" in entry or bool(entry.get("args"))
+    )
+
+
 class MetaController(QObject, metaclass=QObjectABCMeta):
     """
     Base controller class that manages exactly one MetaView and MetaModel instance
@@ -147,6 +175,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: What the last recorded entry dropped from :py:attr:`_history_set_aside`, put back
     #: if that entry is discarded: a refused plot leaves nothing kept after the Reset.
     _history_set_aside_dropped: Optional["OrderedDict[int, Dict[str, Any]]"] = None
+
+    #: The actions of the session this tab was loaded from, read once at the load; None
+    #: when the tab was not loaded from a session, or its entry held no actions.
+    _session_actions: Optional[List[Dict[str, Any]]] = None
+
+    #: The session file those actions came from, or None for the autosave (Restore).
+    session_source: Optional[str] = None
 
     def __init__(
         self,
@@ -302,6 +337,11 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         Load and apply tab actions from a JSON file.
 
+        A file saved before every recorded value was saved by name - by 2.0, or by a build
+        of 2.1 before then - is refused whole, with an error the user sees as a dialog:
+        its entries name View methods or carry their values unlabelled, so none of it can
+        replay as recorded.
+
         :param filename: Path to the JSON file containing saved actions.
         :type filename: str
         """
@@ -313,6 +353,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return None
         if self.__class__.__name__ in actions.keys():
             actions = actions[self.__class__.__name__]  # allow loading from base file
+        if any(_saved_before_named_values(entry) for entry in actions.values()):
+            self.logger.error(
+                f"{filename} was saved by an earlier version of Poriscope and cannot be "
+                "replayed. To keep these plots, draw them again and save them with Save "
+                "Plot Configuration."
+            )
+            return None
         if not self.start_replay(actions.values()):
             self._panel_text_now = True
             try:
@@ -334,13 +381,52 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :py:meth:`replay` instead, all at once.
 
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
-            None continues the last replay from the entry it stopped or failed at
+            None continues the last replay from the entry it stopped or failed at, or, with
+            none to continue, replays the actions the tab was loaded with
         :type entries: Optional[Iterable[Any]]
         :return: False if a replay of this tab is already running, or there is nothing left
             to continue
         :rtype: bool
         """
+        if (
+            entries is None
+            and not self.replay_sequence.has_remaining()
+            and self.replay_sequence.replay_available()
+        ):
+            started = self.replay_sequence.start(
+                self.session_actions(), from_session=True
+            )
+            if started:
+                # A tab replaying its loaded actions saves what it runs from now on, even
+                # if a step fails and records nothing: the main window is told at once.
+                self.update_tab_action_history.emit(
+                    self.__class__.__name__, self.tab_action_history
+                )
+            return started
         return self.replay_sequence.start(entries)
+
+    @log(logger=logger)
+    def replay_available(self) -> bool:
+        """
+        Has this tab something Replay Actions would replay?
+
+        A stopped replay to continue, or the actions it was loaded with, until they have been
+        replayed to the end; going back offers them again.
+
+        :return: True if Replay Actions would start or continue a replay
+        :rtype: bool
+        """
+        return self.replay_sequence.replay_available()
+
+    @log(logger=logger)
+    def holds_session_actions(self) -> bool:
+        """
+        Was this tab loaded with actions to replay?
+
+        :return: True if the session it was loaded from held at least one action for it
+        :rtype: bool
+        """
+        return bool(self._session_actions)
 
     @log(logger=logger)
     def is_replaying(self) -> bool:
@@ -925,6 +1011,137 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.tab_action_history = OrderedDict()
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
+        )
+
+    @log(logger=logger)
+    def hold_session_actions(
+        self, entries: Optional[Sequence[Dict[str, Any]]], source: Optional[str]
+    ) -> None:
+        """
+        Keep the actions of the session this tab was just loaded from.
+
+        Called once, by the load. Replay Actions replays this copy, even after the user has
+        worked in the tab; the file is not read again.
+
+        :param entries: the tab's saved actions, or None if its entry held none
+        :type entries: Optional[Sequence[Dict[str, Any]]]
+        :param source: the session file they came from, or None for the autosave
+        :type source: Optional[str]
+        """
+        self._session_actions = None if entries is None else deepcopy(list(entries))
+        self.session_source = source
+        self.replay_state_changed.emit(self.replay_available())
+
+    @log(logger=logger)
+    def session_actions(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        A copy of the actions of the session this tab was loaded from.
+
+        :return: the entries, or None if the tab was not loaded with any
+        :rtype: Optional[List[Dict[str, Any]]]
+        """
+        return (
+            None if self._session_actions is None else deepcopy(self._session_actions)
+        )
+
+    @log(logger=logger)
+    def rewrite_plugin_entries(self, key: str, new_key: Optional[str]) -> bool:
+        """
+        Drop or rename the recorded entries that name a plugin, in every copy this tab holds.
+
+        An entry names a plugin when one of its ``plugin_args`` holds the key. The copies are
+        the live history, what the Reset button set aside, the actions the tab was loaded
+        with, and a replay's entries not reached yet and the history going back rebuilds. So
+        Undo, Replay Actions and Go back never replay an entry for a plugin that is gone,
+        renamed or no longer run with the settings it recorded.
+
+        :param key: the plugin's key the entries name
+        :type key: str
+        :param new_key: the key to name instead, or None to drop the entries
+        :type new_key: Optional[str]
+        :return: True if any copy changed
+        :rtype: bool
+        """
+
+        def rewrite(entries: List[Any]) -> Tuple[List[Any], bool]:
+            return self._entries_rewritten(entries, key, new_key)
+
+        live, live_changed = rewrite(list(self.tab_action_history.values()))
+        if live_changed:
+            self.tab_action_history = OrderedDict(enumerate(live))
+        changed = live_changed
+        for name in ("_history_set_aside", "_history_set_aside_dropped"):
+            kept: Optional["OrderedDict[int, Dict[str, Any]]"] = getattr(self, name)
+            if kept is not None:
+                entries, kept_changed = rewrite(list(kept.values()))
+                if kept_changed:
+                    setattr(self, name, OrderedDict(enumerate(entries)) or None)
+                    changed = True
+        if self._session_actions is not None:
+            loaded, loaded_changed = rewrite(self._session_actions)
+            if loaded_changed:
+                self._session_actions = loaded
+                changed = True
+        changed = self.replay_sequence.rewrite_entries(rewrite) or changed
+        if live_changed:
+            self.update_tab_action_history.emit(
+                self.__class__.__name__, self.tab_action_history
+            )
+        return changed
+
+    def _entries_rewritten(
+        self, entries: List[Any], key: str, new_key: Optional[str]
+    ) -> Tuple[List[Any], bool]:
+        """
+        The entries with those naming a plugin dropped, or named by its new key.
+
+        :param entries: recorded entries
+        :type entries: List[Any]
+        :param key: the plugin's key the entries name
+        :type key: str
+        :param new_key: the key to name instead, or None to drop the entries
+        :type new_key: Optional[str]
+        :return: the entries, and whether any changed
+        :rtype: Tuple[List[Any], bool]
+        """
+        declarations = self._declarations_of_tab()
+        rewritten: List[Any] = []
+        changed = False
+        for entry in entries:
+            name = entry.get("action") if isinstance(entry, Mapping) else None
+            declaration = declarations.get(name) if isinstance(name, str) else None
+            kwargs = entry.get("kwargs") if declaration is not None else None
+            naming = (
+                [arg for arg in declaration.plugin_args if kwargs.get(arg) == key]
+                if declaration is not None and isinstance(kwargs, Mapping)
+                else []
+            )
+            if not naming:
+                rewritten.append(entry)
+                continue
+            changed = True
+            if new_key is not None:
+                renamed = deepcopy(dict(entry))
+                for arg in naming:
+                    renamed["kwargs"][arg] = new_key
+                rewritten.append(renamed)
+        return rewritten, changed
+
+    @log(logger=logger)
+    def kept_actions(self) -> List[Dict[str, Any]]:
+        """
+        The entries of this tab's history a restored session replays, for the session file.
+
+        Built from the live history by
+        :py:func:`~poriscope.utils.kept_history.build_kept_history`, so a superseded run or
+        view is left out. What the Reset button set aside is not included: it is kept in
+        memory only, for an Undo straight after.
+
+        :return: copies of the kept entries, oldest first
+        :rtype: List[Dict[str, Any]]
+        """
+        return build_kept_history(
+            list(self.tab_action_history.values()), self._declarations_of_tab()
         )
 
     @log(logger=logger)

@@ -44,7 +44,8 @@ It cannot see a direct ``.text()`` or ``.currentText()`` call on a widget; the s
 
 import contextlib
 import contextvars
-from typing import Iterator
+import weakref
+from typing import Any, Iterator, Protocol
 
 _replaying: contextvars.ContextVar[int] = contextvars.ContextVar(
     "poriscope_replaying", default=0
@@ -63,6 +64,67 @@ def replaying() -> Iterator[None]:
         yield
     finally:
         _replaying.reset(token)
+
+
+class ErrorCollector(Protocol):
+    """Something that may take an error a dialog would show: a running replay."""
+
+    def take_error(self, text: str) -> bool:
+        """
+        Take an error, if still collecting.
+
+        :param text: the error's text
+        :type text: str
+        :return: True if it was taken, so no dialog should show it
+        :rtype: bool
+        """
+        ...
+
+
+#: The replays that collect errors while they run, held weakly so a replay that is gone
+#: collects nothing; the window's thread alone touches it.
+_error_collectors: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
+
+def collect_errors(collector: ErrorCollector) -> None:
+    """
+    Offer every error a dialog would show to this collector, until told to stop.
+
+    A running replay collects them, so its own question can say what its step reported
+    instead of each error opening a dialog. Call it on the window's thread.
+
+    :param collector: what takes each error, a running replay
+    :type collector: ErrorCollector
+    """
+    _error_collectors.add(collector)
+
+
+def stop_collecting_errors(collector: ErrorCollector) -> None:
+    """
+    Stop offering errors to this collector.
+
+    :param collector: something passed to :py:func:`collect_errors`
+    :type collector: ErrorCollector
+    """
+    _error_collectors.discard(collector)
+
+
+def hold_back_error(text: str) -> bool:
+    """
+    Hand an error to every replay still collecting instead of a dialog, if any takes it.
+
+    An error logged by a worker thread cannot be told apart by replay, so each collecting
+    replay gets it. A collector decides for itself whether it still collects, so one that
+    was never told to stop holds nothing back once it no longer runs. Call it on the
+    window's thread.
+
+    :param text: the error's text
+    :type text: str
+    :return: True if a replay took it, so no dialog should show it
+    :rtype: bool
+    """
+    taken = [collector.take_error(text) for collector in list(_error_collectors)]
+    return any(taken)
 
 
 def is_replaying() -> bool:

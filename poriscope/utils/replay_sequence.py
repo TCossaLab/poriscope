@@ -49,12 +49,25 @@ import inspect
 import logging
 from collections import OrderedDict
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+)
 
+import shiboken6
 from PySide6.QtCore import QTimer
 
 from poriscope.utils.LogDecorator import ACTION_DECLARATION_ATTR, ActionDeclaration
-from poriscope.utils.ReplayGuard import replaying
+from poriscope.utils.ReplayGuard import (
+    collect_errors,
+    replaying,
+    stop_collecting_errors,
+)
 
 if TYPE_CHECKING:
     # MetaController creates a ReplaySequence for every tab, so it imports this module.
@@ -88,14 +101,25 @@ class ReplaySequence:
         #: back resets.
         self._finished_runs: List[Tuple[str, str, int]] = []
         self._going_back = False
+        #: Whether the entries are the actions the tab was loaded with, which the autosave
+        #: holds only once they have run.
+        self.from_session = False
+        #: Whether the replay going back was one of the loaded actions.
+        self._back_from_session = False
+        #: The errors logged since the step the replay is on began, shown in its question.
+        self._step_errors: List[str] = []
 
-    def start(self, entries: Optional[Iterable[Any]] = None) -> bool:
+    def start(
+        self, entries: Optional[Iterable[Any]] = None, from_session: bool = False
+    ) -> bool:
         """
         Start replaying, from the first of new entries or from where the last replay ended.
 
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
             None continues the last replay from the entry it stopped or failed at
         :type entries: Optional[Iterable[Any]]
+        :param from_session: the entries are the actions the tab was loaded with
+        :type from_session: bool
         :return: False if a replay is already running, or there is nothing left to continue
         :rtype: bool
         """
@@ -104,6 +128,7 @@ class ReplaySequence:
         if entries is not None:
             self._entries = deepcopy(list(entries))
             self._index = 0
+            self.from_session = from_session
             if not self._going_back:
                 self._history_before = deepcopy(self._controller.tab_action_history)
                 self._finished_runs = []
@@ -111,8 +136,76 @@ class ReplaySequence:
             return False
         self.failed_at = None
         self.running = True
+        collect_errors(self)
         self._controller.replay_state_changed.emit(False)
         self._schedule()
+        return True
+
+    def replay_available(self) -> bool:
+        """
+        Has this replay something Replay Actions would replay?
+
+        Entries left to continue, or the tab's loaded actions, until they have been replayed
+        to the end.
+
+        :return: True if Replay Actions would start or continue a replay
+        :rtype: bool
+        """
+        return self.has_remaining() or (
+            self._controller.holds_session_actions()
+            and not self.replayed_session_to_the_end()
+        )
+
+    def replayed_session_to_the_end(self) -> bool:
+        """
+        Did the last replay replay the tab's loaded actions to the end?
+
+        :return: True once the loaded actions have all been replayed, until another replay
+            starts, going back included
+        :rtype: bool
+        """
+        return (
+            self.from_session
+            and not self.running
+            and self.failed_at is None
+            and not self.has_remaining()
+        )
+
+    def rewrite_entries(
+        self, rewrite: Callable[[List[Any]], Tuple[List[Any], bool]]
+    ) -> bool:
+        """
+        Apply a rewrite to the entries not replayed yet and to the history going back rebuilds.
+
+        The entry a running replay is on is left alone, so the replay stays where it is;
+        the entries already replayed are history already.
+
+        :param rewrite: takes entries, gives back the rewritten ones and whether any changed
+        :type rewrite: Callable[[List[Any]], Tuple[List[Any], bool]]
+        :return: True if anything changed
+        :rtype: bool
+        """
+        start = self._index + 1 if self.running else self._index
+        later, later_changed = rewrite(self._entries[start:])
+        if later_changed:
+            self._entries = self._entries[:start] + later
+        before, before_changed = rewrite(list(self._history_before.values()))
+        if before_changed:
+            self._history_before = OrderedDict(enumerate(before))
+        return later_changed or before_changed
+
+    def take_error(self, text: str) -> bool:
+        """
+        Keep an error the step logged, for the question a failure asks, while running.
+
+        :param text: the error's text
+        :type text: str
+        :return: True if taken: the replay is running and its tab still exists
+        :rtype: bool
+        """
+        if not self.running or not shiboken6.isValid(self._controller):
+            return False
+        self._step_errors.append(text)
         return True
 
     def has_remaining(self) -> bool:
@@ -181,10 +274,12 @@ class ReplaySequence:
         """
         if generation != self._generation:
             return
+        self._step_errors.clear()
         if not self.has_remaining():
-            self._end(
-                "back to before the replay" if self._going_back else "replay done"
-            )
+            went_back = self._going_back
+            self._end("back to before the replay" if went_back else "replay done")
+            if went_back:
+                self._say_loaded_actions_not_autosaved()
             return
         resolved = self._controller.resolve_replayed_entry(self._entries[self._index])
         if resolved is None:
@@ -303,15 +398,23 @@ class ReplaySequence:
                 f"left cleared"
             )
             self._clear_tab()
+            self._say_loaded_actions_not_autosaved()
             return
         self._end(f"replay stopped at step {step} of {total}: {reason}")
         action = str(self._entries[self._index].get("action"))
         name = self._controller.__class__.__name__
         choice = self._controller.view.ask_after_replay_failure(
-            name, step, total, action, reason
+            name, step, total, action, reason, "\n".join(self._step_errors)
         )
         if choice == "back":
             self._go_back()
+        elif self.from_session:
+            kept = self._index
+            self._say(
+                f"{kept} of {total} steps are kept; the other {total - kept} are not "
+                f"saved in the autosave. Replay Actions continues them now; "
+                + self._how_to_get_them_back()
+            )
 
     def _go_back(self) -> None:
         """Clear the tab and replay its history from before the replay."""
@@ -319,6 +422,7 @@ class ReplaySequence:
             "going back to before the replay", self._controller.__class__.__name__
         )
         entries = list(self._history_before.values())
+        self._back_from_session = self.from_session
         self._clear_tab()
         self._going_back = True
         self.start(entries)
@@ -338,6 +442,41 @@ class ReplaySequence:
             controller.__class__.__name__, controller.tab_action_history
         )
 
+    def _say_loaded_actions_not_autosaved(self) -> None:
+        """After going back from a replay of the loaded actions, say the autosave lacks them."""
+        if not self._back_from_session:
+            return
+        self._back_from_session = False
+        self._say(
+            "the loaded actions are not saved in the autosave. Replay Actions replays "
+            "them now; " + self._how_to_get_them_back()
+        )
+
+    def _how_to_get_them_back(self) -> str:
+        """
+        How the loaded actions can be had again once the app is restarted or restored.
+
+        :return: the end of a status-panel line
+        :rtype: str
+        """
+        if self._controller.session_source:
+            return (
+                "after Restore Session or a restart, load the session file again to get "
+                "them back."
+            )
+        return "they cannot be brought back after Restore Session or a restart."
+
+    def _say(self, text: str) -> None:
+        """
+        Put a line on the status panel under the tab's name.
+
+        :param text: the line
+        :type text: str
+        """
+        self._controller.add_text_to_display.emit(
+            text, self._controller.__class__.__name__
+        )
+
     def _end(self, text: Optional[str]) -> None:
         """
         End the replay, say whether it can be continued, and unless ``text`` is None, say how.
@@ -346,11 +485,12 @@ class ReplaySequence:
         :type text: Optional[str]
         """
         self.running = False
+        stop_collecting_errors(self)
         self.waiting_for = None
         self._launched = False
         self._going_back = False
         self._generation += 1
-        self._controller.replay_state_changed.emit(self.has_remaining())
+        self._controller.replay_state_changed.emit(self.replay_available())
         if text is not None:
             self._controller.add_text_to_display.emit(
                 text, self._controller.__class__.__name__

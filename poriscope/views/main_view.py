@@ -612,7 +612,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_save_session_button_click(self) -> None:
         save_file = self.get_save_file_name()
-        if save_file is not None:
+        if save_file:
             self.save_session.emit(save_file)
 
     @log(logger=logger)

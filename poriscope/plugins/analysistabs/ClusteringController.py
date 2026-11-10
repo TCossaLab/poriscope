@@ -173,7 +173,11 @@ class ClusteringController(MetaController):
 
     @log(logger=logger)
     @register_action(
-        "cluster_run", kind="additive", figure="clusters", skip_on_false=True
+        "cluster_run",
+        kind="additive",
+        figure="clusters",
+        skip_on_false=True,
+        plugin_args=("loader",),
     )
     def load_metadata_for_clustering(self, config: Dict[str, Any], loader: str) -> bool:
         """

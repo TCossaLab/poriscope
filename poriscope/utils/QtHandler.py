@@ -30,7 +30,7 @@ from typing import Deque, Optional
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from poriscope.utils.ReplayGuard import is_replaying
+from poriscope.utils.ReplayGuard import hold_back_error, is_replaying
 
 # How many records may wait behind an open dialog before further ones are
 # collapsed into a single "N more suppressed" notice. A cap is needed because a
@@ -63,8 +63,8 @@ class QtHandler(logging.Handler):
     dialogs.
 
     Nothing is shown while a saved action is replayed: a replayed step that fails is
-    reported by the replay's own question to go back or keep, and the console and log file
-    still get the record.
+    reported by the replay's own question to go back or keep, which also carries what the
+    step logged, worker threads included; the console and log file still get the record.
     """
 
     def __init__(self, parent: Optional[QObject] = None, level: int = logging.ERROR):
@@ -92,6 +92,9 @@ class QtHandler(logging.Handler):
         :type record: logging.LogRecord
         """
         if is_replaying():
+            # Inside a replayed step, on the window's thread: the replay's own question
+            # says what its step reported.
+            hold_back_error(self.format(record))
             return
         # Emit the signal with the log record
         self.emitter.emit_message.emit(record)
@@ -109,6 +112,10 @@ class QtHandler(logging.Handler):
         :param record: The record to display.
         :type record: logging.LogRecord
         """
+        if hold_back_error(self.format(record)):
+            # A replay is running: an error from its run's worker thread is said in the
+            # replay's own question, not in a dialog of its own.
+            return
         if self._dialog_open:
             self._queue_record(record)
             return

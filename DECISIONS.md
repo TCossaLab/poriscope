@@ -18,6 +18,69 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-09 - The session file versions the whole file, lists the plugins in order, and keeps the tabs apart
+
+**Context.** Each tab's recorded actions go in the session file, which then needs a format version and the last tab.
+The 2.0 file was one map of entries, tabs among the plugins; its reader refuses any top-level value that is not an
+entry.
+
+**Decision** (Carolina, 2026-11-09). `{"format_version", "poriscope_version", "last_tab", "plugins": [...], "tabs":
+{...}}`: the version covers the whole file, `poriscope_version` is for messages only, the data plugins are a list
+(a plugin is restored after the plugins it depends on, and JSON keeps no order for an object's keys), each tab's
+state and `actions` sit under its class name. Only `MainModel` knows the layout; the in-memory history is unchanged.
+A file with no version is the 2.0 layout and loads; another version is refused whole. Loading restores the plugins,
+then the tabs. A plugin cannot take a tab's name.
+
+**Rejected.** The version and `last_tab` in each tab's entry (repeated per tab; versions part of the file). Top-level
+keys beside the entries (a plugin the user names `format` collides). A reserved fake entry. 2.0 compatibility was
+not weighed (Carolina, 2026-11-09), as for action files (`DECISIONS.md` 2026-09-17); 2.1 session files do not open
+in 2.0.
+
+**Revisit if** a file must open in an older version, or a part of the file needs its own version.
+
+---
+
+## 2026-11-09 - A plugin edit is told from a rename by its settings, without a signal
+
+**Context.** Deleting a plugin drops the recorded entries naming it; renaming rewrites them; editing drops them and
+its dependents', since an edit leaves results on screen its new settings did not produce. The only way to rename is
+the Edit dialog, which always re-applies the settings, and an edit without a rename reaches the shell as
+`(entry, "")`, like a new plugin or a dependent re-saved after its parent's rename.
+
+**Decision** (Carolina, 2026-11-09). `MainController.update_plugin_history` compares the incoming settings with the
+stored ones, leaving out the settings that name another plugin: a difference is an edit (drop, and a panel line); none
+with a new key is a rename (rewrite); none at all changes nothing. It rests on the Edit dialog never changing a plugin
+reference (`editable_source_plugins=False`), pinned by a test. Measured 2026-11-09 at `742ec83a`: an untouched Edit
+dialog gives back identical settings for all 23 plugins a recorded action can name. The drop and the rewrite reach
+every copy a tab holds (`MetaController.rewrite_plugin_entries`).
+
+**Rejected.** A `plugin_edited` signal (a new signal for what the slot can already see). Every edit dropping (a rename
+would drop every Find of a renamed reader's finders). Every rename rewriting (a rename with new settings would keep
+entries that replay with settings they never ran with).
+
+**Revisit if** the Edit dialog lets a plugin reference change, or a setting stops round-tripping through the dialog.
+
+---
+
+## 2026-11-09 - The autosave holds only what a tab ran
+
+**Context.** At load, the autosave holds the loaded actions, not yet replayed. A replay records each step again,
+and Keep or Go back leave the tab with part of them or none.
+
+**Decision** (Carolina, 2026-11-09). Until a tab is replayed or worked in after the load, its autosave entry holds
+the loaded actions; from then on, the kept history of what it ran. Starting a replay of the loaded actions counts, so
+a replay whose first step fails and records nothing leaves the tab's entry empty. After
+Keep or Go back on the loaded actions, the status panel says which steps the autosave lacks: Replay Actions still has them while the app is open, and loading
+the session file again brings them back. Replay Actions is disabled once the loaded actions have all replayed, until
+Go back or another load.
+
+**Rejected.** Writing the loaded steps not yet replayed into the autosave (after Keep they start with the step that
+failed, so a Restore would fail there again, and the file would describe steps that never ran).
+
+**Revisit if** a crash must cost no replay at all.
+
+---
+
 ## 2026-11-05 - Metadata's Reset button empties the history; Undo straight after brings it back
 
 **Context.** Reset was one more recorded `reset`, shared with the resets the tab makes itself (a new figure, the first
@@ -52,6 +115,9 @@ declared `skip_on_false` returns `False`; or, for a Find or Fit, when its run do
 results: the status method is False (cancelled, failed, 0 events) or, for a Fit, `get_num_events` is 0. A cancel is a
 failure too, for now. An entry that names no action or whose values no longer fit is reported and skipped, as before.
 Live behaviour is unchanged: a 0-good-fits Fit still marks the channel fitted, is recorded and can be written.
+*Extended 2026-11-09: the question is the only dialog a replay opens; every error a dialog would show while a
+replay runs - its runs' worker threads included - goes to the log file and into the question, under "What the step
+reported".*
 
 **Rejected.** Any `False` as a failure: a recorded overlay that drew nothing would fail every replay (`overlay_plot` is
 recorded either way). Making the overlay `skip_on_false`: changes live recording.
@@ -254,8 +320,7 @@ records the reset twice, as Plot Events did before this).
 
 **Decision.** `register_action` binds each call to the method's signature and saves every value by name, defaults
 filled in, in every tab. Replay binds a saved entry before calling it, and reports and skips one that no longer fits.
-**Open:** a Metadata plot configuration saved before this holds one parameters dict and is reported, not replayed;
-whether such files are converted is ruled with the saved-history format.
+*Settled 2026-11-09: a file saved before this, or by 2.0, is refused whole at Load Plot Configuration.*
 
 **Rejected.** Saving positionally (unreadable); converting old files now (the saved-history format changes again).
 

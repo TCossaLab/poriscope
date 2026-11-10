@@ -13,9 +13,13 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 from poriscope.utils.MetaView import MetaView
 
 
-def _ask(monkeypatch: Any, click: Optional[str], seen: List[str]) -> str:
+def _ask(
+    monkeypatch: Any, click: Optional[str], seen: List[str], details: str = ""
+) -> str:
     def exec_(box: QMessageBox) -> int:
         seen.extend([box.text(), box.defaultButton().text()])
+        if details:
+            seen.append(box.informativeText())
         if click is not None:
             next(b for b in box.buttons() if b.text() == click).click()
         return 0
@@ -29,6 +33,7 @@ def _ask(monkeypatch: Any, click: Optional[str], seen: List[str]) -> str:
         3,
         "overlay_plot",
         "overlay_plot raised KeyError: 'width'",
+        details,
     )
 
 
@@ -55,3 +60,16 @@ def test_it_names_the_tab_the_step_the_action_and_the_reason(
         "raised KeyError: 'width'.",
         "Keep",
     ]
+
+
+def test_what_the_step_reported_is_in_the_question(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """The one dialog a failed replay shows carries the errors its step logged."""
+    seen: List[str] = []
+
+    _ask(monkeypatch, "Keep", seen, details="Requested channel=5 is invalid")
+
+    assert seen[2].startswith(
+        "What the step reported:\nRequested channel=5 is invalid\n\n"
+    )

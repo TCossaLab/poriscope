@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from poriscope.models.main_model import MainModel
+from poriscope.constants import __VERSION__
+from poriscope.models.main_model import LoadedSession, MainModel, SessionRefused
 from poriscope.utils.QtHandler import QtHandler
 
 # Set up logging for the tests
@@ -110,22 +111,131 @@ def test_populate_available_plugins(main_model):
 
 SESSION = {"reader": {"metaclass": "MetaReader", "subclass": "SomeReader"}}
 
+#: A session as the app holds it: data plugins in their order, then a tab.
+HISTORY = {
+    "R1": {"metaclass": "MetaReader", "subclass": "SomeReader", "settings": {}},
+    "F1": {"metaclass": "MetaEventFinder", "subclass": "SomeFinder", "settings": {}},
+    "MetadataController": {
+        "metaclass": "MetaController",
+        "subclass": "MetadataController",
+        "subset_filters": {"long": "duration > 1"},
+    },
+}
 
-def test_save_session(main_model, tmp_path):
-    """A saved session reads back as what was saved."""
+
+def _written(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def test_save_session_writes_the_layout_load_session_reads(main_model, tmp_path):
+    """
+    Version and last tab at the top, data plugins as a list in their order, tabs apart.
+
+    A plugin is restored after the plugins it depends on, and JSON keeps no order for an
+    object's keys, so the plugins are a list.
+    """
     path = tmp_path / "session.json"
 
-    main_model.save_session(SESSION, path)
+    main_model.save_session(HISTORY, path, last_tab="MetadataController")
 
-    assert json.loads(path.read_text()) == SESSION
+    assert _written(path) == {
+        "format_version": 2,
+        "poriscope_version": __VERSION__,
+        "last_tab": "MetadataController",
+        "plugins": [
+            {
+                "key": "R1",
+                "metaclass": "MetaReader",
+                "subclass": "SomeReader",
+                "settings": {},
+            },
+            {
+                "key": "F1",
+                "metaclass": "MetaEventFinder",
+                "subclass": "SomeFinder",
+                "settings": {},
+            },
+        ],
+        "tabs": {"MetadataController": {"subset_filters": {"long": "duration > 1"}}},
+    }
+
+
+def test_a_saved_session_loads_back_as_what_was_saved(main_model, tmp_path):
+    path = tmp_path / "session.json"
+    main_model.save_session(HISTORY, path, last_tab="MetadataController")
+
+    loaded = main_model.load_session(path)
+
+    assert loaded == LoadedSession(HISTORY, "MetadataController")
+    assert list(loaded.plugin_history) == ["R1", "F1", "MetadataController"]
+
+
+def test_a_type_in_the_settings_comes_back_a_type(main_model, tmp_path):
+    path = tmp_path / "session.json"
+    history = {
+        "R1": {
+            "metaclass": "MetaReader",
+            "subclass": "S",
+            "settings": {"Rate": {"Type": float, "Value": 1.0}},
+        }
+    }
+
+    main_model.save_session(history, path)
+
+    assert _written(path)["plugins"][0]["settings"]["Rate"]["Type"] == "float"
+    assert main_model.load_session(path).plugin_history == history
+
+
+def test_a_subset_filter_named_type_in_a_saved_action_stays_text(main_model, tmp_path):
+    """
+    Type names are turned back into types under a ``Type`` key; a recorded filter named
+    ``Type`` is data, and the actions, a list, are never walked for them.
+    """
+    path = tmp_path / "session.json"
+    entry = {
+        "action": "overlay_plot",
+        "args": [],
+        "kwargs": {"filters": {"Type": "float"}},
+    }
+    history = {
+        "MetadataController": {
+            "metaclass": "MetaController",
+            "subclass": "MetadataController",
+            "actions": [entry],
+        }
+    }
+
+    main_model.save_session(history, path)
+
+    loaded = main_model.load_session(path).plugin_history
+    assert loaded["MetadataController"]["actions"] == [entry]
 
 
 def test_load_session_default_path(main_model):
     """Restore reads the default session file."""
     default = Path(main_model.session_path, "plugin_history.json")
-    default.write_text(json.dumps(SESSION))
+    main_model.save_session(SESSION)
 
-    assert main_model.load_session() == SESSION
+    assert default.exists()
+    assert main_model.load_session().plugin_history == SESSION
+
+
+def test_a_2_0_session_still_loads_with_its_tabs_after_the_plugins(
+    main_model, tmp_path
+):
+    """The 2.0 layout is a map of entries, a tab wherever it was opened."""
+    path = tmp_path / "old.json"
+    tab = HISTORY["MetadataController"]
+    path.write_text(
+        json.dumps(
+            {"MetadataController": tab, "R1": HISTORY["R1"], "F1": HISTORY["F1"]}
+        )
+    )
+
+    loaded = main_model.load_session(path)
+
+    assert loaded == LoadedSession(HISTORY, "")
+    assert list(loaded.plugin_history) == ["R1", "F1", "MetadataController"]
 
 
 def test_load_session_refuses_a_file_that_is_not_a_session(main_model, tmp_path):
@@ -141,7 +251,8 @@ def test_load_session_refuses_a_file_that_is_not_a_session(main_model, tmp_path)
         json.dumps({"MetadataController": {"0": {"function": "_reset_actions"}}})
     )
 
-    assert main_model.load_session(path) is None
+    with pytest.raises(SessionRefused, match="does not hold a Poriscope session"):
+        main_model.load_session(path)
 
 
 def test_load_session_accepts_an_empty_session(main_model, tmp_path):
@@ -149,7 +260,78 @@ def test_load_session_accepts_an_empty_session(main_model, tmp_path):
     path = tmp_path / "empty.json"
     path.write_text("{}")
 
-    assert main_model.load_session(path) == {}
+    assert main_model.load_session(path) == LoadedSession()
+
+
+def test_a_session_in_a_format_this_version_does_not_read_is_refused_whole(
+    main_model, tmp_path
+):
+    """A later layout may have changed any part of the file, plugins included."""
+    path = tmp_path / "later.json"
+    path.write_text(
+        json.dumps(
+            {"format_version": 3, "poriscope_version": "9.9", "plugins": [], "tabs": {}}
+        )
+    )
+
+    with pytest.raises(SessionRefused, match=r"by Poriscope 9\.9 .*format 3"):
+        main_model.load_session(path)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        {"format_version": 2, "plugins": {}, "tabs": {}},
+        {"format_version": 2, "plugins": [], "tabs": []},
+        {"format_version": 2, "plugins": [], "tabs": {}, "last_tab": 1},
+        {
+            "format_version": 2,
+            "plugins": [{"metaclass": "M", "subclass": "S"}],
+            "tabs": {},
+        },
+        {
+            "format_version": 2,
+            "plugins": [
+                {"key": "R1", "metaclass": "M", "subclass": "S"},
+                {"key": "R1", "metaclass": "M", "subclass": "S"},
+            ],
+            "tabs": {},
+        },
+        {"format_version": 2, "plugins": [], "tabs": {"MetadataController": []}},
+        {
+            "format_version": 2,
+            "plugins": [],
+            "tabs": {"MetadataController": {"actions": {"0": {}}}},
+        },
+        {
+            "format_version": 2,
+            "plugins": [
+                {"key": "MetadataController", "metaclass": "M", "subclass": "S"}
+            ],
+            "tabs": {"MetadataController": {}},
+        },
+        [],
+    ],
+    ids=[
+        "plugins-not-a-list",
+        "tabs-not-an-object",
+        "last-tab-not-text",
+        "plugin-without-key",
+        "duplicate-key",
+        "tab-not-an-object",
+        "actions-not-a-list",
+        "tab-named-like-a-plugin",
+        "not-an-object",
+    ],
+)
+def test_a_malformed_session_is_refused_before_anything_is_applied(
+    main_model, tmp_path, content
+):
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(content))
+
+    with pytest.raises(SessionRefused, match="does not hold a Poriscope session"):
+        main_model.load_session(path)
 
 
 def test_a_failed_session_save_keeps_the_previous_file(main_model, tmp_path):
@@ -188,9 +370,20 @@ def test_load_session_nonexistent(main_model):
     file_name = "non_existent_session.json"
 
     with patch("builtins.open", MagicMock(side_effect=FileNotFoundError)):
-        session_data = main_model.load_session(file_name)
+        with pytest.raises(SessionRefused) as refused:
+            main_model.load_session(file_name)
 
-    assert session_data is None
+    assert refused.value.missing
+
+
+def test_a_session_that_cannot_be_read_is_refused_with_the_reason(main_model, tmp_path):
+    path = tmp_path / "broken.json"
+    path.write_text("{not json")
+
+    with pytest.raises(SessionRefused, match="could not be read") as refused:
+        main_model.load_session(path)
+
+    assert not refused.value.missing
 
 
 def test_replace_classes_with_class_names_all_paths(main_model):
@@ -294,7 +487,7 @@ def test_a_save_retries_a_briefly_locked_target(main_model, tmp_path, mocker):
 
     main_model.save_session(SESSION, path)
 
-    assert json.loads(path.read_text()) == SESSION
+    assert main_model.load_session(path).plugin_history == SESSION
     assert len(attempts) == 3
     reported.emit.assert_not_called()
 
@@ -706,3 +899,14 @@ class TestTypeRoundTrip:
 
         assert settings["Surprise"]["Codec"] == "bool"
         assert "Codec" in caplog.text
+
+
+def test_the_old_action_autosave_is_found_and_left_alone(main_model):
+    """2.0 wrote the action history to its own file, which this version never reads."""
+    old = Path(main_model.session_path, "tab_action_history.json")
+    assert not main_model.old_action_history_exists()
+
+    old.write_text("{}")
+
+    assert main_model.old_action_history_exists()
+    assert old.read_text() == "{}"

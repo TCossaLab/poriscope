@@ -19,6 +19,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 import pytest
 
 from poriscope.controllers.DataPluginController import DataPluginController
+from poriscope.controllers.main_controller import MainController
+from poriscope.models.main_model import LoadedSession
 from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
@@ -509,3 +511,71 @@ class TestAPluginThatCannotReportItsStatus:
             ("renamed", FITTER)
         ]
         assert any("Unable to report the status of renamed" in t for t in record.text)
+
+
+class TestTheSessionFollowsAnEditOrARename:
+    """
+    The session's tabs hold recorded entries naming plugins. A rename that changes no
+    setting makes them follow the new name; an edit that changes one drops them, with those
+    of every plugin built on it, since they would replay with settings they never ran with.
+    Driven through the real plugin controller, so the comparison sees what an edit really
+    sends - a dependent re-saved after its parent's rename included.
+    """
+
+    @staticmethod
+    def _shell(ctrl: DataPluginController, mocker: Any) -> Tuple[MainController, Any]:
+        model = mocker.Mock()
+        model.load_session.return_value = LoadedSession()
+        model.get_available_plugins.return_value = {
+            metaclass: [] for metaclass in ctrl.model.get_available_metaclasses()
+        }
+        mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+        shell = MainController(model, mocker.Mock())
+        shell.data_plugin_controller = ctrl
+        for metaclass, instances in ctrl.get_plugin_instances().items():
+            for key, instance in instances.items():
+                shell.plugin_history[key] = {
+                    "metaclass": metaclass,
+                    "subclass": instance.__class__.__name__,
+                    "settings": instance.get_raw_settings(),
+                }
+        tab = mocker.Mock()
+        tab.get_session_state.return_value = {}
+        tab.session_actions.return_value = None
+        tab.kept_actions.return_value = []
+        tab.rewrite_plugin_entries.return_value = True
+        shell.analysis_tabs = {"EventAnalysisController": tab}
+        ctrl.update_plugin_history.connect(shell.update_plugin_history)
+        return shell, tab
+
+    @staticmethod
+    def _rewrites(tab: Any) -> List[Any]:
+        return [call.args for call in tab.rewrite_plugin_entries.call_args_list]
+
+    def test_a_rename_alone_makes_the_entries_follow(
+        self, controller: DataPluginController, mocker: Any
+    ) -> None:
+        _, tab = self._shell(controller, mocker)
+
+        edit(controller, "MetaEventFitter", FITTER, EditDialog(key="renamed"))
+
+        assert self._rewrites(tab) == [(FITTER, "renamed")]
+
+    def test_renaming_a_parent_leaves_its_dependents_entries_alone(
+        self, controller: DataPluginController, mocker: Any
+    ) -> None:
+        _, tab = self._shell(controller, mocker)
+
+        edit(controller, "MetaEventLoader", LOADER, EditDialog(key="loader2"))
+
+        assert self._rewrites(tab) == [(LOADER, "loader2")]
+
+    def test_a_changed_setting_drops_the_plugin_s_entries_and_its_dependents(
+        self, with_writer: DataPluginController, mocker: Any
+    ) -> None:
+        shell, tab = self._shell(with_writer, mocker)
+
+        edit(with_writer, "MetaEventFitter", FITTER, EditDialog({"Step Size": 50.0}))
+
+        assert self._rewrites(tab) == [(FITTER, None), (WRITER, None)]
+        shell.main_view.add_text_to_display.assert_called_once()

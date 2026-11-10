@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from poriscope.models.main_model import MainModel
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.utils.kept_history import build_kept_history
 from poriscope.utils.MetaController import declarations_of
@@ -695,8 +696,40 @@ SCENARIOS = [
 ]
 
 
+def _through_the_session_file(
+    tab: str, entries: List[Any], tmp_path: Path
+) -> List[Any]:
+    """
+    Save a tab's entries in a session file and read them back, as Save and Load do.
+
+    :param tab: the tab's class name
+    :type tab: str
+    :param entries: what the tab saves
+    :type entries: List[Any]
+    :param tmp_path: where to write the file
+    :type tmp_path: Path
+    :return: the entries the load hands the tab
+    :rtype: List[Any]
+    """
+    model = MainModel({"User Plugin Folder": str(tmp_path), "Parent Folder": ""})
+    path = tmp_path / "session.json"
+    model.save_session(
+        {tab: {"metaclass": "MetaController", "subclass": tab, "actions": entries}},
+        path,
+        last_tab=tab,
+    )
+    loaded = model.load_session(path)
+    assert loaded.last_tab == tab
+    return loaded.plugin_history[tab]["actions"]
+
+
 def run_scenario(
-    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any, kept: bool = False
+    scenario: Scenario,
+    tmp_path: Path,
+    data: Any,
+    qtbot: Any,
+    kept: bool = False,
+    through_session_file: bool = False,
 ) -> Tuple[Any, Any, List[Any]]:
     """
     Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
@@ -711,6 +744,9 @@ def run_scenario(
     :type qtbot: Any
     :param kept: replay only what a restored session keeps of A's history
     :type kept: bool
+    :param through_session_file: save what is replayed in a session file and replay what
+        loading it gives back
+    :type through_session_file: bool
     :return: A's capture, B's capture, and the history recorded in A
     :rtype: Tuple[Any, Any, List[Any]]
     """
@@ -732,6 +768,8 @@ def run_scenario(
             if kept
             else history
         )
+        if through_session_file:
+            replayed = _through_the_session_file(scenario.tab, replayed, tmp_path)
 
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
@@ -787,6 +825,28 @@ def test_a_replay_of_the_kept_history_draws_what_the_whole_history_drew(
     """
     data = request.getfixturevalue(scenario.needs)
     captured_a, captured_b, _ = run_scenario(scenario, tmp_path, data, qtbot, kept=True)
+
+    assert captured_b["probe"] == captured_a["probe"]
+    assert captured_b["plot_cache"] == captured_a["plot_cache"]
+    assert captured_b["figures"] == captured_a["figures"]
+    assert captured_b["bookkeeping"] == captured_a["bookkeeping"]
+    assert captured_b["overlay"] == captured_a["overlay"]
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "scenario", SCENARIOS, ids=[s.name or s.tab for s in SCENARIOS]
+)
+def test_what_a_session_file_gives_back_replays_to_the_same_result(
+    qapp, qtbot, request, tmp_path: Path, scenario: Scenario
+) -> None:
+    """
+    Saving turns tuples into lists and every value into JSON; the replay must not notice.
+    """
+    data = request.getfixturevalue(scenario.needs)
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, data, qtbot, kept=True, through_session_file=True
+    )
 
     assert captured_b["probe"] == captured_a["probe"]
     assert captured_b["plot_cache"] == captured_a["plot_cache"]

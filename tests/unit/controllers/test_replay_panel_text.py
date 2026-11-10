@@ -11,7 +11,7 @@ Real tabs, wired by ``MainController.instantiate_analysis_tab``.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -70,13 +70,14 @@ class _Other(_Tab):
 
 
 @pytest.fixture
-def main(qtbot: Any, mocker: MockerFixture) -> MainController:
+def main(qtbot: Any, mocker: MockerFixture) -> Iterator[MainController]:
     """
     A MainController over a mock window, whose plugin classes are the two test tabs.
 
     :param qtbot: pytest-qt fixture, for the application the timers run on
     :param mocker: pytest-mock fixture
-    :return: the controller, with both tabs open
+    :return: the controller, with both tabs open; a replay still waiting on a run at the
+        end of the test is stopped, as quitting does, so it collects no later test's errors
     """
     mocker.patch("poriscope.controllers.main_controller.DataPluginController")
     model = mocker.Mock()
@@ -88,7 +89,9 @@ def main(qtbot: Any, mocker: MockerFixture) -> MainController:
     controller = MainController(model, mocker.Mock())
     controller.instantiate_analysis_tab("_Tab")
     controller.instantiate_analysis_tab("_Other")
-    return controller
+    yield controller
+    for tab in controller.analysis_tabs.values():
+        tab.replay_sequence.stop(quitting=True)
 
 
 def _shown(main: MainController) -> List[str]:
@@ -177,7 +180,10 @@ def test_a_refused_load_is_shown_at_once(
 ) -> None:
     tab = _replay_up_to_the_find(main, qtbot)
     path = tmp_path / "actions.json"
-    path.write_text(json.dumps({"0": _entry("draw", "late")}), encoding="utf-8")
+    path.write_text(
+        json.dumps({"0": {"action": "draw", "args": [], "kwargs": {"label": "late"}}}),
+        encoding="utf-8",
+    )
 
     tab.load_actions_from_json(str(path))
 

@@ -35,6 +35,8 @@ def mock_model(mocker: MockerFixture) -> MagicMock:
     model: MagicMock = mocker.Mock()
     model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     model.get_available_metaclasses.return_value = []
+    # The real model holds every discovered class here, analysis tabs included.
+    model.available_plugins = {}
     return model
 
 
@@ -2094,6 +2096,27 @@ class TestMakeTempInstance:
         assert "MetaReader.ABF2Reader" in ctrl.logger.error.call_args[0][0]
 
 
+def test_the_edit_dialog_cannot_change_the_plugins_a_plugin_is_built_on(
+    mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
+) -> None:
+    """
+    The session tells an edit from a parent's rename by leaving plugin references out of
+    the comparison, which holds only while the dialog cannot change them.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    mock_view.get_user_settings.return_value = (None, None, False)
+
+    ctrl.edit_plugin("MetaEventFinder", "F1", {})
+
+    assert (
+        mock_view.get_user_settings.call_args.kwargs["editable_source_plugins"] is False
+    )
+
+
 class TestKeyIsUnused:
     """Plugin names are unique across every metaclass, not within one."""
 
@@ -2133,6 +2156,33 @@ class TestKeyIsUnused:
             "Please choose a different name"
             in ctrl.add_text_to_display.emit.call_args[0][0]
         )
+
+    def test_rejects_the_name_of_an_analysis_tab(
+        self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
+    ) -> None:
+        """
+        The session keeps tabs and plugins in one map keyed by name, so a plugin named
+        like a tab would replace that tab's entry, its saved actions with it.
+
+        :param mock_model: Mocked data plugin model.
+        :param mock_view: Mocked data plugin view.
+        :param mocker: Pytest-mock fixture.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+        mock_model.available_plugins = {
+            "MetaController": {"MetadataController": object},
+            "MetaReader": {},
+        }
+
+        assert ctrl._key_is_unused("MetadataController") is False
+        assert "analysis tab" in ctrl.add_text_to_display.emit.call_args[0][0]
+        # At ERROR, which QtHandler shows as a dialog: the name has to be changed.
+        ctrl.logger.error.assert_called_once_with(
+            "Plugin name 'MetadataController' is the name of an analysis tab. Please "
+            "choose a different name."
+        )
+        assert ctrl._key_is_unused("Metadata") is True
 
 
 class TestSettingsFromNewPluginDialog:

@@ -29,12 +29,12 @@ import functools
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
-from poriscope.models.main_model import MainModel
+from poriscope.models.main_model import TAB_METACLASS, MainModel, SessionRefused
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.views.main_view import MainView
@@ -75,7 +75,11 @@ class MainController(QObject):
         )
 
         self.plugin_history: Dict[str, Any] = {}
-        self.tab_action_history: Dict[str, Any] = {}
+        #: The analysis tab whose history changed last, saved with the session.
+        self.last_tab: str = ""
+        #: The tabs whose history has changed since the session was loaded. Until it
+        #: does, a tab saves the actions it was loaded with; after, what it ran.
+        self._changed_since_load: Set[str] = set()
 
         # Both histories persist themselves on every change. Reset Session
         # empties them on its way to a clean workspace, and without this guard
@@ -83,10 +87,15 @@ class MainController(QObject):
         # expects Restore Session to read back.
         self._suppress_session_save: bool = False
 
-        previous_plugin_history = self.main_model.load_session(None)
-        self.previous_plugin_history: Dict[str, Any] = (
-            previous_plugin_history if previous_plugin_history is not None else {}
-        )
+        # Read for the settings a new plugin of a known type starts from, and applied
+        # only if the user chooses Restore Session.
+        self.previous_plugin_history: Dict[str, Any] = {}
+        try:
+            self.previous_plugin_history = self.main_model.load_session(
+                None
+            ).plugin_history
+        except SessionRefused as e:
+            self.logger.debug(f"No previous session to take settings from: {e}")
 
         self.setup_connections()
 
@@ -329,7 +338,8 @@ class MainController(QObject):
 
             self.analysis_tabs.clear()
             self.plugin_history.clear()
-            self.tab_action_history.clear()
+            self.last_tab = ""
+            self._changed_since_load.clear()
         finally:
             self._suppress_session_save = False
 
@@ -445,6 +455,7 @@ class MainController(QObject):
         :param delete_key: The key being removed, or renamed away from, or None.
         :type delete_key: Optional[str]
         """
+        self._keep_tab_entries_true(history, delete_key)
         if history and not delete_key:
             self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
@@ -454,7 +465,127 @@ class MainController(QObject):
 
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
-            self.main_model.save_session(self.plugin_history)
+            self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
+
+    def _keep_tab_entries_true(
+        self, history: Optional[Dict[str, Any]], delete_key: Optional[str]
+    ) -> None:
+        """
+        Before a plugin change is stored, keep every tab's recorded entries true to it.
+
+        A deleted plugin's entries are dropped; an edited or renamed one is followed by
+        :py:meth:`_follow_plugin_change`. A tab's own entry changes nothing.
+
+        :param history: the plugin's saved state, or None when only deleting
+        :type history: Optional[Dict[str, Any]]
+        :param delete_key: the key being removed, or renamed away from, or None
+        :type delete_key: Optional[str]
+        """
+        if history and history.get("metaclass") != TAB_METACLASS:
+            self._follow_plugin_change(history, delete_key)
+        elif not history and delete_key:
+            self._rewrite_tab_entries(delete_key, None)
+
+    def _follow_plugin_change(
+        self, history: Dict[str, Any], delete_key: Optional[str]
+    ) -> None:
+        """
+        Keep every tab's recorded entries true to a plugin that was edited or renamed.
+
+        Told apart by comparing the incoming settings with the ones stored for the plugin,
+        leaving out the settings that name another plugin: the Edit dialog cannot change
+        those, so they differ only for a plugin whose parent was renamed. A real change is
+        an edit, and the entries naming the plugin and every plugin built on it are dropped,
+        since they would replay with settings they never ran with; the status panel says
+        so. No change but a new key is a rename, and the entries follow it. A new plugin
+        changes nothing.
+
+        :param history: the plugin's saved state, carrying its key
+        :type history: Dict[str, Any]
+        :param delete_key: the key it had before a rename, or "" or None
+        :type delete_key: Optional[str]
+        """
+        key = history["key"]
+        old_key = delete_key or key
+        stored = self.plugin_history.get(old_key)
+        if stored is None:
+            return
+        if self._settings_differ(stored.get("settings"), history.get("settings")):
+            dropped = [
+                self._rewrite_tab_entries(plugin, None)
+                for plugin in [
+                    old_key,
+                    *self._plugins_built_on(history["metaclass"], key),
+                ]
+            ]
+            if any(dropped):
+                self.main_view.add_text_to_display(
+                    f"{key} was edited, so its earlier runs are removed from the "
+                    "history: run them again to save them in the session.",
+                    self.__class__.__name__,
+                )
+        elif delete_key and delete_key != key:
+            self._rewrite_tab_entries(delete_key, key)
+
+    def _settings_differ(self, stored: Any, incoming: Any) -> bool:
+        """
+        Do two plugin settings differ in anything but the plugins they name?
+
+        :param stored: the settings stored for the plugin
+        :type stored: Any
+        :param incoming: the settings it reports now
+        :type incoming: Any
+        :return: True if a setting other than a plugin reference differs
+        :rtype: bool
+        """
+        if not isinstance(stored, dict) or not isinstance(incoming, dict):
+            return stored != incoming
+        references = set(self.main_model.get_available_plugins())
+        return {k: v for k, v in stored.items() if k not in references} != {
+            k: v for k, v in incoming.items() if k not in references
+        }
+
+    def _plugins_built_on(self, metaclass: str, key: str) -> List[str]:
+        """
+        Every plugin that depends on this one, directly or through another.
+
+        :param metaclass: the plugin's family
+        :type metaclass: str
+        :param key: the plugin's key
+        :type key: str
+        :return: the dependents' keys
+        :rtype: List[str]
+        """
+        instances = self.data_plugin_controller.get_plugin_instances()
+        found: List[str] = []
+        waiting = [(metaclass, key)]
+        while waiting:
+            family, name = waiting.pop()
+            instance = instances.get(family, {}).get(name)
+            if instance is None:
+                continue
+            for dependent in instance.get_dependents():
+                if dependent[1] not in found:
+                    found.append(dependent[1])
+                    waiting.append(dependent)
+        return found
+
+    def _rewrite_tab_entries(self, key: str, new_key: Optional[str]) -> bool:
+        """
+        Drop or rename, in every open tab, the recorded entries naming a plugin.
+
+        :param key: the plugin's key
+        :type key: str
+        :param new_key: its new key, or None to drop the entries
+        :type new_key: Optional[str]
+        :return: True if any tab changed
+        :rtype: bool
+        """
+        changed = False
+        for tab in self.analysis_tabs.values():
+            if tab is not None and tab.rewrite_plugin_entries(key, new_key):
+                changed = True
+        return changed
 
     @log(logger=logger)
     def _renamed_history(
@@ -487,13 +618,16 @@ class MainController(QObject):
     @log(logger=logger)
     def _sync_tab_session_state_into_history(self) -> None:
         """
-        Snapshot each open analysis tab's extra session state into its plugin history entry.
+        Snapshot each open analysis tab's state and actions into its plugin history entry.
 
         A tab may keep state beyond what MainController already tracks (e.g. Metadata
         and Protein build a filter list entirely on their own view) via
         ``MetaController.get_session_state()``, which defaults to returning nothing.
         This merges whatever a tab does return into its corresponding history entry so
         it round-trips through session save/load along with the rest of the tab's state.
+
+        The tab's kept actions go in the entry as ``actions``, written here rather than
+        through ``get_session_state``, which a tab may override without calling the base.
         """
         for subclass, tab in self.analysis_tabs.items():
             if tab is None:
@@ -504,6 +638,27 @@ class MainController(QObject):
             state = tab.get_session_state()
             if state:
                 entry.update(copy.deepcopy(state))
+            entry["actions"] = self._actions_to_save(subclass, tab)
+
+    def _actions_to_save(self, subclass: str, tab: MetaController) -> List[Any]:
+        """
+        The actions a tab's entry saves: what it was loaded with, until its history changes.
+
+        A tab loaded from a session that the user has not replayed or worked in saves the
+        session's actions, not yet replayed, so a Restore after a crash still offers them.
+        Once its history changes, it saves what it ran, as the kept history.
+
+        :param subclass: the tab's class name
+        :type subclass: str
+        :param tab: the tab
+        :type tab: MetaController
+        :return: the entries to save
+        :rtype: List[Any]
+        """
+        loaded = tab.session_actions()
+        if loaded is not None and subclass not in self._changed_since_load:
+            return loaded
+        return tab.kept_actions()
 
     @Slot(str, str, str)
     def handle_plugin_state_changed(
@@ -516,9 +671,22 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str, object)
     def update_tab_action_history(self, key: str, history: Any) -> None:
-        self.tab_action_history[key] = history
+        """
+        Save the session after a tab's history changed, with that tab as the last one.
+
+        The history itself is read from the tab when the session is written
+        (:py:meth:`_sync_tab_session_state_into_history`).
+
+        :param key: the tab whose history changed
+        :type key: str
+        :param history: its live history, as the tab sends it
+        :type history: Any
+        """
+        self.last_tab = key
+        self._changed_since_load.add(key)
+        self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
-            self.main_model.save_tab_actions(self.tab_action_history)
+            self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
     @log(logger=logger)
     @Slot(str)
@@ -650,7 +818,7 @@ class MainController(QObject):
     @Slot(str)
     def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
         self._sync_tab_session_state_into_history()
-        self.main_model.save_session(self.plugin_history, save_file)
+        self.main_model.save_session(self.plugin_history, save_file, self.last_tab)
 
     @log(logger=logger)
     @Slot(object, str)
@@ -659,26 +827,30 @@ class MainController(QObject):
     ) -> None:
         self.main_model.save_tab_actions(history, save_file)
 
-    def _report_unloadable_session(self, file_name: Optional[Union[str, Path]]) -> None:
+    def _report_unloadable_session(
+        self, file_name: Optional[Union[str, Path]], refused: SessionRefused
+    ) -> None:
         """
-        Tell the user a session could not be loaded, at the level that fits who asked.
+        Tell the user a session could not be loaded and why, at the level that fits who asked.
 
-        A file the user picked logs ERROR, so a dialog says it did not load; Restore with
-        nothing saved is routine, so it logs WARNING and says so on the status panel.
+        A file the user picked logs ERROR, so a dialog says it did not load. Restore with
+        nothing saved is routine, so it logs WARNING and says so on the status panel; a
+        saved session Restore cannot read is said there with its reason.
 
         :param file_name: the file the user chose, or None for Restore Session
         :type file_name: Optional[Union[str, Path]]
+        :param refused: what the model refused the file for
+        :type refused: SessionRefused
         """
         if file_name:
-            self.logger.error(
-                f"{file_name} is not a readable Poriscope session file, so nothing "
-                "was loaded"
-            )
+            self.logger.error(f"{file_name} was not loaded: {refused.reason}")
+            return
+        if refused.missing:
+            text = "There is no saved session to restore"
         else:
-            self.logger.warning("No saved session to restore")
-            self.main_view.add_text_to_display(
-                "There is no saved session to restore", self.__class__.__name__
-            )
+            text = f"The last saved session was not restored: {refused.reason}"
+        self.logger.warning(text)
+        self.main_view.add_text_to_display(text, self.__class__.__name__)
 
     @log(logger=logger)
     @Slot(str)
@@ -707,20 +879,24 @@ class MainController(QObject):
         :type file_name: Optional[Union[str, Path]]
         """
         self.logger.debug(f"Loading session from file {file_name}")
-        plugin_history = self.main_model.load_session(file_name)
-        if plugin_history is None:
+        try:
+            loaded = self.main_model.load_session(file_name)
+        except SessionRefused as refused:
             # Refused before reset_session(), so the workspace and the autosave are
             # left as they were.
-            self._report_unloadable_session(file_name)
+            self._report_unloadable_session(file_name, refused)
             return
         self.reset_session()
-        self.plugin_history = plugin_history
-        self.main_model.save_session(self.plugin_history)
+        self.plugin_history = loaded.plugin_history
+        self.last_tab = loaded.last_tab
+        self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
         # Counted before the loop, which emits update_plugin_history and so can
         # change the dict it is iterating a copy of.
         entries = len(self.plugin_history)
         unrestored: List[str] = []
+        # The entries as loaded: opening a tab replaces its entry in the history.
+        loaded_entries = list(self.plugin_history.values())
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
@@ -738,7 +914,7 @@ class MainController(QObject):
                     continue
                 tab = self.analysis_tabs.get(subclass)
                 if tab is not None:
-                    tab.restore_session_state(plugin)
+                    self._restore_tab(tab, plugin, file_name)
             else:
                 settings = plugin.get("settings")
                 try:
@@ -767,14 +943,17 @@ class MainController(QObject):
         # tab restored has no next tab, so the session saved during this loop
         # recorded it with no subset filters at all, and the restore after that one
         # lost them: Metadata kept its filters and Protein did not, purely because
-        # Protein was opened second and so is restored second.
+        # Protein was opened second and so is restored second. Anything a tab
+        # recorded while it was being restored is part of the load, not the user's work.
+        self._changed_since_load.clear()
         self._sync_tab_session_state_into_history()
-        self.main_model.save_session(self.plugin_history)
+        self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
         if file_name:
             message = f"Loaded session from {file_name}."
         else:
             message = "Restored last saved session."
+        message += self._no_actions_note(loaded_entries, file_name)
         if unrestored:
             # Each failure has already been reported individually, but those
             # messages scroll and several of them are usually consequences of one
@@ -787,6 +966,69 @@ class MainController(QObject):
             )
         self.main_view.add_text_to_display(message, "MainController")
 
+    def _restore_tab(
+        self,
+        tab: MetaController,
+        entry: Dict[str, Any],
+        file_name: Optional[Union[str, Path]],
+    ) -> None:
+        """
+        Give a freshly opened tab its saved state and, once, its saved actions.
+
+        Read from the loaded entry: opening the tab replaced its entry in
+        ``plugin_history`` with a bare one.
+
+        :param tab: the tab just opened
+        :type tab: MetaController
+        :param entry: its entry as loaded
+        :type entry: Dict[str, Any]
+        :param file_name: the session file, or None for the autosave
+        :type file_name: Optional[Union[str, Path]]
+        """
+        tab.restore_session_state(entry)
+        tab.hold_session_actions(
+            entry.get("actions"), str(file_name) if file_name else None
+        )
+
+    def _no_actions_note(
+        self,
+        loaded_entries: List[Dict[str, Any]],
+        file_name: Optional[Union[str, Path]],
+    ) -> str:
+        """
+        What the load message adds when the session's tabs hold no saved actions.
+
+        A session saved before actions were kept says so. On Restore, the action history
+        2.0 kept in its own file is said to be unreplayable, if it is there, and the line
+        says the autosave has been saved in this version's format: this restore wrote each
+        tab's ``actions`` into it, so the note does not come back. A file the user loaded is
+        not rewritten, so a load says neither.
+
+        :param loaded_entries: the session's entries as loaded
+        :type loaded_entries: List[Dict[str, Any]]
+        :param file_name: the session file, or None for Restore
+        :type file_name: Optional[Union[str, Path]]
+        :return: the sentences to add, or ""
+        :rtype: str
+        """
+        loaded_tabs = [
+            entry for entry in loaded_entries if entry["metaclass"] == TAB_METACLASS
+        ]
+        if not loaded_tabs or any("actions" in entry for entry in loaded_tabs):
+            return ""
+        note = " This session has no saved actions to replay."
+        if file_name:
+            return note
+        if self.main_model.old_action_history_exists():
+            note += (
+                " The action history saved by an earlier version "
+                "(tab_action_history.json) cannot be replayed."
+            )
+        return note + (
+            " The autosave has been saved in this version's format, so this note will "
+            "not appear again."
+        )
+
     @log(logger=logger)
     @Slot()
     def send_analysis_tabs(self) -> None:
@@ -794,8 +1036,8 @@ class MainController(QObject):
         self.logger.debug("Sending instantiated analysis tabs to MainView.")
 
         if not self.analysis_tabs:
-            # Normal at startup and after a session reset, so not a warning:
-            # QtHandler promotes WARNING to a modal dialog.
+            # Normal at startup and after a session reset, so debug: nothing for the
+            # user to act on.
             self.logger.debug("No instantiated analysis tabs in MainController.")
 
         # Emit the correct signal with the current analysis tabs

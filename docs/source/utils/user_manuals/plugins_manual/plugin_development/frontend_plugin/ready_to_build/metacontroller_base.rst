@@ -59,6 +59,10 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   says which, ``figure_from="mode"``. Figure names only need to agree within one tab. A
   declaration with a wrong field or a name that is not a parameter fails when the module is
   imported, with a message naming the action
+- ``plugin_args`` names every parameter whose value is a data plugin's key,
+  ``plugin_args=("reader", "data_filter")``, so that deleting, renaming or editing a plugin finds
+  the entries that name it. A test fails any recorded action whose ``reader``, ``eventfinder``,
+  ``eventfitter``, ``loader`` or ``data_filter`` parameter is not listed
 - Every value is saved under its parameter name in ``kwargs``, defaults included, however the
   call passed it, so a saved file says what each value is. Keep a recorded method's parameters
   nameable: a method with ``*args`` or a positional-only parameter is saved as it was called.
@@ -81,7 +85,8 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   the View's figure (``MetaView.clear_figure``); override it if your tab keeps more, such as a
   result on its Model, and record nothing in it. While a tab replays, its status-panel lines
   are held and shown together when it ends, and ``replay_state_changed`` tells the main window
-  whether **Replay Actions** can continue it
+  whether **Replay Actions** can continue it. A file saved before every value was saved by name
+  is refused whole
 - Undo logic included (with safety checks and filtering): Undo replays the history from
   the last reset onward, and ``discard_last_tab_action`` drops a record without
   replaying anything, for an action that was refused and changed nothing. A tab's own
@@ -104,6 +109,13 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 - MainController calls these automatically on every open tab whenever it writes session
   history to disk, and again on a freshly-restored tab right after Load/Restore Session;
   you never call them yourself
+- The tab's recorded actions are saved beside that state, as ``actions``, without going through
+  ``get_session_state``: ``kept_actions()`` gives the entries a restore replays. At a load,
+  MainController hands the tab its saved actions once, through ``hold_session_actions``; with
+  nothing stopped to continue, ``start_replay()`` replays them, and ``replay_available()`` says
+  whether **Replay Actions** has anything to do. Deleting, renaming or editing a plugin reaches
+  every copy a tab holds through ``rewrite_plugin_entries``, by the parameters each action
+  declares in ``plugin_args``
 
 **Utility methods already set up**
 
