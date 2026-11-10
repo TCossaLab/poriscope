@@ -481,8 +481,8 @@ def test_a_save_retries_a_briefly_locked_target(main_model, tmp_path, mocker):
             raise PermissionError(13, "Access is denied")
         return real_replace(src, dst)
 
-    mocker.patch("poriscope.models.main_model.os.replace", side_effect=locked_twice)
-    mocker.patch("poriscope.models.main_model.time.sleep")
+    mocker.patch("poriscope.utils.json_files.os.replace", side_effect=locked_twice)
+    mocker.patch("poriscope.utils.json_files.time.sleep")
     reported = mocker.patch.object(main_model, "add_text_to_display")
 
     main_model.save_session(SESSION, path)
@@ -500,10 +500,10 @@ def test_a_target_that_stays_locked_is_reported_and_left_intact(
     main_model.save_session(SESSION, path)
     before = path.read_text()
     mocker.patch(
-        "poriscope.models.main_model.os.replace",
+        "poriscope.utils.json_files.os.replace",
         side_effect=PermissionError(13, "Access is denied"),
     )
-    mocker.patch("poriscope.models.main_model.time.sleep")
+    mocker.patch("poriscope.utils.json_files.time.sleep")
 
     main_model.save_session({"other": {"metaclass": "M", "subclass": "S"}}, path)
 
