@@ -11,8 +11,8 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
    (`poriscope/models/main_model.py`, `poriscope/views/main_view.py`,
    `poriscope/controllers/main_controller.py`). This owns app config
    (`%LOCALAPPDATA%/Poriscope/config/config.json` via `platformdirs`), logging setup,
-   and session persistence (`session/plugin_history.json`,
-   `session/tab_action_history.json`).
+   and session persistence (`session/plugin_history.json`, which holds each tab's saved actions
+   too; 2.0's separate `tab_action_history.json` is only detected, never read).
 
 2. **Plugin system** — everything else (analysis tabs, data readers/writers/filters/
    finders/fitters/loaders) is a *plugin* discovered and loaded dynamically.
@@ -122,14 +122,14 @@ the user before adding it.
   Start at `MainController.instantiate_analysis_tab` and every place `analysis_tabs` is cleared.
   *Case:* use cases assumed a second tab of the same type and a per-tab close.
 - **For each session file: who writes it, when, and who reads it on load, and does that reader accept it?**
-  Start at `MainModel.save_session`, `save_tab_actions` and `load_session`.
+  Start at `MainModel.save_session` and `load_session`, and `MetaController.kept_actions`.
   *Case:* designs assumed the action history comes back with a loaded session.
 - **Which tabs expose this mechanism to the user, as opposed to inheriting it from a base class?**
   Start at each tab's controls panel and its `handle_parameter_change` dispatch, not at the `Meta*` base.
   *Case:* a design wrote Undo for every tab; the logic is shared, but only one tab wires a control to it.
 - **Does replaying an action record it again?**
-  Start at `MetaView.update_actions_from_json` and `LogDecorator.register_action`, then follow the history
-  signal into `MetaController.update_tab_actions`.
+  Start at `ReplaySequence._step` (`poriscope/utils/replay_sequence.py`), `MetaController.replay` (Undo) and
+  `LogDecorator.register_action`, then follow `MetaController.record_action` into `update_tab_actions`.
   *Case:* a design note stated that replay bypasses the decorator; rollback reasoning was built on that.
 - **Is this reset global to the tab, or scoped to a mode?**
   Read each tab's `_reset_actions` body, not the base docstring.
