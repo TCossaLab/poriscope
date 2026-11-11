@@ -67,6 +67,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking:** `RawDataView.psd_data_requested` and `RawDataView.calculate_psd` carry the PSD options as a dict, and `RawDataController.calculate_psd` takes it; `load_psd_data` takes them as keyword parameters, defaulting to the PSD Update PSD always drew
+
 * **Breaking:** `RawDataModel.get_baseline_stats` and `RawDataView.update_plot`'s `baseline_stats` now carry `(mean, stdev)` rather than `(amplitude, mean, stdev)`, and `RawDataModel.gaussian_fit` is removed; the amplitude was never read
 
 * **Breaking:** `update_available_columns` has moved from `MetaSubsetTabView` to `MetadataView`, `column_names_requested` with it, and `request_column_names` is no longer on `MetaSubsetTabController`; only the metadata tab reads column names, so a plugin subclassing the shared subset-tab base no longer inherits any of the three
@@ -174,6 +176,8 @@
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
 
+* `MetaView.noise_shade` colours a noise value green, orange or red against two thresholds, for every tab that shades a PSD by its 1 Hz noise
+
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
 
 * The Metadata and Protein tabs' event plots resolve the Event ID through one `MetaSubsetTabView._resolve_events`, which refuses the scope with `_refuse_scope` before it builds the filtered-event cache
@@ -255,6 +259,8 @@
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
 
 * **New Data Plugin: `NIBinaryReader`** reads one binary file from the lab's NI DAQ setups (16 channels in mV), taking the sample rate from the file name and converting to pA with the amplifier's sensitivity
+
+* **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 

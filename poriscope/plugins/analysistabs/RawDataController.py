@@ -64,7 +64,7 @@ class RawDataController(MetaEventTabController):
         self.view.baseline_stats_requested.connect(self.compute_baseline_stats)
         self.view.reader_channels_requested.connect(self.request_reader_channels)
         self.view.trace_data_requested.connect(self.load_trace_data)
-        self.view.psd_data_requested.connect(self.load_psd_data)
+        self.view.psd_data_requested.connect(self.request_psd)
         self.view.event_plot_requested.connect(self.load_event_plot_data)
         self.view.commit_requested.connect(self.commit_events)
         self.view.commit_statuses_requested.connect(self.request_commit_statuses)
@@ -384,12 +384,24 @@ class RawDataController(MetaEventTabController):
         start: float,
         length: float,
         data_filter: str,
+        segment_length: int = 0,
+        overlap: float = 50.0,
+        fit: bool = False,
+        fit_start: float = 1.0,
+        fit_end: float = 30.0,
+        good_noise: float = 10.0,
+        decent_noise: float = 100.0,
     ) -> bool:
         """
         Load and optionally filter a trace, then hand it back for the PSD.
 
         Same loading as load_trace_data; only the tail differs, which is why the two
         intents are separate signals rather than one carrying a mode flag.
+
+        The PSD options default to what Update PSD always drew, so an entry recorded
+        before they existed replays unchanged. With ``fit``, each channel's PSD gets a
+        straight-line fit of log PSD against log frequency over the fit range, read off
+        at 1 Hz, as the conditioning app's single-file PSD view drew it.
 
         :param reader: the reader plugin's key
         :type reader: str
@@ -401,16 +413,119 @@ class RawDataController(MetaEventTabController):
         :type length: float
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
-        :return: True if a PSD was drawn, False if the reader had nothing to analyse
+        :param segment_length: samples per Welch segment, or 0 for a tenth of the trace
+        :type segment_length: int
+        :param overlap: segment overlap, in percent of a segment
+        :type overlap: float
+        :param fit: fit each PSD and show its 1 Hz value
+        :type fit: bool
+        :param fit_start: lower end of the fit range, Hz
+        :type fit_start: float
+        :param fit_end: upper end of the fit range, Hz
+        :type fit_end: float
+        :param good_noise: a 1 Hz PSD below this shades the panel green, pA^2/Hz
+        :type good_noise: float
+        :param decent_noise: below this orange, above it red, pA^2/Hz
+        :type decent_noise: float
+        :return: True if a PSD was drawn, False if the reader had nothing to analyse or the options were refused
         :rtype: bool
         """
+        refusal = self._psd_options_refusal(
+            segment_length, overlap, fit, fit_start, fit_end, good_noise, decent_noise
+        )
+        if refusal:
+            self.add_text_to_display.emit(refusal, self.__class__.__name__)
+            return False
         # The PSD path does not plot against time, so the samplerate is discarded
         # here rather than carried - the View still holds one for the PSD request.
         data_list, kept, _samplerate = self._load_and_filter(
             reader, channels, start, length, data_filter
         )
-        self.view.set_trace_for_psd(data_list, kept)
+        options = {
+            "segment_length": segment_length,
+            "overlap": overlap,
+            "fit": fit,
+            "fit_start": fit_start,
+            "fit_end": fit_end,
+            "good_noise": good_noise,
+            "decent_noise": decent_noise,
+        }
+        self.view.set_trace_for_psd(data_list, kept, options)
         return bool(data_list)
+
+    @log(logger=logger)
+    @Slot(str, list, float, float, str, dict)
+    def request_psd(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+        options: Dict[str, Any],
+    ) -> None:
+        """
+        Draw the PSD the View asked for, with the PSD options its panel holds.
+
+        The options travel as one dict on the View's signal and become
+        :py:meth:`load_psd_data`'s keyword parameters here, so each is recorded under
+        its own name.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels the user asked to analyse
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :param options: the PSD options, by :py:meth:`load_psd_data`'s parameter names
+        :type options: Dict[str, Any]
+        """
+        self.load_psd_data(reader, channels, start, length, data_filter, **options)
+
+    @log(logger=logger)
+    def _psd_options_refusal(
+        self,
+        segment_length: int,
+        overlap: float,
+        fit: bool,
+        fit_start: float,
+        fit_end: float,
+        good_noise: float,
+        decent_noise: float,
+    ) -> str:
+        """
+        Why these PSD options cannot be used, or "" if they can.
+
+        :param segment_length: samples per Welch segment, or 0 for a tenth of the trace
+        :type segment_length: int
+        :param overlap: segment overlap, in percent
+        :type overlap: float
+        :param fit: whether a fit is asked for; the fit values are checked only then
+        :type fit: bool
+        :param fit_start: lower end of the fit range, Hz
+        :type fit_start: float
+        :param fit_end: upper end of the fit range, Hz
+        :type fit_end: float
+        :param good_noise: the Good threshold
+        :type good_noise: float
+        :param decent_noise: the Decent threshold
+        :type decent_noise: float
+        :return: the reason, or ""
+        :rtype: str
+        """
+        if segment_length < 0:
+            return "Points per Average must be 0 or more"
+        if not 0 <= overlap < 100:
+            return "Overlap must be from 0 up to, not including, 100%"
+        if fit and not 0 < fit_start < fit_end:
+            return "The fit range needs 0 < Fit Start < Fit End"
+        if fit and not 0 < good_noise < decent_noise:
+            return "The noise thresholds need 0 < Good Noise < Decent Noise"
+        return ""
 
     @log(logger=logger)
     @Slot(str, int, list, str)
@@ -812,20 +927,47 @@ class RawDataController(MetaEventTabController):
         self.view.update_plot(data, time_bases, channels, start, stats)
 
     @log(logger=logger)
-    @Slot(list, float)
-    def calculate_psd(self, psd_data: list, samplerate: float) -> None:
+    @Slot(list, float, dict)
+    def calculate_psd(
+        self, psd_data: list, samplerate: float, options: Dict[str, Any]
+    ) -> None:
         """
         Calculate the Power Spectral Density (PSD) from the provided signal data and update the view.
+
+        With the ``fit`` option, each PSD is also fitted over the fit range. Every PSD of
+        one request shares its frequency bins, so a range too narrow for those bins is
+        too narrow for all of them: the PSDs are then drawn without a fit and the
+        status panel says why.
 
         :param psd_data: List of time-domain signal arrays for which PSD will be computed.
         :type psd_data: list
         :param samplerate: Sampling rate of the signal in Hz.
         :type samplerate: float
+        :param options: the PSD options, by :py:meth:`load_psd_data`'s parameter names; any missing take its defaults
+        :type options: Dict[str, Any]
         """
         Pxx_list, rms_list, frequency, kept_indices = self.model.calculate_psd(
-            psd_data, samplerate
+            psd_data,
+            samplerate,
+            options.get("segment_length", 0),
+            options.get("overlap", 50.0),
         )
-        self.view.set_psd(Pxx_list, rms_list, frequency, kept_indices)
+        fits: Optional[List[Tuple[float, float]]] = None
+        if options.get("fit") and frequency is not None:
+            try:
+                fits = [
+                    self.model.fit_power_law(
+                        frequency, psd, options["fit_start"], options["fit_end"]
+                    )
+                    for psd in Pxx_list
+                ]
+            except ValueError as e:
+                self.add_text_to_display.emit(
+                    f"No 1/f fit: {e}", self.__class__.__name__
+                )
+        self.view.set_psd(
+            Pxx_list, rms_list, frequency, kept_indices, fits, options if fits else None
+        )
 
     @log(logger=logger)
     @override

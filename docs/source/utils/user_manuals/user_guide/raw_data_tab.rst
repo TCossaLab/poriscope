@@ -45,6 +45,13 @@ Step 1: Loading Your Data
 
 7. *(Optional)* To analyze noise across frequencies, **click** the **Update PSD** button.
 
+   **PSD Options** beside it sets how the PSD is computed and what is drawn over it:
+
+   - **Points per Average** - the samples in each Welch segment; one frequency bin is the sample rate divided by this. 0 uses a tenth of the range.
+   - **Overlap** - how much consecutive segments overlap, in percent; 0 averages separate segments, as the NI DAQ acquisition software does.
+   - **Fit 1/f**, **Fit Start** and **Fit End** - fit a straight line to log PSD against log frequency over that range (Hz), draw it, and read it off at 1 Hz. The 1 Hz value appears in each channel's legend and, for every channel, on the status panel. The range needs at least two frequency bins.
+   - **Good Noise** and **Decent Noise** (pA²/Hz) - with the fit on, a channel whose 1 Hz value is below Good is shaded green, below Decent orange, and above Decent red.
+
 Step 2: Applying a Filter
 -------------------------
 

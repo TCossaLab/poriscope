@@ -51,6 +51,7 @@ from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 from poriscope.utils.MetaEventTabView import MetaEventTabView
+from poriscope.views.widgets.dict_dialog_widget import DictDialog
 from poriscope.views.widgets.time_widget import TimeWidget
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
@@ -83,7 +84,7 @@ class RawDataView(MetaEventTabView):
     #: The same request, for the PSD path. Separate rather than a mode flag so each
     #: intent names what it is for and carries only what that tail needs. The answer
     #: arrives as ``set_trace_for_psd``.
-    psd_data_requested = Signal(str, list, float, float, str)
+    psd_data_requested = Signal(str, list, float, float, str, dict)
 
     #: Asks the Controller for one channel's events, ready to plot. eventfinder,
     #: channel, event indices, filter key ("" for none). The Controller checks the
@@ -115,7 +116,18 @@ class RawDataView(MetaEventTabView):
     eventfinding_requested = Signal(str, list, str)
 
     logger = logging.getLogger(__name__)
-    calculate_psd = Signal(list, float)
+    calculate_psd = Signal(list, float, dict)
+
+    #: The PSD Options dialog's fields: each option's label, type and limits.
+    PSD_OPTION_FIELDS: Dict[str, Tuple[str, type, Dict[str, Any]]] = {
+        "segment_length": ("Points per Average (0 = a tenth)", int, {"Min": 0}),
+        "overlap": ("Overlap", float, {"Min": 0.0, "Max": 95.0, "Units": "%"}),
+        "fit": ("Fit 1/f", bool, {}),
+        "fit_start": ("Fit Start", float, {"Min": 0.0, "Units": "Hz"}),
+        "fit_end": ("Fit End", float, {"Min": 0.0, "Units": "Hz"}),
+        "good_noise": ("Good Noise", float, {"Min": 0.0, "Units": "pA²/Hz"}),
+        "decent_noise": ("Decent Noise", float, {"Min": 0.0, "Units": "pA²/Hz"}),
+    }
 
     @log(logger=logger)
     @override
@@ -123,6 +135,8 @@ class RawDataView(MetaEventTabView):
         """Initialize the RawDataView-specific attributes."""
 
         self.analysis_time_limits: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        self.psd_fits: Optional[List[Tuple[float, float]]] = None
+        self.psd_fit_options: Dict[str, Any] = {}
 
     @log(logger=logger)
     def _build_controls(self) -> RawDataControls:
@@ -242,9 +256,15 @@ class RawDataView(MetaEventTabView):
         rms_data: Sequence[npt.NDArray[np.float64]],
         frequency: npt.NDArray[np.float64],
         channels: Sequence[int],
+        fits: Optional[Sequence[Tuple[float, float]]] = None,
+        fit_options: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Update the plot area with the provided psd and frequency data across multiple channels in a grid layout.
+
+        With ``fits``, each channel's power-law fit is drawn over the fit range, its 1 Hz
+        value goes in the legend and on the status panel, and the panel is shaded by that
+        value against the Good and Decent noise of ``fit_options``.
 
         :param psd_data: Power spectral density values, one array for each channel.
         :type psd_data: Sequence[npt.NDArray[np.float64]]
@@ -254,6 +274,10 @@ class RawDataView(MetaEventTabView):
         :type frequency: npt.NDArray[np.float64]
         :param channels: List of channel identifiers corresponding to the data.
         :type channels: Sequence[int]
+        :param fits: each channel's fitted slope and intercept, or None for no fit
+        :type fits: Optional[Sequence[Tuple[float, float]]]
+        :param fit_options: the fit range and the thresholds, by parameter name
+        :type fit_options: Optional[Dict[str, Any]]
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -286,6 +310,8 @@ class RawDataView(MetaEventTabView):
 
             ax.loglog(frequency, psd, "b-")
             ax2.semilogx(frequency, rms, "r")
+            if fits is not None and fit_options is not None:
+                self._draw_power_law(ax, frequency, fits[i], fit_options)
 
             x_label = r"Frequency (Hz)"
             y1_label = r"Spectral Power (pA^2/Hz)"
@@ -316,6 +342,76 @@ class RawDataView(MetaEventTabView):
         self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
+        if fits is not None and fit_options is not None:
+            self._report_one_hz(fits, channels, fit_options)
+
+    @log(logger=logger)
+    def _draw_power_law(
+        self,
+        ax: Any,
+        frequency: Sequence[float],
+        fit: Tuple[float, float],
+        fit_options: Dict[str, Any],
+    ) -> None:
+        """
+        Draw one channel's power-law fit over its fit range, and shade the panel by its 1 Hz value.
+
+        :param ax: the channel's PSD axes
+        :type ax: Any
+        :param frequency: the PSD's frequencies, Hz
+        :type frequency: Sequence[float]
+        :param fit: the fitted slope and intercept of log10 PSD against log10 frequency
+        :type fit: Tuple[float, float]
+        :param fit_options: the fit range and the thresholds, by parameter name
+        :type fit_options: Dict[str, Any]
+        """
+        slope, intercept = fit
+        fitted = [
+            f
+            for f in frequency
+            if fit_options["fit_start"] <= f <= fit_options["fit_end"] and f > 0
+        ]
+        line = [10 ** (intercept + slope * math.log10(f)) for f in fitted]
+        one_hz = 10**intercept
+        ax.loglog(
+            fitted,
+            line,
+            "--",
+            color="#4B0082",
+            linewidth=1.2,
+            label=f"Fit: 1 Hz PSD = {one_hz:.4g} pA²/Hz",
+        )
+        ax.legend(fontsize="small")
+        ax.set_facecolor(
+            self.noise_shade(
+                one_hz, fit_options["good_noise"], fit_options["decent_noise"]
+            )
+        )
+
+    @log(logger=logger)
+    def _report_one_hz(
+        self,
+        fits: Sequence[Tuple[float, float]],
+        channels: Sequence[int],
+        fit_options: Dict[str, Any],
+    ) -> None:
+        """
+        Put each channel's 1 Hz PSD on the status panel, as one table.
+
+        :param fits: each channel's fitted slope and intercept
+        :type fits: Sequence[Tuple[float, float]]
+        :param channels: the channels, index-aligned with ``fits``
+        :type channels: Sequence[int]
+        :param fit_options: the fit range, by parameter name
+        :type fit_options: Dict[str, Any]
+        """
+        lines = [
+            f"1 Hz PSD from a fit over {fit_options['fit_start']:g}-"
+            f"{fit_options['fit_end']:g} Hz:"
+        ]
+        for channel, (_, intercept) in zip(channels, fits):
+            lines.append(f"Channel {channel}: {10**intercept:.4g} pA²/Hz at 1 Hz")
+        self.add_text_to_display.emit("\n".join(lines), self.__class__.__name__)
 
     @log(logger=logger)
     def update_plot_samplerate(self, samplerate: float) -> None:
@@ -410,6 +506,8 @@ class RawDataView(MetaEventTabView):
             self._handle_load_data_and_update_plot(parameters, baseline=True)
         elif action_name == "load_data_and_update_psd":
             self._handle_load_data_and_update_psd(parameters)
+        elif action_name == "psd_options":
+            self._edit_psd_options()
         elif action_name == "timer":
             self._handle_timer(parameters)
         elif action_name == "find_events":
@@ -452,6 +550,8 @@ class RawDataView(MetaEventTabView):
                 kwargs["reader"], kwargs["channels"], kwargs["data_filter"]
             )
             self.rawdatacontrols.set_range_inputs(kwargs["start"], kwargs["length"])
+        if action == "update_psd":
+            self.rawdatacontrols.set_psd_options(kwargs)
         elif action == "find_events":
             finder, channel = kwargs["eventfinder"], kwargs["channel"]
             self._write_back_finder(finder, channel, kwargs["data_filter"])
@@ -1139,16 +1239,45 @@ class RawDataView(MetaEventTabView):
             # As on the trace path, the loading is the Controller's and the PSD
             # happens in set_trace_for_psd.
             self.psd_data_requested.emit(
-                reader, channels, start, length, self._filter_key(parameters)
+                reader,
+                channels,
+                start,
+                length,
+                self._filter_key(parameters),
+                dict(parameters.get("psd_options", {})),
             )
         else:
             self.logger.error("Invalid parameters for plotting data")
+
+    @log(logger=logger)
+    def _edit_psd_options(self) -> None:
+        """
+        Let the user set Update PSD's segment length, overlap, fit and thresholds in a settings dialog.
+        """
+        current = self.rawdatacontrols.psd_options
+        settings: Dict[str, Dict[str, Any]] = {}
+        for name, (label, kind, limits) in self.PSD_OPTION_FIELDS.items():
+            settings[label] = {"Type": kind, "Value": current[name], **limits}
+        dialog = DictDialog(
+            settings, name="Update PSD", title="PSD Options", editable=False
+        )
+        dialog.exec()
+        result, _ = dialog.get_result()
+        if result is None:
+            return
+        self.rawdatacontrols.set_psd_options(
+            {
+                name: result[label]["Value"]
+                for name, (label, _, _) in self.PSD_OPTION_FIELDS.items()
+            }
+        )
 
     @log(logger=logger)
     def set_trace_for_psd(
         self,
         data_list: Sequence[npt.NDArray[np.float64]],
         channels: Sequence[int],
+        options: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Compute and draw the PSD of the trace the Controller loaded.
@@ -1163,6 +1292,8 @@ class RawDataView(MetaEventTabView):
         :type data_list: Sequence[npt.NDArray[np.float64]]
         :param channels: the channels that produced data, index-aligned with data_list
         :type channels: Sequence[int]
+        :param options: the PSD options, by ``RawDataController.load_psd_data``'s parameter names; None for its defaults
+        :type options: Optional[Dict[str, Any]]
         :return: None
         :rtype: None
         """
@@ -1171,9 +1302,18 @@ class RawDataView(MetaEventTabView):
                 "No data available for psd calculation", self.__class__.__name__
             )
             return
-        self.calculate_psd.emit(list(data_list), self.plot_samplerate)
+        self.calculate_psd.emit(
+            list(data_list), self.plot_samplerate, dict(options or {})
+        )
         psd_channels = [channels[i] for i in self.psd_kept_indices]
-        self.update_psd(self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels)
+        self.update_psd(
+            self.Pxx_list,
+            self.rms_list,
+            self.psd_frequency,
+            psd_channels,
+            self.psd_fits,
+            self.psd_fit_options,
+        )
 
     @log(logger=logger)
     def set_psd(
@@ -1182,6 +1322,8 @@ class RawDataView(MetaEventTabView):
         rms_list: List[npt.NDArray[np.float64]],
         frequency: Optional[npt.NDArray[np.float64]],
         kept_indices: List[int],
+        fits: Optional[List[Tuple[float, float]]] = None,
+        fit_options: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Set the PSD and RMS lists for visualization.
@@ -1194,11 +1336,17 @@ class RawDataView(MetaEventTabView):
         :type frequency: Optional[npt.NDArray[np.float64]]
         :param kept_indices: Indices into the channel list passed to calculate_psd that were successfully processed, since some channels may have been skipped.
         :type kept_indices: List[int]
+        :param fits: each kept channel's fitted slope and intercept, or None for no fit
+        :type fits: Optional[List[Tuple[float, float]]]
+        :param fit_options: the fit range and the thresholds, by parameter name
+        :type fit_options: Optional[Dict[str, Any]]
         """
         self.Pxx_list = Pxx_list
         self.rms_list = rms_list
         self.psd_frequency = frequency
         self.psd_kept_indices = kept_indices
+        self.psd_fits = fits
+        self.psd_fit_options = dict(fit_options or {})
 
     @log(logger=logger)
     def _extract_plot_parameters(
