@@ -206,7 +206,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.model.add_text_to_display.connect(self.relay_add_text_to_display)
         self.view.save_tab_action_history.connect(self.save_tab_actions)
         self.view.update_tab_action_history.connect(self.update_tab_actions)
-        self.view.discard_last_tab_action.connect(self.discard_last_tab_action)
         self.view.cache_plot_data.connect(self.model.cache_plot_data)
         self.view.export_plot_data.connect(self.export_plot_data)
         self.view.load_actions_from_json.connect(self.load_actions_from_json)

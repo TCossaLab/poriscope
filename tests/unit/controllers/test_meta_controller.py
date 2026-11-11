@@ -28,6 +28,7 @@ from pytest_mock import MockerFixture
 from poriscope.utils.LogDecorator import RESET_ACTION
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaModel import MetaModel
+from poriscope.utils.MetaView import MetaView
 
 # ----------------------------- fixtures ------------------------------
 
@@ -641,6 +642,15 @@ def test_discarding_drops_the_last_action_without_replaying(
     assert controller.tab_action_history == OrderedDict({0: {"action": "step1"}})
     controller.replay.assert_not_called()
     controller.update_tab_action_history.emit.assert_called_once()
+
+
+def test_discarding_is_the_controllers_own_step_with_no_view_signal() -> None:
+    """
+    Only the Controller records an action, so only it knows one was refused; it discards
+    by calling its own method, and a View carries no signal asking for it.
+    """
+    assert not hasattr(MetaView, "discard_last_tab_action")
+    assert callable(MetaController.discard_last_tab_action)
 
 
 def test_discarding_from_an_empty_history_does_nothing(

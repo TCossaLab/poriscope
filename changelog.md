@@ -110,6 +110,10 @@
 
 * **Breaking:** `register_action` requires `kind=` (`result`, `view`, `additive` or `reset`) with the figure or key it acts on, so a tab that decorates a method without it no longer loads
 
+* **Breaking:** a `register_action` view's `depends_on` must name two parameters, the result's plugin then its channel, so a tab declaring any other number no longer loads
+
+* **Breaking:** `MetaView.discard_last_tab_action` is removed; a Controller that records an action and then refuses it calls its own `MetaController.discard_last_tab_action`
+
 * **Breaking:** the plot configuration is read and written by the tab's Model (`MetaModel.save_plot_configuration`, `read_plot_configuration`): `MetaController.save_tab_action_history`, `MainController.save_tab_action_history` and `MainModel.save_tab_actions` are removed, and `MetaController.save_tab_actions` requires the file
 
 ### Developer Tooling:
@@ -231,6 +235,12 @@
 * After Load or Restore Session, the tab you last worked in is showing, and a dialog lists the tabs with saved actions, all ticked: **Replay** replays the ticked ones at once, and a tab left out keeps its **Replay Actions**; replaying redoes no commit, export or save
 
 * A replay shows each step's recorded values in its tab's panel - plugins, channels, ranges, filters and plot settings - so a restored tab shows what produced its result, and the next click starts from those values
+
+* **Fixed a Metadata plot that draws nothing after Plot Events leaving the events off the screen but in the history**, so a saved session or plot configuration brought back events you no longer saw; the events are now redrawn
+
+* **Fixed Plot Events recording a raw filter's text from before `event_id` was added to it**, in the Metadata and Protein tabs, so the restored panel did not select that filter
+
+* **Fixed a replayed Find leaving its event finder with time limits for one channel only** when the finder's channels could not be read at first, so a Find on another channel was refused
 
 * Save Plot Configuration saves only the plots on screen, not the ones a later plot replaced, and Load Session of a plot configuration says what it is
 

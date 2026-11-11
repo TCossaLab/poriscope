@@ -763,3 +763,42 @@ def test_a_loaded_configuration_that_fails_goes_back_or_keeps_what_it_drew(
             "overlay_plot",
         ]
         assert controller.replay_sequence.has_remaining()
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    ("tab", "controls"),
+    [("metadata_tab", "metadatacontrols"), ("protein_tab", "proteincontrols")],
+)
+def test_plot_events_records_the_filter_text_that_ran(
+    request: Any, mocker: Any, tab: str, controls: str
+) -> None:
+    """
+    Plot Events on a raw filter that gains ``event_id`` records the rewritten text.
+
+    The event list is read for the filter as it stands after the question, and the entry
+    must hold that text, so a write-back finds the filter and a replay runs what ran.
+    """
+    triad: Triad = request.getfixturevalue(tab)
+    view = triad.tab_view
+    view.subset_filters["noid_raw"] = NO_EVENT_ID
+    view._subset_controls.filter_comboBox.addItem("noid_raw")
+    mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.Yes,
+    )
+    select(triad, "noid_raw", "0")
+
+    view.handle_parameter_change(
+        controls,
+        "plot_events",
+        ({"db_loader": LOADER, "event_id": 0, "n_events": 1, "raw": False},),
+    )
+
+    (entry,) = [
+        entry
+        for entry in triad.tab_controller.tab_action_history.values()
+        if entry["action"] == "plot_events"
+    ]
+    assert entry["kwargs"]["sql_filter"] == view.subset_filters["noid_raw"]
+    assert entry["kwargs"]["sql_filter"].startswith("SELECT event_id")

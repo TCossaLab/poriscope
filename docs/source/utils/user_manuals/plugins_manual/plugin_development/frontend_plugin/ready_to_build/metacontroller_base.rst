@@ -49,7 +49,8 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
     ``depends_on`` names it, is removed from the history too
   - ``view``: a drawing that replaces what its figure showed, such as a trace. The newest per
     figure is kept. ``depends_on`` names the parameters whose values are the key of the result
-    it draws from, ``depends_on=("eventfinder", "channel")``; a view drawn from a result that was
+    it draws from, its plugin then its channel, ``depends_on=("eventfinder", "channel")``; any
+    other number of names fails at import. A view drawn from a result that was
     run again later is dropped
   - ``additive``: a drawing added to its figure, such as an overlay; kept until a later reset or
     view on that figure
