@@ -298,6 +298,11 @@ def _checked_declaration(
             )
         if declaration.depends_on and declaration.kind != "view":
             raise ValueError(f"{where}: only a view depends on a result")
+        if declaration.depends_on and len(declaration.depends_on) != 2:
+            raise ValueError(
+                f"{where}: a view depends on a result's plugin parameter, then its "
+                f"channel parameter, in depends_on"
+            )
     parameters = list(signature.parameters)[1:]
     named = (
         declaration.key
@@ -365,7 +370,7 @@ def register_action(
     :type figure: str
     :param figure_from: instead of ``figure``, the parameter whose value names the figure
     :type figure_from: str
-    :param depends_on: for a view, the parameters whose values are the key of the result it draws from
+    :param depends_on: for a view, the parameters whose values are the key of the result it draws from: its plugin parameter, then its channel parameter
     :type depends_on: Tuple[str, ...]
     :param skip_on_false: do not record a call whose method returned ``False``
     :type skip_on_false: bool

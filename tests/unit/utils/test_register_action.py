@@ -334,6 +334,18 @@ def _declare(**fields: Any) -> None:
             "only a view depends on a result",
         ),
         (
+            {"kind": "view", "figure": "plot", "depends_on": ("plugin",)},
+            "depends on a result's plugin parameter, then its channel",
+        ),
+        (
+            {
+                "kind": "view",
+                "figure": "plot",
+                "depends_on": ("plugin", "channel", "mode"),
+            },
+            "depends on a result's plugin parameter, then its channel",
+        ),
+        (
             {"kind": "result", "key": ("finder", "channel")},
             "finder is not a parameter",
         ),
