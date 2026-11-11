@@ -1068,6 +1068,9 @@ class MetaSubsetTabView(MetaView):
                 loader, sql_filter, exp, channel, subset_name
             ):
                 return None
+            # Accepting the offer to add event_id rewrites the filter while the list is read;
+            # the entry records the text that ran.
+            sql_filter = self.current_sql_filter
 
         cache = self.filtered_event_ids
         n_events = parameters.get("n_events") or 1
