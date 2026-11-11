@@ -100,7 +100,6 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.reset_requested = mocker.Mock()
     view_instance.update_tab_action_history = mocker.Mock()
     view_instance.update_tab_action_history.emit = mocker.Mock()
-    view_instance.discard_last_tab_action = mocker.Mock()
 
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
