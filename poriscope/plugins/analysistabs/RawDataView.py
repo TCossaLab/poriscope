@@ -333,16 +333,17 @@ class RawDataView(MetaEventTabView):
         self, channels_by_finder: Mapping[str, Sequence[int]]
     ) -> None:
         """
-        Give each event finder not seen before a default time range for every channel.
+        Give each event finder a default time range for every channel it has none for.
 
         The channel lookup is ``RawDataController``'s: it resolves every finder up front
         and hands the answers down. A finder absent from ``channels_by_finder``, or
         present with no channels, is left **unregistered** so the next push retries it.
-        Registering one whose lookup failed would leave it with empty time limits
-        permanently, since nothing asks again for a finder it already knows.
+        Registering one whose lookup failed would give it empty time limits, which the
+        Timer dialog cannot tell from a finder with no channels.
 
         A finder already in ``analysis_time_limits`` keeps the ranges the user set on it;
-        only genuinely new finders get defaults.
+        only the channels it lacks get defaults. A replayed Find writes its own channel's
+        limits back, and can do so before the finder is registered here.
 
         :param channels_by_finder: channels per event finder, for finders that answered
         :type channels_by_finder: Mapping[str, Sequence[int]]
@@ -350,11 +351,11 @@ class RawDataView(MetaEventTabView):
         :rtype: None
         """
         for finder, channels in channels_by_finder.items():
-            if finder in self.analysis_time_limits or not channels:
+            if not channels:
                 continue
-            self.analysis_time_limits[finder] = {
-                ch: {"start": 0, "end": 0} for ch in channels
-            }
+            limits = self.analysis_time_limits.setdefault(finder, {})
+            for ch in channels:
+                limits.setdefault(ch, {"start": 0, "end": 0})
 
     @log(logger=logger)
     @override

@@ -169,7 +169,26 @@ def test_register_eventfinder_channels_keeps_ranges_the_user_already_set(view):
     """A finder already registered is not reset by a later plugin-registry push."""
     view.analysis_time_limits = {"EF1": {0: {"start": 1.5, "end": 3.0}}}
     view.register_eventfinder_channels({"EF1": [0, 1, 2]})
-    assert view.analysis_time_limits == {"EF1": {0: {"start": 1.5, "end": 3.0}}}
+    assert view.analysis_time_limits["EF1"][0] == {"start": 1.5, "end": 3.0}
+
+
+def test_register_eventfinder_channels_gives_a_known_finder_its_missing_channels(view):
+    """
+    A finder known for some channels gets defaults for the rest, keeping what it has.
+
+    A replayed Find writes its channel's limits back before the finder is registered
+    when the finder's channel lookup failed at the push; the next push must still give
+    the other channels a range, or a Find on one of them is refused.
+    """
+    view.analysis_time_limits = {"EF1": {0: {"start": 1.5, "end": 3.0}}}
+    view.register_eventfinder_channels({"EF1": [0, 1, 2]})
+    assert view.analysis_time_limits == {
+        "EF1": {
+            0: {"start": 1.5, "end": 3.0},
+            1: {"start": 0, "end": 0},
+            2: {"start": 0, "end": 0},
+        }
+    }
 
 
 def test_register_eventfinder_channels_leaves_a_silent_finder_unregistered(view):
