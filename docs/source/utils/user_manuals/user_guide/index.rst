@@ -18,6 +18,7 @@ Welcome to Poriscope's user guide. This guide will walk you through the main fea
    metadata_tab
    clustering_tab
    protein_tab
+   conditioning_tab
    settings
    menus_and_sessions
    scripting

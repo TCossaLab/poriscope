@@ -128,6 +128,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FAMILIES: Dict[str, Tuple[str, ...]] = {
     "*View.py": (
         "poriscope/plugins/analysistabs/ClusteringView.py",
+        "poriscope/plugins/analysistabs/ConditioningView.py",
         "poriscope/plugins/analysistabs/EventAnalysisView.py",
         "poriscope/plugins/analysistabs/MetadataView.py",
         "poriscope/plugins/analysistabs/ProteinView.py",
@@ -135,6 +136,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "*Controller.py": (
         "poriscope/plugins/analysistabs/ClusteringController.py",
+        "poriscope/plugins/analysistabs/ConditioningController.py",
         "poriscope/plugins/analysistabs/EventAnalysisController.py",
         "poriscope/plugins/analysistabs/MetadataController.py",
         "poriscope/plugins/analysistabs/ProteinController.py",
@@ -142,6 +144,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "*Model.py": (
         "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "poriscope/plugins/analysistabs/ConditioningModel.py",
         "poriscope/plugins/analysistabs/EventAnalysisModel.py",
         "poriscope/plugins/analysistabs/MetadataModel.py",
         "poriscope/plugins/analysistabs/ProteinModel.py",
@@ -149,6 +152,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "*controls.py": (
         "poriscope/plugins/analysistabs/utils/clusteringcontrols.py",
+        "poriscope/plugins/analysistabs/utils/conditioningcontrols.py",
         "poriscope/plugins/analysistabs/utils/eventAnalysisControls.py",
         "poriscope/plugins/analysistabs/utils/metadatacontrols.py",
         "poriscope/plugins/analysistabs/utils/proteincontrols.py",

@@ -268,6 +268,8 @@
 
 * **New Data Plugin: `NIConditioningLoader`** reads a conditioning experiment folder from the lab's LabVIEW and NI DAQ setups, under **Data** → **Load Conditioning Experiment**; several CSVs are read as one, in the order of the time stamps in their names
 
+* **New analysis tab: Conditioning** (Analysis → New Analysis Tab → `ConditioningController`) plots each channel's pore size against cycle with the 1 Hz noise of its PSD recordings at positive and negative bias, computed in the background and kept, so a replot with the same experiment and fit range is immediate; ported from the lab's conditioning analysis script
+
 * **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 
 * **Fixed the Windows log file dropping any line containing `μ`**

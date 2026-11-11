@@ -465,4 +465,5 @@ class TestFamilyLists:
         """
         controls = mod.FAMILIES["*controls.py"]
         assert any(name.endswith("eventAnalysisControls.py") for name in controls)
-        assert len(controls) == 5
+        # One per shipped tab: six since the Conditioning tab.
+        assert len(controls) == 6
