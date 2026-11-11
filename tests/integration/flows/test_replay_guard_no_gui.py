@@ -167,7 +167,7 @@ def capture(
     triad: Triad,
     spy: Spy,
     extra: Tuple[str, ...] = (),
-    click_only_calls: Tuple[str, ...] = (),
+    ignored_calls: Tuple[str, ...] = (),
     probe: Callable[[Triad], Any] = lambda triad: None,
 ) -> Dict[str, Any]:
     """
@@ -179,9 +179,9 @@ def capture(
     :type spy: Spy
     :param extra: attributes this tab keeps that the shared list does not name
     :type extra: Tuple[str, ...]
-    :param click_only_calls: plugin methods the click path asks before it launches an action,
-        which a replay of the recorded method does not repeat
-    :type click_only_calls: Tuple[str, ...]
+    :param ignored_calls: plugin methods left out of the comparison: those only the click
+        path asks, and the read-only lookups only a replay makes
+    :type ignored_calls: Tuple[str, ...]
     :param probe: reads state back out of the data plugins after the action or replay
     :type probe: Callable[[Triad], Any]
     :return: the capture
@@ -189,9 +189,7 @@ def capture(
     """
     view, model = triad.tab_view, triad.tab_controller.model
     return {
-        "plugin_calls": [
-            call for call in spy.calls if call[0][2] not in click_only_calls
-        ],
+        "plugin_calls": [call for call in spy.calls if call[0][2] not in ignored_calls],
         "probe": probe(triad),
         "plot_cache": normalise((model.cache_data, model.cache_labels)),
         "figures": {
@@ -564,6 +562,33 @@ def settle(triad: Triad, qtbot: Any) -> None:
     )
 
 
+def replay_through_the_sequence(triad: Triad, entries: List[Any], qtbot: Any) -> None:
+    """
+    Replay the entries as a restore does, one step per turn of the event loop, and wait for the end.
+
+    A step that fails fails the test: the question it would ask is answered by raising.
+
+    :param triad: the tab to replay into
+    :type triad: Triad
+    :param entries: the recorded entries
+    :type entries: List[Any]
+    :param qtbot: pytest-qt's fixture
+    :type qtbot: Any
+    """
+    controller = triad.tab_controller
+    failures: List[str] = []
+
+    def fail(*args: Any, **kwargs: Any) -> str:
+        failures.append(repr(args))
+        return "keep"
+
+    triad.tab_view.ask_after_replay_failure = fail  # type: ignore[method-assign]
+    assert controller.start_replay(list(entries))
+    qtbot.waitUntil(lambda: not controller.is_replaying(), timeout=120_000)
+    settle(triad, qtbot)
+    assert failures == [], f"a replayed step failed: {failures}"
+
+
 def found_events(triad: Triad) -> Any:
     """What the finder holds for the channel, read back from the plugin."""
     channel = triad.channel  # type: ignore[attr-defined]
@@ -596,11 +621,13 @@ class Scenario:
     extra: Tuple[str, ...] = ()
     #: plugin methods the click path asks that a replay of the recorded method does not
     click_only_calls: Tuple[str, ...] = ()
+    #: read-only plugin lookups a replay through the sequence makes and the click did not:
+    #: write-back filling the panel, and the sequencer's check that a run left results.
+    #: Each must really be called in a replay of the whole history, so an entry that no
+    #: longer applies fails.
+    replay_only_calls: Tuple[str, ...] = ()
     #: reads state back out of the data plugins, so a background run's outcome is compared
     probe: Callable[[Triad], Any] = lambda triad: None
-    #: replay one entry at a time and wait for background runs between them, as the
-    #: sequencer will: an entry may need the run before it to have finished
-    wait_between: bool = False
     #: the test id, for a tab with more than one scenario
     name: str = ""
 
@@ -612,6 +639,9 @@ SCENARIOS = [
         build=metadata_tab,
         act=metadata_act,
         perturb=metadata_perturb,
+        # Write-back fills the panel with signals held off, so it asks for the loader's columns
+        # itself, and their units; read-only lookups the click made before recording.
+        replay_only_calls=("get_column_names_by_table", "get_column_units"),
     ),
     Scenario(
         tab="MetadataController",
@@ -624,6 +654,9 @@ SCENARIOS = [
         # The click path builds the filtered-event cache the Event ID is resolved
         # through; the replay is handed the resolved ids.
         click_only_calls=("load_metadata", "construct_metadata_query"),
+        # Write-back fills the panel with signals held off, so it asks for the loader's columns
+        # itself, and their units; read-only lookups the click made before recording.
+        replay_only_calls=("get_column_names_by_table",),
     ),
     Scenario(
         tab="ProteinController",
@@ -667,8 +700,9 @@ SCENARIOS = [
         # ranges although this tab holds different limits, which is the point.
         extra=("plot_samplerate",),
         click_only_calls=("get_eventfinding_status",),
+        # Write-back asks for the reader's channels.
+        replay_only_calls=("get_channels",),
         probe=found_events,
-        wait_between=True,
     ),
     Scenario(
         tab="EventAnalysisController",
@@ -683,7 +717,9 @@ SCENARIOS = [
         # the figure and the state read back from the fitter.
         click_only_calls=("get_parents", "get_eventfitting_status"),
         probe=fitted_events,
-        wait_between=True,
+        # Write-back asks for the loader's channels; the sequencer asks whether the fit left
+        # results before it carries on.
+        replay_only_calls=("get_channels", "get_num_events"),
     ),
     Scenario(
         tab="ClusteringController",
@@ -692,6 +728,8 @@ SCENARIOS = [
         act=clustering_act,
         perturb=clustering_perturb,
         probe=cluster_labels,
+        # Write-back of the run's loader asks for its columns and their units.
+        replay_only_calls=("get_column_names_by_table", "get_column_units"),
     ),
 ]
 
@@ -759,9 +797,8 @@ def run_scenario(
         spy_a = Spy(tab_a)
         scenario.act(tab_a, qtbot)
         settle(tab_a, qtbot)
-        captured_a = capture(
-            tab_a, spy_a, scenario.extra, scenario.click_only_calls, scenario.probe
-        )
+        ignored = scenario.click_only_calls + scenario.replay_only_calls
+        captured_a = capture(tab_a, spy_a, scenario.extra, ignored, scenario.probe)
         history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
         replayed = (
             build_kept_history(history, declarations_of(type(tab_a.tab_controller)))
@@ -774,16 +811,17 @@ def run_scenario(
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
         spy_b = Spy(tab_b)
-        if scenario.wait_between:
-            for entry in replayed:
-                tab_b.tab_controller.replay([entry])
-                settle(tab_b, qtbot)
-        else:
-            tab_b.tab_controller.replay(replayed)
-            settle(tab_b, qtbot)
-        captured_b = capture(
-            tab_b, spy_b, scenario.extra, scenario.click_only_calls, scenario.probe
-        )
+        replay_through_the_sequence(tab_b, replayed, qtbot)
+        if not kept and not through_session_file:
+            # The list is written for the whole history; what a restore keeps of it may
+            # leave out the step that makes a lookup.
+            made = {call[0][2] for call in spy_b.calls}
+            assert [
+                name for name in scenario.replay_only_calls if name not in made
+            ] == [], (
+                "a listed replay-only lookup was not made: drop it from the scenario"
+            )
+        captured_b = capture(tab_b, spy_b, scenario.extra, ignored, scenario.probe)
         return captured_a, captured_b, history
     finally:
         tab_a.close()
