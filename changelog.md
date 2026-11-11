@@ -156,6 +156,8 @@
 
 ### Data Plugin API:
 
+* `SingleBinaryDecoder` reads its format settings through `_binary_setting`, so a subclass fixes one by deleting its key and overriding `SETTING_DEFAULTS`
+
 * `MetaEventFitter._post_process_events` is now a concrete no-op, so a fitter with no post-processing need not override it; it still takes one channel and runs when that channel's last event is fitted
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
@@ -251,6 +253,8 @@
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
+
+* **New Data Plugin: `NIBinaryReader`** reads one binary file from the lab's NI DAQ setups (16 channels in mV), taking the sample rate from the file name and converting to pA with the amplifier's sensitivity
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 

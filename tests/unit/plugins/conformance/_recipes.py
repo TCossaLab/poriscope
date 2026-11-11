@@ -57,6 +57,7 @@ from tests.synthetic_data.synthetic_chimera_vc100 import (
     ChimeraVC100RecordingConfig,
     generate_chimera_vc100_dataset,
 )
+from tests.synthetic_data.synthetic_ni import NIBinaryConfig, generate_ni_binary_dataset
 
 
 def discover_concrete(base: type) -> List[type]:
@@ -773,6 +774,19 @@ def _single_binary_dataset(out_dir: Path) -> SyntheticDataset:
     return generate_single_binary_dataset(out_dir, config, num_events=5)
 
 
+def _ni_binary_dataset(out_dir: Path) -> SyntheticDataset:
+    """Build an NIBinaryReader fixture: 16 interleaved big-endian f64 channels, rate in the name."""
+    config = NIBinaryConfig(
+        samplerate=100_000.0,
+        duration_s=0.2,
+        baseline=READER_BASELINE_PA,
+        noise_std=READER_NOISE_STD_PA,
+        event_amplitude=READER_EVENT_AMPLITUDE_PA,
+        event_duration_s=READER_EVENT_DURATION_S,
+    )
+    return generate_ni_binary_dataset(out_dir, config, num_events=5)
+
+
 def _abf2_modern_dataset(out_dir: Path) -> SyntheticDataset:
     """Build a 2-channel ABF2 fixture, for TCossaLabABFReader and ABFReader."""
     config = Abf2RecordingConfig(
@@ -805,6 +819,7 @@ READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
     "ChimeraReaderVC100": _chimera_vc100_dataset,
     "BinaryReader1X": _binary_1x_dataset,
     "SingleBinaryDecoder": _single_binary_dataset,
+    "NIBinaryReader": _ni_binary_dataset,
     "TCossaLabABFReader": _abf2_modern_dataset,
     "ABFReader": _abf2_modern_dataset,
     "LegacyElementsReader": _abf2_legacy_dataset,

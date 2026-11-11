@@ -30,8 +30,8 @@
     "removable_lines": 0
   },
   "datareaders": {
-    "files": 8,
-    "functions": 85,
+    "files": 9,
+    "functions": 92,
     "identical_bodies": 13,
     "removable_lines": 348
   },

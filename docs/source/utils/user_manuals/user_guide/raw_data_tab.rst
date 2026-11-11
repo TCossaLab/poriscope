@@ -17,7 +17,7 @@ Step 1: Loading Your Data
 2. A dropdown menu will appear listing supported reader types. These correspond to different file formats and decoding standards. Supported readers include:
 
    - ``ABFReader`` (for any `.abf` file; its settings choose the ADC channel that records current and the sweep to read, -1 for every sweep back to back), and ``TCossaLabABFReader`` and ``LegacyElementsReader`` (for `.abf` recordings from the lab's own setups, with those settings fixed)
-   - ``BinaryReader1X`` and ``SingleBinaryDecoder`` (for `.bin`-like formats)
+   - ``BinaryReader1X`` and ``SingleBinaryDecoder`` (for `.bin`-like formats), and ``NIBinaryReader`` (for the `.bin` files of the lab's NI DAQ setups: 16 channels in mV, with the sample rate read from the file name and the amplifier's **Sensitivity** in pA/V converting to pA)
    - ``ChimeraReader20240101``, ``ChimeraReader20240501``, ``ChimeraReaderVC100`` (for Chimera system `.log` files or variations; ``ChimeraReader20240101`` is deprecated and will be removed in a future release)
 
 .. note::

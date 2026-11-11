@@ -34,6 +34,7 @@ from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader202
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.datareaders.ChimeraReaderVC100 import ChimeraReaderVC100
 from poriscope.plugins.datareaders.LegacyElementsReader import LegacyElementsReader
+from poriscope.plugins.datareaders.NIBinaryReader import NIBinaryReader
 from poriscope.plugins.datareaders.SingleBinaryDecoder import SingleBinaryDecoder
 from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 
@@ -114,6 +115,7 @@ __all__ = [
     "ChimeraReader20240501",
     "ChimeraReaderVC100",
     "SingleBinaryDecoder",
+    "NIBinaryReader",
     "LegacyElementsReader",
     # --- Data Writers ---
     "SQLiteEventWriter",
