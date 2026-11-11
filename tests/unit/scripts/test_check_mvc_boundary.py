@@ -716,18 +716,26 @@ class TestPluginReach:
 
         assert mod.plugin_reaches(parse(source)) == []
 
-    def test_all_eight_families_are_covered(self, mod: types.ModuleType) -> None:
+    def test_every_family_is_a_plugin_folder(self, mod: types.ModuleType) -> None:
+        """A family the check names but the tree does not have watches nothing."""
+        plugins = Path(mod.REPO_ROOT) / "poriscope" / "plugins"
+        assert {f for f in mod.PLUGIN_FAMILIES if not (plugins / f).is_dir()} == set()
+
+    def test_all_nine_families_are_covered(self, mod: types.ModuleType) -> None:
         """
         Missing one would leave a hole exactly where a plugin lives.
 
-        Named as a set so that adding a ninth family fails here rather than silently
-        going unwatched.
+        Named as a set so that adding a tenth family fails here rather than silently
+        going unwatched. Each name is a real folder under ``poriscope/plugins/``: this
+        set once named ``db_writers``, a folder that does not exist, so the database
+        writers went unwatched.
         """
         assert mod.PLUGIN_FAMILIES == {
+            "conditioningloaders",
             "datareaders",
             "datawriters",
             "db_loaders",
-            "db_writers",
+            "dbwriters",
             "eventfinders",
             "eventfitters",
             "eventloaders",

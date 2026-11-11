@@ -86,7 +86,7 @@ run automatically:
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
 ``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/``,
-``plugin-module-level`` more narrowly still to the eight data-plugin families,
+``plugin-module-level`` more narrowly still to the nine data-plugin families,
 ``settings-schema`` to ``poriscope/plugins/**`` — it only needs to run when a
 plugin's settings could have changed — and ``text-encoding`` to the requirements
 files, which are the ones a shell redirection regenerates. Everything else runs
@@ -779,7 +779,7 @@ handed. Nothing above this point would notice either.
 ``tests/unit/plugins/conformance/`` closes that gap. It builds your plugin the way the
 application does — real settings, a real parent plugin, a real file — drives it over
 synthetic data from ``tests/synthetic_data/``, and checks it behaves like a
-well-formed member of its family. All eight families are covered, each with checks
+well-formed member of its family. All nine families are covered, each with checks
 written for what that family's output is actually used for:
 
 .. list-table::
@@ -788,6 +788,10 @@ written for what that family's output is actually used for:
 
    * - Family
      - What conformance asks of it
+   * - ``MetaConditioningLoader``
+     - One pore size per cycle on every channel, cycles counted from 1; every PSD
+       recording has a cycle, a sample rate and points per average, and its samples are
+       finite floats in pA; the status report covers the experiment and each channel.
    * - ``MetaReader``
      - Agrees with the recording about channels, sample rate and length; ``load_data``
        recovers the planted baseline and event depth in picoamps, not just a plausible
@@ -1139,7 +1143,7 @@ carry the class name, so ``-k`` matches it:
 
 .. code-block:: bash
 
-   pytest -m conformance                    # every plugin, all eight families
+   pytest -m conformance                    # every plugin, all nine families
    pytest -m conformance -k YourPlugin      # only yours, while you work
 
 .. tip::
@@ -1551,7 +1555,7 @@ Pre-Pull-Request Compliance Checklist
    scaffold honest as the ``Meta*`` bases change.
 
    **What a freshly generated skeleton does and does not pass**, measured against one
-   generated plugin in each of the eight families: steps 1 and 2 pass cleanly — it is
+   generated plugin in each of the nine families: steps 1 and 2 pass cleanly — it is
    already ``black``/``ruff`` clean and satisfies ``mypy``, ``pydoclint``, the security
    and module-level checks, and the settings schema. Step 3 does **not** pass, and is
    not meant to: the skeleton's methods still raise ``NotImplementedError``, and the

@@ -386,7 +386,7 @@ class TestGetEmptySettings:
 
     def test_super_is_called_where_the_base_implements_it(self, script, tmp_path):
         for family in sorted(script.FAMILIES):
-            if family == "MetaFilter":
+            if family in ("MetaFilter", "MetaConditioningLoader"):
                 continue
             path = generate(script, family, f"Super{family}", tmp_path, [])
             text = path.read_text(encoding="utf-8")

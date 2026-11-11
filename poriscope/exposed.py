@@ -28,6 +28,10 @@
 # ----------------------
 
 # --- Data Readers ---
+# --- Conditioning Loaders ---
+from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
+    NIConditioningLoader,
+)
 from poriscope.plugins.datareaders.ABFReader import ABFReader
 from poriscope.plugins.datareaders.BinaryReader1X import BinaryReader1X
 from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader20240101
@@ -73,6 +77,7 @@ from poriscope.utils.BaseValidator import BaseValidator
 from poriscope.utils.EventWorker import Worker
 
 # --- Meta Interfaces ---
+from poriscope.utils.MetaConditioningLoader import MetaConditioningLoader
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -133,10 +138,13 @@ __all__ = [
     "PeakFinder",
     # --- Event Loaders ---
     "SQLiteEventLoader",
+    # --- Conditioning Loaders ---
+    "NIConditioningLoader",
     # --- Filters ---
     "BesselFilter",
     "WaveletFilter",
     # --- Meta Interfaces ---
+    "MetaConditioningLoader",
     "MetaController",
     "MetaControls",
     "MetaDatabaseLoader",

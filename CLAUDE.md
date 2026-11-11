@@ -84,7 +84,7 @@ Three rules apply regardless:
   signals `MainController.instantiate_analysis_tab` wires point to point. The old
   string-dispatched `global_signal` bus is gone - do not rebuild one.
 - New data plugin: **generate it, don't hand-write it** —
-  `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the eight
+  `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the nine
   data-plugin families, the `AnalysisTab` keyword and every shipped plugin). Signatures and
   docstrings are copied from the base verbatim, which is what the compliance test's
   exact-equality comparison requires. The generated file is only the start: the skill lists

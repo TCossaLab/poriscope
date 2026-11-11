@@ -45,7 +45,7 @@ name of your plugin:
 
 There are two things you might be doing, and the tool covers both.
 
-**A new plugin** subclasses one of the eight base classes and gets a stub for every
+**A new plugin** subclasses one of the nine base classes and gets a stub for every
 abstract method that base declares — between 6 and 21 of them depending on the family.
 ``--list`` prints the count for each, which is worth looking at before you commit to one.
 
@@ -74,8 +74,9 @@ you can confirm the plumbing works before writing any of the algorithm.
 
 .. note::
 
-   ``get_empty_settings`` is stubbed for you even though seven of the eight families do
-   not declare it abstract, and the stub calls ``super()`` before adding anything. This
+   ``get_empty_settings`` is stubbed for you even though seven of the nine families do
+   not declare it abstract, and in those seven the stub calls ``super()`` before adding
+   anything. This
    matters more than it looks: those seven base implementations seed mandatory keys — the
    ``MetaReader`` an event finder depends on, the ``Output File`` a writer needs — and an
    override that forgets the ``super()`` call silently drops them. Nothing checks for it.
@@ -137,6 +138,7 @@ To assist with quality control, any contributions to the poriscope repository wi
    meta_event_fitter
    meta_database_writer
    meta_database_loader
+   meta_conditioning_loader
    serial_channel_operations
    
    

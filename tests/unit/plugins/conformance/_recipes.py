@@ -25,8 +25,12 @@ against this same synthetic signal.
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Type
 
+from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
+    NIConditioningLoader,
+)
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
+from poriscope.utils.MetaConditioningLoader import MetaConditioningLoader
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
 from poriscope.utils.MetaEventFinder import MetaEventFinder
@@ -57,7 +61,11 @@ from tests.synthetic_data.synthetic_chimera_vc100 import (
     ChimeraVC100RecordingConfig,
     generate_chimera_vc100_dataset,
 )
-from tests.synthetic_data.synthetic_ni import NIBinaryConfig, generate_ni_binary_dataset
+from tests.synthetic_data.synthetic_ni import (
+    NIBinaryConfig,
+    generate_conditioning_folder,
+    generate_ni_binary_dataset,
+)
 
 
 def discover_concrete(base: type) -> List[type]:
@@ -1019,3 +1027,53 @@ def assert_report_ignores_channel(plugin: Any, channel: int = 0) -> None:
     whole = plugin.report_status()
     assert isinstance(whole, str)
     assert plugin.report_status(channel) == whole
+
+
+# ===========================================================================
+# Conditioning loaders
+# ===========================================================================
+
+
+def _ni_conditioning_loader(out_dir: Path) -> MetaConditioningLoader:
+    """Build an NIConditioningLoader over a synthetic experiment folder, a PSD every 2 cycles."""
+    dataset = generate_conditioning_folder(out_dir / "experiment")
+    loader = NIConditioningLoader()
+    settings = loader.get_empty_settings(standalone=True)
+    _fill(
+        settings,
+        {"Folder": str(dataset.root), "PSD Every N Cycles": dataset.psd_every_n},
+        "NIConditioningLoader",
+    )
+    loader.apply_settings(settings)
+    return loader
+
+
+#: How to build each conditioning loader over an experiment written for its format. A new
+#: loader with no entry fails the family's conformance suite naming this dict.
+CONDITIONING_LOADER_BUILDERS: Dict[str, Callable[[Path], MetaConditioningLoader]] = {
+    "NIConditioningLoader": _ni_conditioning_loader,
+}
+
+
+def build_conditioning_loader(
+    loader_cls: Type[MetaConditioningLoader], out_dir: Path
+) -> MetaConditioningLoader:
+    """
+    Build a conditioning loader over a synthetic experiment written for its format.
+
+    :param loader_cls: The loader class under test.
+    :type loader_cls: Type[MetaConditioningLoader]
+    :param out_dir: Directory to write the experiment into.
+    :type out_dir: Path
+    :raises KeyError: If the class has no entry in CONDITIONING_LOADER_BUILDERS.
+    :return: The loader, with its settings applied.
+    :rtype: MetaConditioningLoader
+    """
+    name = loader_cls.__name__
+    if name not in CONDITIONING_LOADER_BUILDERS:
+        raise KeyError(
+            f"No conformance recipe for {name}. Add one to "
+            f"CONDITIONING_LOADER_BUILDERS, writing an experiment in its format - see "
+            f"tests/synthetic_data/synthetic_ni.py for the NI one."
+        )
+    return CONDITIONING_LOADER_BUILDERS[name](out_dir)

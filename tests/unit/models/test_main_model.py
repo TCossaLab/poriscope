@@ -671,7 +671,7 @@ class TestMetaclassFor:
 
         assert main_model._metaclass_for(Unrelated) is None
 
-    def test_the_eleven_families_are_the_recognised_set(self, main_model):
+    def test_the_twelve_families_are_the_recognised_set(self, main_model):
         """
         Pinned because this mapping *is* the definition of a plugin family.
 
@@ -687,6 +687,7 @@ class TestMetaclassFor:
             "MetaEventFitter",
             "MetaDatabaseWriter",
             "MetaDatabaseLoader",
+            "MetaConditioningLoader",
             "MetaController",
             "MetaView",
             "MetaModel",

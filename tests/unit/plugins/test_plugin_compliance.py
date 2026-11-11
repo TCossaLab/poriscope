@@ -8,6 +8,7 @@ import pytest
 
 import poriscope.plugins as plugins_pkg
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.MetaConditioningLoader import MetaConditioningLoader
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
@@ -72,6 +73,7 @@ def get_concrete_overrides(base_cls: Type, plugin_cls: Type) -> List[str]:
 # architecture changes.)
 
 META_CLASSES: Set[Type] = {
+    MetaConditioningLoader,
     MetaController,
     MetaDatabaseLoader,
     MetaDatabaseWriter,
@@ -132,6 +134,10 @@ BASE_CLASS_DATA: Dict[str, Dict[str, Any]] = {
     "MetaEventLoader": {
         "class": MetaEventLoader,
         "methods": get_required_methods(MetaEventLoader),
+    },
+    "MetaConditioningLoader": {
+        "class": MetaConditioningLoader,
+        "methods": get_required_methods(MetaConditioningLoader),
     },
     "MetaFilter": {
         "class": MetaFilter,

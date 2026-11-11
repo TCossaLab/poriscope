@@ -38,7 +38,7 @@ The rule is that module-level *assignment* is fine but module-level *invocation*
 is not, so a type alias such as ``Numeric = Union[int, float, np.number]`` passes
 while ``logger = logging.getLogger(__name__)`` does not.
 
-With no PATH arguments it checks the eight data-plugin families - what an outside
+With no PATH arguments it checks the nine data-plugin families - what an outside
 contribution actually adds. Exits 1 if any file reports a problem, so it is usable
 as a gate.
 """
@@ -55,6 +55,7 @@ from typing import List, Tuple
 #: a rule with carve-outs rather than a rule with none. Those files are still covered
 #: by the ``ruff-plugin-security`` hook, which needs no exceptions anywhere.
 PLUGIN_FAMILIES = (
+    "conditioningloaders",
     "datareaders",
     "datawriters",
     "db_loaders",
@@ -153,7 +154,7 @@ def check_source(source: str, filename: str) -> List[str]:
 
 def default_paths() -> List[Path]:
     """
-    Collect every Python file in the eight data-plugin families.
+    Collect every Python file in the nine data-plugin families.
 
     :return: the files to check when none were named on the command line
     :rtype: List[Path]

@@ -462,6 +462,13 @@ class MainView(QMainWindow, WalkthroughMixin):
             data_submenu, "MetaDatabaseLoader", self.on_load_metadata_button_click
         )
 
+        data_submenu = data_menu.addMenu("Load Conditioning Experiment")
+        self.add_plugin_actions(
+            data_submenu,
+            "MetaConditioningLoader",
+            self.on_load_conditioning_button_click,
+        )
+
         filter_submenu = analysis_menu.addMenu("New Filter")
         self.add_plugin_actions(
             filter_submenu, "MetaFilter", self.on_load_filter_button_click
@@ -610,6 +617,10 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.logger.info(f"Loading events for subclass: {subclass}")
         self.instantiate_plugin.emit("MetaEventLoader", subclass)
         # self.instantiate_analysis_tab.emit(subclass)
+
+    @log(logger=logger)
+    def on_load_conditioning_button_click(self, subclass: str) -> None:
+        self.instantiate_plugin.emit("MetaConditioningLoader", subclass)
 
     @log(logger=logger)
     def on_load_metadata_button_click(self, subclass: str) -> None:

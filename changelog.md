@@ -120,6 +120,10 @@
 
 ### Developer Tooling:
 
+* The MVC boundary check now watches analysis tabs importing database writers, whose folder it had named `db_writers` instead of `dbwriters`, and conditioning loaders
+
+* `scripts/new_plugin.py --list` sizes its columns to the longest name
+
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
 
 * Branch CI runs the suite and the wheel smoke at both ends of the supported range: exactly Python 3.12.0 with the pins in `requirements.txt` (on `ubuntu-24.04`, the only image with that build, and on Windows) and Python 3.14 with the runtime stack resolved from `pyproject.toml`'s ranges (on `ubuntu-latest` and Windows); the pull-request, docs and release jobs test the floor
@@ -159,6 +163,8 @@
 ### Data Plugin API:
 
 * `SingleBinaryDecoder` reads its format settings through `_binary_setting`, so a subclass fixes one by deleting its key and overriding `SETTING_DEFAULTS`
+
+* **New data-plugin family: `MetaConditioningLoader`**, in `poriscope/plugins/conditioningloaders/`, reads a pore conditioning experiment: each channel's pore size per cycle and the PSD recordings taken along the way; it is in `poriscope.exposed` and `scripts/new_plugin.py`
 
 * `MetaEventFitter._post_process_events` is now a concrete no-op, so a fitter with no post-processing need not override it; it still takes one channel and runs when that channel's last event is fitted
 
@@ -259,6 +265,8 @@
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
 
 * **New Data Plugin: `NIBinaryReader`** reads one binary file from the lab's NI DAQ setups (16 channels in mV), taking the sample rate from the file name and converting to pA with the amplifier's sensitivity
+
+* **New Data Plugin: `NIConditioningLoader`** reads a conditioning experiment folder from the lab's LabVIEW and NI DAQ setups, under **Data** → **Load Conditioning Experiment**; several CSVs are read as one, in the order of the time stamps in their names
 
 * **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 

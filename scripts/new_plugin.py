@@ -32,7 +32,7 @@ Generate a compliant starting point for a new Poriscope plugin.
     python scripts/new_plugin.py ClassicBlockageFinder MyVariant --override _filter_events
     python scripts/new_plugin.py AnalysisTab MyTab          # new analysis tab, four files
 
-BASE is one of three things. One of the eight ``Meta*`` data plugin base classes, in which
+BASE is one of three things. One of the nine ``Meta*`` data plugin base classes, in which
 case every abstract method it declares is stubbed out; the name of a plugin that already
 ships, in which case the new plugin inherits everything and stubs out only what
 ``--override`` names; or the keyword ``AnalysisTab``, in which case a Controller, Model and
@@ -119,7 +119,7 @@ class Family(NamedTuple):
     summary: str
 
 
-# The eight data plugin families. The folder column is the reason this table exists at
+# The nine data plugin families. The folder column is the reason this table exists at
 # all: nothing else in the repository maps a base class to its plugin folder, and the
 # names are not guessable from the base class ("datawriters" for MetaWriter but
 # "dbwriters" for MetaDatabaseWriter, and "db_loaders" with an underscore).
@@ -168,6 +168,11 @@ FAMILIES: Dict[str, Family] = {
         "poriscope.utils.MetaDatabaseLoader",
         "db_loaders",
         "query event metadata back out of a database",
+    ),
+    "MetaConditioningLoader": Family(
+        "poriscope.utils.MetaConditioningLoader",
+        "conditioningloaders",
+        "read a pore conditioning experiment's sizes and PSD recordings",
     ),
 }
 
@@ -412,7 +417,7 @@ def family_base(family: str) -> type:
     """
     Get a family's base class, importing its module if that has not happened yet.
 
-    :param family: one of the eight family names
+    :param family: one of the nine family names
     :type family: str
     :return: the base class
     :rtype: type
@@ -436,7 +441,7 @@ def tab_base(role: TabRole) -> type:
 
 def family_of(plugin_cls: type) -> str:
     """
-    Report which of the eight families a plugin class belongs to.
+    Report which of the nine families a plugin class belongs to.
 
     :param plugin_cls: the plugin class to classify
     :type plugin_cls: type
@@ -854,12 +859,12 @@ def render_settings_stub(cls: type) -> Stub:
     """
     Render a ``get_empty_settings`` override, calling ``super()`` wherever that is real.
 
-    Seven of the eight families implement this concretely and seed mandatory keys in it -
+    Seven of the nine families implement this concretely and seed mandatory keys in it -
     the reader an event finder depends on, the output file a writer needs - so an
     override that forgets the ``super()`` call silently loses the plugin's dependency
     wiring, and nothing checks for that. It is written out rather than described. On
-    MetaFilter, where the method is genuinely abstract, there is nothing to call and the
-    whole dict is authored instead.
+    MetaFilter and MetaConditioningLoader, where the method is genuinely abstract, there
+    is nothing to call and the whole dict is authored instead.
 
     :param cls: the class the new plugin will inherit from
     :type cls: type
@@ -1484,21 +1489,33 @@ def print_menus(plugins: Dict[str, Type[BaseDataPlugin]]) -> None:
     print("New plugin - subclass a Poriscope base class.")
     print("Folders below are under poriscope/plugins/.\n")
     families = sorted(FAMILIES, key=lambda f: len(family_base(f).__abstractmethods__))
+    # Sized to the longest entry, so a new family with a long name keeps its columns.
+    width = max(len(name) for name in [*FAMILIES, TAB]) + 2
+    folders = [f"{family.folder}/" for family in FAMILIES.values()] + [TAB_FOLDER + "/"]
+    folder_width = max(len(folder) for folder in folders) + 2
     for family in families:
         count = len(family_base(family).__abstractmethods__)
         folder = f"{FAMILIES[family].folder}/"
-        print(f"  {family:<19}{count:>3}  {folder:<16}{FAMILIES[family].summary}")
+        print(
+            f"  {family:<{width}}{count:>3}  {folder:<{folder_width}}"
+            f"{FAMILIES[family].summary}"
+        )
 
     tab_methods = sum(len(tab_base(role).__abstractmethods__) for role in TRIAD)
     print(
-        f"\n  {TAB:<19}{tab_methods:>3}  {TAB_FOLDER + '/':<16}a whole analysis tab, as"
+        f"\n  {TAB:<{width}}{tab_methods:>3}  {TAB_FOLDER + '/':<{folder_width}}"
+        f"a whole analysis tab, as"
     )
-    print(f"  {'':<19}{'':>3}  {'':<16}a Controller, Model and View")
+    print(f"  {'':<{width}}{'':>3}  {'':<{folder_width}}a Controller, Model and View")
 
     print("\nVariant - subclass a plugin that already ships, and change part of it.\n")
+    name_width = max((len(name) for name in plugins), default=0) + 2
     for name in sorted(plugins):
         count = len(overridable_methods(plugins[name]))
-        print(f"  {name:<25}{family_of(plugins[name]):<20}{count:>3} overridable")
+        print(
+            f"  {name:<{name_width}}{family_of(plugins[name]):<{width}}{count:>3} "
+            f"overridable"
+        )
 
     print("\nRun --list with one of these names to see the methods involved.")
 
