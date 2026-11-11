@@ -170,6 +170,8 @@
 
 ### Analysis Tabs:
 
+* `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
+
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
 
 * The Metadata and Protein tabs' event plots resolve the Event ID through one `MetaSubsetTabView._resolve_events`, which refuses the scope with `_refuse_scope` before it builds the filtered-event cache

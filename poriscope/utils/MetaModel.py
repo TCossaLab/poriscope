@@ -23,6 +23,7 @@
 # Contributors:
 # Kyle Briggs
 # Alejandra Carolina González González
+# Michelle Stephen
 
 import json
 import logging
@@ -33,6 +34,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from PySide6.QtCore import QObject, Qt, Signal, Slot
+from scipy.signal import welch
 
 from poriscope.constants import __VERSION__
 from poriscope.utils.EventWorker import Worker, WorkerThread
@@ -765,3 +767,81 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         :rtype: List[npt.NDArray[np.float64]]
         """
         return [np.arange(len(trace)) / samplerate * scale + offset for trace in traces]
+
+    @log(logger=logger)
+    def power_spectral_density(
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        segment_length: int,
+        overlap: float,
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        Welch's estimate of a trace's power spectral density: Hann window, density scaling.
+
+        Shared by every tab that shows a spectrum, so that one segment length and overlap
+        give the same spectrum in any of them. A segment longer than the trace is shortened
+        to the trace, as :func:`scipy.signal.welch` does, but without its warning.
+
+        :param data: the trace, in pA
+        :type data: npt.NDArray[np.float64]
+        :param samplerate: its sampling rate, in Hz
+        :type samplerate: float
+        :param segment_length: samples per Welch segment; one frequency bin is
+            ``samplerate / segment_length`` wide
+        :type segment_length: int
+        :param overlap: how much consecutive segments overlap, as a fraction of a segment,
+            from 0 up to but not including 1
+        :type overlap: float
+        :return: the frequencies in Hz, and the PSD at each in pA^2/Hz
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        """
+        segment = min(int(segment_length), len(data))
+        frequency, psd = welch(
+            data,
+            fs=samplerate,
+            window="hann",
+            nperseg=segment,
+            noverlap=int(segment * overlap),
+            scaling="density",
+        )
+        return frequency, psd
+
+    @log(logger=logger)
+    def fit_power_law(
+        self,
+        frequency: npt.NDArray[np.float64],
+        psd: npt.NDArray[np.float64],
+        start: float,
+        end: float,
+    ) -> Tuple[float, float]:
+        """
+        Fit a straight line to log10 PSD against log10 frequency over a frequency range.
+
+        The line is the spectrum's power law, ``PSD = 10**intercept * f**slope``, so its
+        value at 1 Hz is ``10**intercept``. Every bin from ``start`` to ``end`` inclusive
+        counts; a tiny constant keeps a zero bin from taking the logarithm of 0.
+
+        :param frequency: the frequencies, in Hz
+        :type frequency: npt.NDArray[np.float64]
+        :param psd: the PSD at each frequency
+        :type psd: npt.NDArray[np.float64]
+        :param start: the lowest frequency fitted, in Hz
+        :type start: float
+        :param end: the highest frequency fitted, in Hz
+        :type end: float
+        :raises ValueError: If fewer than two frequency bins lie in the range.
+        :return: the slope and the intercept of the line
+        :rtype: Tuple[float, float]
+        """
+        in_range = (frequency >= start) & (frequency <= end)
+        bins = int(np.count_nonzero(in_range))
+        if bins < 2:
+            raise ValueError(
+                f"{bins} frequency bins between {start:g} and {end:g} Hz, and a fit needs "
+                f"at least 2: widen the fit range or use longer segments"
+            )
+        slope, intercept = np.polyfit(
+            np.log10(frequency[in_range]), np.log10(psd[in_range] + 1e-60), 1
+        )
+        return float(slope), float(intercept)

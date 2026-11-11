@@ -29,7 +29,6 @@ from typing import Optional, override
 
 import numpy as np
 import numpy.typing as npt
-from scipy.signal import welch
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -103,7 +102,7 @@ class RawDataModel(MetaModel):
                 )
                 continue
             try:
-                f, Pxx = welch(data, samplerate, nperseg=length)
+                f, Pxx = self.power_spectral_density(data, samplerate, length, 0.5)
                 rms = self.integrate_noise(f, Pxx)
             except Exception as e:
                 self.logger.warning(f"Unable to calculate PSD for a channel: {e}")
