@@ -227,7 +227,7 @@ class MetaEventTabView(MetaView):
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Does nothing: the two event tabs draw their own figures and keep no action history to reset, so neither needs a reset hook. Implemented here so that neither has to declare an empty one.
+        Does nothing: the two event tabs draw their own figures and record no reset, so neither needs a reset hook. Implemented here so that neither has to declare an empty one.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str

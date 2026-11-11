@@ -99,3 +99,8 @@ Step 10: Inspect Individual Events
 3. Click **Plot Events** to view raw/filtered/fitted traces, or **Plot Histogram** for a ΔI/I histogram, for the selected events.
 4. Use the left/right arrow buttons to step through events in the filtered set.
 5. Check the **RAW** box to overlay the unfiltered raw signal alongside the filtered and fitted traces.
+
+.. note::
+
+   This tab records **Update Plot**, **Plot Events** and **Plot Histogram** for the session, so loading or restoring it can replay
+   them; see :ref:`replay_actions`.

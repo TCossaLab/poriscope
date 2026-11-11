@@ -110,3 +110,7 @@ Step 5: Export Plot Data
 
 Click **Export Plot Data** to save the current clustering visualization as a csv file.
 
+.. note::
+
+   This tab records a clustering run (**Apply** in **Cluster Settings**) and **Merge** for the session, so loading or restoring it can replay
+   them; see :ref:`replay_actions`.

@@ -51,9 +51,19 @@
 
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
+#### Saved files:
+
+* **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 2.1 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
+
+* **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
+
+* **Breaking:** a plot configuration now names its format and version, and Load Plot Configuration refuses one saved by Poriscope 2.0 or by any earlier 2.1 build, one saved for another tab, and a session file, with one error saying why, and replays none of it
+
 #### Application internals:
 
 * **`DataPluginModel.apply_settings` is removed**; call `apply_settings` on the plugin itself
+
+* **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
 
 #### Analysis-tab API:
 
@@ -99,14 +109,6 @@
 * **Breaking:** recorded actions are declared on Controllers only: `MetaView.record_action` is removed and `MetaController.action_registry` no longer reads the View, so a `@register_action` on a View method is neither recorded nor replayed
 
 * **Breaking:** `register_action` requires `kind=` (`result`, `view`, `additive` or `reset`) with the figure or key it acts on, so a tab that decorates a method without it no longer loads
-
-* **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 2.1 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
-
-* **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
-
-* **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
-
-* **Breaking:** a plot configuration now names its format and version, and Load Plot Configuration refuses one saved by Poriscope 2.0 or by any earlier 2.1 build, one saved for another tab, and a session file, with one error saying why, and replays none of it
 
 * **Breaking:** the plot configuration is read and written by the tab's Model (`MetaModel.save_plot_configuration`, `read_plot_configuration`): `MetaController.save_tab_action_history`, `MainController.save_tab_action_history` and `MainModel.save_tab_actions` are removed, and `MetaController.save_tab_actions` requires the file
 
@@ -171,6 +173,10 @@
 * Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel
 
 * A replayed action whose saved values no longer fit its parameters is reported on the status panel and skipped, and the rest of the file still replays
+
+* `RawDataView.write_back` shows a recorded entry's plugins, channel, range and event index in the panel, and a Find's Timer limits
+
+* `ClusteringView.write_back` shows a recorded run's loader and settings, and a merge's two labels, in the panel
 
 * `MetadataView.write_back` shows a recorded overlay's or Plot Events' values in the panel and the tab's scope, selecting a filter only if it still holds the recorded SQL
 

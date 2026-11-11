@@ -70,9 +70,11 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   entries are reported and skipped
 - A method that can do nothing - refused, or with nothing to show - opts out of recording with
   ``@register_action("name", skip_on_false=True)`` and returns ``False`` when it did nothing. That
-  call is not recorded: recording adds one entry per call to the tab's history, so a call that did
-  nothing can never stand in for an earlier call that succeeded. Only Undo and
-  ``discard_last_tab_action`` remove entries
+  call is not recorded, so it never replaces a good run in the saved actions, which keep only the
+  latest run of each plugin and channel. The live history keeps every entry, for Undo; entries leave
+  it only through Undo, ``discard_last_tab_action``, a tab's Reset (``set_history_aside``), a
+  plugin delete or edit (``rewrite_plugin_entries``), and a Find or Fit rerun that does not finish,
+  which removes the earlier run of that plugin and channel
 - Replay goes through the tab's registry of declared actions, ``MetaController.action_registry``:
   a name that is not declared, an entry from an older file, or one whose saved values no longer
   fit its action's parameters, is reported on the status panel and not called

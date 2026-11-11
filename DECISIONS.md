@@ -395,7 +395,8 @@ figure by the live mode, so a plot recorded in Ensemble and replayed into an Ind
 the wrong figures. The two Protein actions are in `ALLOWED` and a strict `xfail` pins it.
 
 **Revisit** when replay writes the recorded mode back before it runs an action: remove the `ALLOWED` entries
-and the `xfail` marker.
+and the `xfail` marker. *Closed 2026-10-29: Protein draws on each mode's figures by name, and the `ALLOWED`
+entries and the `xfail` are gone (see that entry).*
 
 ---
 
@@ -411,7 +412,8 @@ function that is a pure function of its arguments may be decorated: one that rea
 old View path for the 5 View methods until their tab converts). One registry per tab, built from the
 declared methods of the Controller, and during the transition of its View, serves replay, Undo and Load
 Plot Configuration; a duplicate name raises, and an unknown name or an old-format entry is reported on the
-status panel, not called. Undo finds resets by `RESET_ACTION = "reset"`.
+status panel, not called. Undo finds resets by `RESET_ACTION = "reset"`. *`MetaView.record_action` and
+the View half of the registry were removed 2026-10-30: no View records an action (see that entry).*
 
 **Evidence.** The old decorator recorded by emitting a signal named `update_tab_action_history` on the
 decorated object (`LogDecorator.py`); `MetaController` has a signal of that name that sends the whole
@@ -497,6 +499,50 @@ history from before the replay through the sequencer; if that fails, the tab is 
 the panel says so.
 
 **Rejected.** Clear only, without rebuilding: the user loses the state they had before the replay.
+
+---
+
+## 2026-10-17 - A replay shows each step's recorded values in the panel, not a snapshot of the widgets
+
+**Context.** After a restore, a tab's panel has to show something: what the user last typed, what the panel showed
+when the session was saved, or the values the replayed result was made with.
+
+**Decision** (Carolina, 2026-10-17). Before each replayed step runs, the View writes that step's recorded values into
+the panel and into the inputs a dialog or button stores (`MetaView.write_back`, called by `ReplaySequence`): plugins,
+channels, ranges, filters, plot settings, Find's Timer limits, the scope, Protein's mode, Clustering's settings. So
+the panel never disagrees with the plot, and the next click starts from what produced it. Write-back only writes,
+with signals held off; the step runs on its recorded values, never on what was written. A value that is no longer
+an option is skipped and said on the status panel.
+
+**Rejected.** A snapshot of each panel's widgets saved with the session: it can disagree with the replayed plot, and
+needs every control to carry an `objectName` (kept in `future_fixes.md` only for a tab the user does not replay).
+Leaving the panel as the user had it: the next click would not start from what drew the screen.
+
+**Evidence.** A manual pass on 2026-11-10 found `write_back` was never called; `0bfa4afb` calls it on every step,
+tested on real tabs in `tests/integration/flows/test_replay_writes_back_no_gui.py`.
+
+**Revisit if** a recorded value has no widget to show it in, or a session must restore a tab it does not replay.
+
+---
+
+## 2026-10-17 - A replay runs one step per turn of the event loop, and waits for each Find or Fit
+
+**Context.** The old replay was one synchronous loop on the GUI thread: the window froze, a Find or Fit started a
+worker and the next entry ran before it finished, and several tabs could not replay at once.
+
+**Decision** (Carolina, 2026-10-17; how it hears a run end, 2026-11-05). Each tab replays through its own
+`ReplaySequence` (`MetaController.start_replay`). Each step is scheduled with `QTimer.singleShot(0, ...)`, so the
+window stays responsive and tabs' sequences interleave. A step whose action is a `result` waits for its own run's
+`MetaModel.run_finished`, and one whose plugin and channel already have a run going waits that run out first. When a
+step fails the replay stops and asks Go back or Keep (2026-11-05, 2026-10-17). Undo keeps the synchronous
+`MetaController.replay`: it replays only Metadata's plots, which hold no Find or Fit.
+
+**Rejected.** `record_finished_run` telling the sequencer when it ends (two jobs in one slot); a sequencer slot on
+`run_finished` that runs the next step inside the emission (depends on connection order); polling `model.workers`
+with a timer; a worker thread for the replay (the steps draw on the GUI).
+
+**Revisit if** a step must wait for something other than a run of its own tab, or replays must run one tab after
+another.
 
 ---
 
@@ -2527,7 +2573,8 @@ arise.
 
 **Not implemented here.** The decorator change, the registry and the replay guard are Step 7
 work; this entry is the decision that stops the next conversion having to take it under
-pressure.
+pressure. *Implemented 2026-10-25 (declared names, the registry) and 2026-10-26 (the replay
+guard); with rule 1 reversed, replay runs on the Controller. See those entries.*
 
 **Revisit** if replay is ever wanted over a Model rather than a View. That would mean recording
 data instead of intent, which is what rule 4 exists to refuse.
