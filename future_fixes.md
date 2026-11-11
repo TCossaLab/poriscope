@@ -640,9 +640,9 @@ Readability only; each is behaviour-preserving and wants the covering tests read
     worker generators: `RawDataController.py:408`, `EventAnalysisController.py:175`,
     `ProteinModel.py:654`, `MetaEventTabController.py:109`, `RawDataModel.py:101, 109`,
     `MetaDatabaseWriter.py:186`.
-  - "No selection"/"select only one" user guidance at WARNING: `RawDataView.py:557`,
+  - "No selection"/"select only one" user guidance at WARNING: `RawDataView.py:569`,
     `MetaSubsetTabView.py:1359`, and `"No column names
-    received"` at `ClusteringController.py:446` and `MetaSubsetTabController.py:400`. These
+    received"` at `ClusteringController.py:446` and `MetadataController.py:1976`. These
     belong on the panel rather than in the log at all.
   - `DataPluginController._report`/`_report_and_restore` (`:257`, `:478`, `:980`), which emit
     to the panel *and* log, are the model for the intended pattern.
