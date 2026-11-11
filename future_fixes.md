@@ -91,14 +91,14 @@ Step 10 waits for both tracks.
   and the steps declared as depending on it, and carry on. Declare first what the declarations miss: Clustering's
   Merge needs the run before it (both only `additive` on `clusters`), and an Event Analysis fit needs the Raw Data
   tab's Find (another tab). Changes the replay rule (`DECISIONS.md` 2026-11-05 and 2026-10-17), so it needs a ruling before it is built.
-- **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
-  `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
-  `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
-  `overlay_plot` and `plot_events` hand them `{exp: [channel]}` with `channel` a display string (each passes it as
-  `Dict[Any, Any]`). Settle the runtime shape with the loader's `_id_tuple` before changing either side.
-- **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
-  `MetaController.py:209`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
-  `Meta*` base (breaking): a signal change for approval.
+- **The subset tabs pass a channel as the selection tree's digit string where the loader takes an `int` (2026-10-28,
+  re-measured 2026-11-11).** Six sites: `MetadataController.py:512`, `:734`, `:852`; `ProteinController.py:299`,
+  `:624`, `:770`, each handing `{exp: [channel]}` (typed `Dict[Any, Any]` where named) to methods declaring
+  `Optional[Dict[str, Optional[List[int]]]]` (`DECISIONS.md` 2026-10-09). No wrong output: the loader renders ids
+  with `str()` (`MetaDatabaseLoader._id_tuple`) and the raw path converts with `int()`; `"0"` and `0` gave the same
+  queries, rows and counts (2026-11-11). Fix it with `overlay_plot`'s "nothing selected" sentinel `{None: [None]}`
+  (`MetadataController.py:359`, and Protein's at `ProteinController.py:179`), refused before any fetch, so the annotation can be true; three Protein unit tests
+  pin the string form (`test_protein_controller.py:387`, `:496`, `:901`).
 - **The Ubuntu test job aborted once in native code (2026-11-03).** CI (Branches) run 41721366639 attempt 1 on
   `a84c70ca`: `free(): invalid pointer`, `Fatal Python error: Aborted`, exit 134, after 954 passing tests; attempt 2
   on the same commit passed (5,428). The commit changed no runtime code. Test #955 in collection order is the first
