@@ -158,3 +158,8 @@ Step 4: Writing Events
    channel's events and skips only it; the other channels are still committed.
 
 4. *(Optional)* You can **click** the **Export Plot Data** button at any time to save the data behind the current graph as a `.csv` file.
+
+.. note::
+
+   This tab records **Update Trace**, **Update PSD**, **Find Events** and **Plot Events** for the session, so loading or restoring it can replay
+   them; see :ref:`replay_actions`.

@@ -185,8 +185,7 @@ places the widget. So the usual thing to write is three lines:
 
 The hook returns the widget rather than just assigning it, so that your tab can keep it
 under whatever name suits — the shipped tabs use ``self.metadatacontrols``,
-``self.rawdatacontrols`` and so on, and those names are also the dispatch keys in a
-tab's saved action history.
+``self.rawdatacontrols`` and so on.
 
 If your panel carries signals beyond the four shared ones, override
 ``_connect_control_signals``. ``MetaSubsetTabView`` does exactly that, for the two

@@ -1481,7 +1481,8 @@ intent, never data already on the plot. Two checks hold the rule:
    analysis tab's View declares an action, since only a Controller's are recorded and replayed.
 
 ``poriscope.utils.ReplayGuard``
-   is a tripwire. ``MetaController.replay`` runs inside ``replaying()``, and the seven helpers
+   is a tripwire. Each step of a replay (``poriscope.utils.replay_sequence``) and Undo's
+   ``MetaController.replay`` run inside ``replaying()``, and the seven helpers
    that read a controls panel (``get_selected_filters``, ``_get_event_index_text`` and the five
    ``collect_parameters``) start with ``forbid_while_replaying(...)``, so a recorded action that
    reaches one raises ``ReplayWidgetReadError`` during a replay and nowhere else. It cannot see

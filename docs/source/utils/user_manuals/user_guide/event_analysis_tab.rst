@@ -141,3 +141,7 @@ Step 4: Write to Database
    ``CUSUM`` database, say) is refused when the writer is configured; choose a new
    ``Output File`` for each type of fitter you want to compare.
 
+.. note::
+
+   This tab records **Plot Events** and **Fit Events** for the session, so loading or restoring it can replay
+   them; see :ref:`replay_actions`.

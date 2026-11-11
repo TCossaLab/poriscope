@@ -97,7 +97,7 @@ Step 10 waits for both tracks.
   `overlay_plot` and `plot_events` hand them `{exp: [channel]}` with `channel` a display string (each passes it as
   `Dict[Any, Any]`). Settle the runtime shape with the loader's `_id_tuple` before changing either side.
 - **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
-  `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
+  `MetaController.py:209`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
   `Meta*` base (breaking): a signal change for approval.
 - **The Ubuntu test job aborted once in native code (2026-11-03).** CI (Branches) run 41721366639 attempt 1 on
   `a84c70ca`: `free(): invalid pointer`, `Fatal Python error: Aborted`, exit 134, after 954 passing tests; attempt 2
@@ -173,7 +173,7 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 - **Two data round trips through the View remain** (14 before action replay, 2 measured
   2026-11-02): Clustering's run (`ClusteringView.on_metadata_loaded:565` receives the rows and
   emits them back at `:646` to `ClusteringController.cluster:80`) and Raw Data's baseline band
-  (`RawDataView.py:1113` sends the loaded trace back to `RawDataController.compute_baseline_stats:747`).
+  (`RawDataView.py:1113` sends the loaded trace back to `RawDataController.compute_baseline_stats:772`).
   Neither affects replay. Have the Controller go from load to compute and hand the View only the
   result. Why the Clustering one was kept: `DECISIONS.md` 2026-10-27.
 - **Plot types are bare strings repeated across View, Controls and Model** ("Heatmap"
@@ -362,11 +362,6 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   blocked, after the tab's plugins exist and before the restore dialog offers a replay. A
   replay writes each step's recorded values back into the panel (`ReplaySequence`, through
   `MetaView.write_back`); this is for a tab the user does not replay.
-- **`@register_action` has no overwrite mode**: every call appends (`MetaController.py:391`),
-  so an action whose final call is all that matters is replayed once per intermediate call.
-  Decide the dedup key (name alone, or name plus identifying arguments) and whether a
-  replacement keeps its position before building it, alongside the declared-name redesign
-  in 2.1.
 
 ### Numeric input and widgets
 
@@ -403,6 +398,11 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Analysis tabs
 
+- **A recorded Plot Events holds the expanded event list (2026-11-10).** Raw Data's
+  `load_event_plot_data` (`RawDataController.py:425`) and Event Analysis's (`EventAnalysisController.py:86`)
+  take `events: List[int]`, so a typed `0-99999` saves 100,000 ints, 688,890 bytes of JSON, in the history
+  and the session file; `_parse_event_indices` (`MetaEventTabView.py:89`) has no cap. Recording the range
+  text changes the action's parameters, so earlier entries would be reported and skipped.
 - **An Assisted filter cannot define a derived column.** It is a condition, so
   `max_blockage - min_blockage > 500` selects events, but nothing can put a computed value such as
   `range = max_blockage - min_blockage` on an axis. Worth addressing because it is the one way of
@@ -418,7 +418,7 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 - **Check that Abort Analysis and a progress bar's cancel stop a Raw Data event finder.** Find
   Events runs one worker per channel (`RawDataController.find_events_on_channel`); `find_events`
   reads the abort flag at every chunk boundary (`MetaEventTabView.py:382`) and
-  `MetaModel.stop_workers:417` stops them, but a cancel can look unregistered when a chunk holds
+  `MetaModel.stop_workers:520` stops them, but a cancel can look unregistered when a chunk holds
   many events. Not exercised end to end for finders; confirm both paths stop every channel and
   leave the tab usable.
 - **`new_plugin.py` cannot generate a `MetaSubsetTab*` tab**, the likely shape of any
@@ -432,7 +432,7 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `EventAnalysisView.py:119`, `MetaSubsetTabView.py:899`), all reached from
   `MetaController.py:170`; it belongs on `MetaView`.
 - **The "my selected loader gained columns" guard is written twice**:
-  `ClusteringView.notify_plugin_state_changed:842` and `MetadataView:1357` (Protein's is a no-op).
+  `ClusteringView.notify_plugin_state_changed:841` and `MetadataView:726` (Protein's is a no-op).
 - **Overwriting committed columns is built twice**: the confirm (`ClusteringView.on_cluster_column_checked:326`,
   `ProteinView.confirm_fit_commit:325`) and the drop (`ClusteringModel.drop_cluster_columns:244`,
   `ProteinModel.drop_fit_columns:360`); Protein's `drop_fit_columns(loader, table, columns)` is
@@ -441,10 +441,10 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   with `except AttributeError` where Metadata has `_clear_figure_state:185`/`_axes_valid:225`, and
   `ProteinView.clear_plot:517` runs clear/add_subplot/tight_layout/draw once per figure of the mode.
 - **A repeated column is refused two ways**: Clustering raises `KeyError`
-  (`ClusteringView.py:558`), logged at ERROR by its caller after the config is already saved
-  under its title; Metadata warns in a `QMessageBox` (`MetadataView.py:1567`) and its panel
-  already disables Update Plot (`metadatacontrols.py:865-871`). The clustering dialog's
-  `_check_apply_enabled:569` could refuse it the same way.
+  (`ClusteringView.py:559`), logged at ERROR by its caller after the config is already saved
+  under its title; Metadata says so on the status panel (`MetadataController.py:483-489`) and its
+  panel already disables Update Plot (`metadatacontrols.py:882-952`). The clustering dialog's
+  `_check_apply_enabled` (`clustering_settings_widget.py:569`) could refuse it the same way.
 - **`MetaEventTabController.update_available_plugins:68` re-implements the base** with the Model
   pushed before the View (`MetaController.py:353` does View first). Nothing in the tab layer reads
   `MetaModel.available_plugins` (`MetaModel.py:348`), so the override is a debug log; delete it.
@@ -485,6 +485,9 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Base-class internals
 
+- **Undo finds a reset by its name, not its figure (2026-11-04).** `MetaController.py:998`, `:1014`
+  stop at the last `RESET_ACTION` whatever figure it clears; harmless while Metadata, with one figure,
+  is the only tab with Undo. Match the declared figure before a tab with two figures gains Undo.
 Readability only; each is behaviour-preserving and wants the covering tests read first.
 
 - `LogDecorator.log`'s one-shot latch is the same block in `log_call` and `log_return`
@@ -637,9 +640,9 @@ Readability only; each is behaviour-preserving and wants the covering tests read
     worker generators: `RawDataController.py:408`, `EventAnalysisController.py:175`,
     `ProteinModel.py:654`, `MetaEventTabController.py:109`, `RawDataModel.py:101, 109`,
     `MetaDatabaseWriter.py:186`.
-  - "No selection"/"select only one" user guidance at WARNING: `RawDataView.py:557`,
-    `MetaSubsetTabView.py:1359`, `ProteinController.py:627`, and `"No column names
-    received"` at `ClusteringController.py:375` and `MetaSubsetTabController.py:400`. These
+  - "No selection"/"select only one" user guidance at WARNING: `RawDataView.py:569`,
+    `MetaSubsetTabView.py:1359`, and `"No column names
+    received"` at `ClusteringController.py:446` and `MetadataController.py:1976`. These
     belong on the panel rather than in the log at all.
   - `DataPluginController._report`/`_report_and_restore` (`:257`, `:478`, `:980`), which emit
     to the panel *and* log, are the model for the intended pattern.

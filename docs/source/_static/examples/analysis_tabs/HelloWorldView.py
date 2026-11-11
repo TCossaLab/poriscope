@@ -172,7 +172,7 @@ class HelloWorldView(MetaView):
 
         The subclass also stores it under whatever name the rest of that tab uses -
         ``self.metadatacontrols``, ``self.rawdatacontrols`` and so on - because those
-        names appear throughout each tab and in its saved action history. This hook
+        names appear throughout each tab. This hook
         only has to hand the widget back, so the base can wire it and place it.
 
         Concrete rather than abstract, returning an empty panel, so that a tab which
