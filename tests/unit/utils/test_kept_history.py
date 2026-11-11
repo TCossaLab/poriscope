@@ -6,6 +6,7 @@ declarations below are the tabs' own, read from their Controllers, so a change t
 tab's declaration shows up here as a changed kept history.
 """
 
+import json
 from copy import deepcopy
 from typing import Any, Dict, List, Mapping
 
@@ -264,11 +265,16 @@ def test_the_live_history_is_left_as_it_was() -> None:
 
 
 def test_a_history_read_back_from_a_file_is_treated_the_same() -> None:
-    """A saved file holds lists where the live history holds tuples."""
-    live = [find("A", 1), plot_found("A", 1), find("A", 1, 5.0)]
-    saved = [
-        {"action": e["action"], "args": list(e["args"]), "kwargs": e["kwargs"]}
-        for e in live
-    ]
+    """
+    A value the live history holds as a tuple is a list once saved, and names the same run.
 
-    assert _kept(saved, RAW) == [find("A", 1, 5.0)]
+    A restore after a crash replays a history whose older entries were saved and whose
+    newer ones were recorded since, so one history can hold both forms of one key.
+    """
+    declarations = {
+        "run": ActionDeclaration(name="run", kind="result", key=("plugin", "channel"))
+    }
+    live = _entry("run", plugin="A", channel=(1, 2), start=0.0)
+    saved = json.loads(json.dumps(_entry("run", plugin="A", channel=(1, 2), start=5.0)))
+
+    assert _kept([live, saved], declarations) == [saved]
