@@ -202,6 +202,72 @@ def test_a_refusal_after_a_reset_keeps_the_figure_empty(metadata_tab: Triad) -> 
     assert on_figure(metadata_tab) == set()
 
 
+def plot_events(triad: Triad, filter_name: str, channel: str = "0") -> None:
+    """
+    Select one filter and one channel, as a user would, then press Plot Events for three events.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param filter_name: the filter to select
+    :type filter_name: str
+    :param channel: the channel to select, as the selection tree reports it
+    :type channel: str
+    """
+    view = triad.tab_view
+    combo = view._subset_controls.filter_comboBox
+    for name in list(combo.getSelectedItems()):
+        combo.selectItem(name, select=False)
+    combo.selectItem(filter_name, select=True)
+    view.selected_experiment_and_channels_by_loader[LOADER] = {"exp_a": [channel]}
+    view.handle_parameter_change(
+        "metadatacontrols",
+        "plot_events",
+        ({"db_loader": LOADER, "event_id": 0, "n_events": 3, "raw": False},),
+    )
+
+
+def drawn_axes(triad: Triad) -> List[int]:
+    """
+    Report how many lines each of the figure's axes holds.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :return: one line count per axes
+    :rtype: List[int]
+    """
+    return [len(ax.lines) for ax in triad.tab_view.figure.axes]
+
+
+@pytest.mark.timeout(120)
+def test_a_plot_that_draws_nothing_after_plot_events_puts_the_events_back(
+    metadata_tab: Triad,
+) -> None:
+    """
+    A histogram of an empty subset clears the event grid, draws nothing, and is rolled back.
+
+    The grid holds no overlay datasets, so judging "nothing changed" by the datasets alone
+    discarded the plot's entries and left the history saying the grid while the screen
+    was empty, and a saved session or plot configuration would bring the grid back.
+    """
+    view = metadata_tab.tab_view
+    view.subset_filters["Empty"] = "duration < 0"
+    view._subset_controls.filter_comboBox.addItem("Empty")
+    plot_events(metadata_tab, "F0")
+    grid = drawn_axes(metadata_tab)
+    history = [
+        entry["action"]
+        for entry in metadata_tab.tab_controller.tab_action_history.values()
+    ]
+
+    plot(metadata_tab, "Empty")
+
+    assert drawn_axes(metadata_tab) == grid
+    assert [
+        entry["action"]
+        for entry in metadata_tab.tab_controller.tab_action_history.values()
+    ] == history
+
+
 @pytest.mark.timeout(120)
 def test_undo_redraws_the_earlier_plot_with_its_own_filter(metadata_tab: Triad) -> None:
     """Plot F0, then F1, then Undo: F0 comes back, not F1 drawn in its place."""

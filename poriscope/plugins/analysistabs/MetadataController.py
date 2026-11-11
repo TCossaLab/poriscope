@@ -266,7 +266,9 @@ class MetadataController(MetaSubsetTabController):
         A refusal that left the figure as it was drops what it recorded - the reset a new
         figure starts with as well - so Undo does not spend a step restoring an identical
         figure; one that changed the figure - it cleared what was drawn, or drew part of
-        the request - is undone, which redraws from the history.
+        the request - is undone, which redraws from the history. What the figure holds is
+        judged by its kind and its datasets together: an event grid holds no datasets, so a
+        plot that clears one and draws nothing has changed the figure.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -296,13 +298,13 @@ class MetadataController(MetaSubsetTabController):
             if resolved is None:
                 return
             filters = resolved
-        before = set(self.model.overlay.datasets)
+        before = (self.model.overlay.figure, set(self.model.overlay.datasets))
         recorded = len(self.tab_action_history)
         drawn = self.overlay_plot(
             loader, plot_type, axes, logs, bins, sizes, filters, scope
         )
         if drawn is False:
-            if self.model.overlay.datasets == before:
+            if (self.model.overlay.figure, self.model.overlay.datasets) == before:
                 while len(self.tab_action_history) > recorded:
                     self.discard_last_tab_action()
             else:
