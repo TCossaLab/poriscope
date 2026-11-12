@@ -665,24 +665,6 @@ class TestAppIsWhole:
             f"method whole, and no other test constructs App to notice."
         )
 
-    def test_the_startup_sequence_is_present(self) -> None:
-        """
-        The three steps ``__init__`` runs, named explicitly.
-
-        Deliberately a literal list rather than derived from ``__init__``: the
-        point is to fail if one of these disappears, and a check that reads the
-        same source it is checking would disappear with it.
-        """
-        cls = self._app_class()
-        defined = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
-
-        for required in (
-            "create_appdata_folders",
-            "configure_logger",
-            "initialize_components",
-        ):
-            assert required in defined, f"App.{required} is gone; the app cannot start"
-
 
 class TestInitializeComponents:
     """

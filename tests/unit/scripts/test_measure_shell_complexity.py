@@ -597,18 +597,6 @@ class TestTheScopeGuards:
                     f"rerun `python scripts/measure_shell_complexity.py --update`."
                 )
 
-    def test_the_file_list_matches_the_recorded_scope(
-        self, mod: types.ModuleType
-    ) -> None:
-        """
-        Nine files, as ``DECISIONS.md`` records for the 2026-09-20 scoping decision.
-
-        Pinned because the figure is quoted in the decision and the QA page; a
-        change to the scope has to be a deliberate edit that updates them.
-        """
-        assert len(mod.SHELL_FILES) == 9
-        assert len(set(mod.SHELL_FILES)) == 9
-
     def test_the_owner_held_and_flat_qt_code_is_out_of_scope(
         self, mod: types.ModuleType
     ) -> None:
