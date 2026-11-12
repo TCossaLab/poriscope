@@ -129,6 +129,8 @@
 
 * The MVC boundary check now watches analysis tabs importing database writers, whose folder it had named `db_writers` instead of `dbwriters`, and conditioning loaders
 
+* The replay guard covers the Conditioning tab: its recorded plot has a replay scenario, as each shipped tab's actions do
+
 * `scripts/new_plugin.py --list` sizes its columns to the longest name
 
 * `python scripts/new_plugin.py AnalysisTab` writes a tab's controls panel into this repository as `analysistabs/utils/<name>controls.py`, beside the shipped tabs' panels; `--user` and `--output-dir` still write it beside the triad
@@ -247,6 +249,8 @@
 
 * `MetaController.rewrite_plugin_entries` drops or renames the entries naming a plugin in every copy a tab holds, and `ReplaySequence.rewrite_entries` in a replay's
 
+* A replay waits for the background runs any step starts, not only a Find or Fit, and `MetaController.background_step_failure` is new: a tab overrides it to fail such a step whose work did not finish
+
 * The Metadata panel's deferred width matching is cancelled when the panel is deleted first, instead of running on deleted widgets
 
 ### User-Facing Behaviour:
@@ -302,6 +306,8 @@
 * **New Data Plugin: `NIConditioningLoader`** reads a conditioning experiment folder from the lab's LabVIEW and NI DAQ setups, under **Data** → **Load Conditioning Experiment**; several CSVs are read as one, in the order of the time stamps in their names
 
 * **New analysis tab: Conditioning** (Analysis → New Analysis Tab → `ConditioningController`) plots each channel's pore size against cycle with the 1 Hz noise of its PSD recordings at positive and negative bias, computed in the background and kept, so a replot with the same experiment and fit range is immediate; ported from the lab's conditioning analysis script
+
+* A Conditioning plot whose 1 Hz noise does not finish for every channel is still drawn but is not saved in the tab's history, and in a replay it stops the replay with Go back / Keep; a replot from kept values that cannot read the experiment is refused
 
 * **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 

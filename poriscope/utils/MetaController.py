@@ -449,6 +449,21 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         return bool(self._session_actions)
 
     @log(logger=logger)
+    def background_step_failure(self) -> str:
+        """
+        Why the background work the replayed step started did not finish, or "" if it did.
+
+        A replay asks once every run the step started has ended, a turn of the event loop
+        later, so the tab has handled their ends first. A tab whose recorded action starts
+        background work and judges its outcome itself overrides this; the base has nothing
+        to say.
+
+        :return: what to show in the replay's question, or "" to carry on
+        :rtype: str
+        """
+        return ""
+
+    @log(logger=logger)
     def is_replaying(self) -> bool:
         """
         Is a replay started by :py:meth:`start_replay` still running?

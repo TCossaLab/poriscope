@@ -92,7 +92,10 @@ channel to a CSV file.
 
    This tab records **Plot** for the session, so loading or restoring a session can draw
    the last plot again. A replayed plot computes in the background like any other, and is
-   drawn when it finishes.
+   drawn when it finishes. A plot whose 1 Hz noise does not finish for every channel is
+   still drawn, without that noise, but is not saved in the session, and the status panel
+   says so; in a replay it stops the tab's replay and asks whether to **Go back** or
+   **Keep**.
 
 Single PSD recordings
 ---------------------

@@ -1517,7 +1517,12 @@ intent, never data already on the plot. Two checks hold the rule:
 declared action is recorded in one tab, replayed into a second tab whose widgets and stored
 inputs have all been changed, and the data-plugin calls, plot cache, figures and the tab's
 bookkeeping must match. It fails for a declared action that no scenario records, so a new
-recorded action needs a scenario in the same commit.
+recorded action needs a scenario in the same commit. It checks the tabs Poriscope ships with,
+listed in its ``TABS``; a contributor's tab is not checked, as the rest of a tab's behaviour is
+not. A scenario whose action runs several channels on worker threads at once compares its plugin
+calls in any order. The replay writes each step's recorded values into the panel before the
+step runs, so this check cannot see a step that reads the panel; the static test above is what
+catches that.
 
 .. _golden_net_armed:
 

@@ -165,7 +165,7 @@ for 125, or a segment one sample short.
 
 ## 2026-11-11 - The conditioning app is ported as a data-plugin family, an NI reader, a Raw Data option and a tab
 
-**Context.** The lab's tkinter conditioning script (Michelle Stephen) read a folder - pore-size CSV, PSD `.bin`
+**Context.** The lab's tkinter conditioning script (Michel Stephan) read a folder - pore-size CSV, PSD `.bin`
 files per bias - computed each file's 1 Hz noise and plotted it beside the pore size; a second script did one file's
 PSD with the fit. No tab reads input files, no family fits the CSV, and `MetaReader` joins a folder's files into one
 timeline, while one of the 142 sample files is short (67,000 of 100,000 frames), so file boundaries cannot be found
@@ -314,7 +314,8 @@ failure too, for now. An entry that names no action or whose values no longer fi
 Live behaviour is unchanged: a 0-good-fits Fit still marks the channel fitted, is recorded and can be written.
 *Extended 2026-11-09: the question is the only dialog a replay opens; every error a dialog would show while a
 replay runs - its runs' worker threads included - goes to the log file and into the question, under "What the step
-reported".*
+reported".* *Extended 2026-11-12: a step that is not a `result` but starts background runs, Conditioning's plot, fails
+when, once those runs have ended, the tab's `MetaController.background_step_failure` names a reason.*
 
 **Rejected.** Any `False` as a failure: a recorded overlay that drew nothing would fail every replay (`overlay_plot` is
 recorded either way). Making the overlay `skip_on_false`: changes live recording.
@@ -571,7 +572,11 @@ the wrong figures. The two Protein actions are in `ALLOWED` and a strict `xfail`
 
 **Revisit** when replay writes the recorded mode back before it runs an action: remove the `ALLOWED` entries
 and the `xfail` marker. *Closed 2026-10-29: Protein draws on each mode's figures by name, and the `ALLOWED`
-entries and the `xfail` are gone (see that entry).*
+entries and the `xfail` are gone (see that entry).* *Measured 2026-11-12: a replay writes each step's recorded values
+into the panel before it runs, so the behavioural guard cannot see a step that reads the panel; Conditioning reading its
+bands and fit range from the panel survived it and was killed by the static test. The guard keeps an explicit list of
+the tabs Poriscope ships with, Conditioning added (Carolina, 2026-11-12); finding every tab instead was rejected, since
+nothing enforces a tab's behaviour tests and it would make a contributor's tab need replay scenarios.*
 
 ---
 
@@ -710,7 +715,10 @@ worker and the next entry ran before it finished, and several tabs could not rep
 window stays responsive and tabs' sequences interleave. A step whose action is a `result` waits for its own run's
 `MetaModel.run_finished`, and one whose plugin and channel already have a run going waits that run out first. When a
 step fails the replay stops and asks Go back or Keep (2026-11-05, 2026-10-17). Undo keeps the synchronous
-`MetaController.replay`: it replays only Metadata's plots, which hold no Find or Fit.
+`MetaController.replay`: it replays only Metadata's plots, which hold no Find or Fit. *Extended 2026-11-12: any
+other step that starts background runs waits for every run it started (not runs already going), and ends a turn of the
+event loop later, so the tab has drawn before the next step. Still runs of its own tab, so the revisit below does not
+apply.*
 
 **Rejected.** `record_finished_run` telling the sequencer when it ends (two jobs in one slot); a sequencer slot on
 `run_finished` that runs the next step inside the emission (depends on connection order); polling `model.workers`

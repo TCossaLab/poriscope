@@ -15,6 +15,7 @@ from typing import Any, List
 
 import pytest
 
+from poriscope.plugins.analysistabs.ConditioningModel import ConditioningModel
 from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
     NIConditioningLoader,
 )
@@ -224,3 +225,88 @@ def test_export_holds_the_plotted_values(qtbot: Any, tab: Triad) -> None:
     assert "Channel 5 Pore Size (nm)" in labels
     assert "Channel 5 PSD+ 1 Hz Noise (pA^2/Hz)" in labels
     assert "Channel 5 PSD- 1 Hz Noise (pA^2/Hz)" in labels
+
+
+def _fail_channels(monkeypatch: pytest.MonkeyPatch, channels: List[int]) -> None:
+    """Make the 1 Hz computation of these channels raise, as a bad recording would."""
+    one_hz = ConditioningModel._one_hz
+
+    def failing(self: ConditioningModel, *args: Any) -> Any:
+        # Called as (loader, polarity, index, channel, cycle, fit_start, fit_end).
+        if args[3] in channels:
+            raise ValueError("a recording with too few bins in the fit range")
+        return one_hz(self, *args)
+
+    monkeypatch.setattr(ConditioningModel, "_one_hz", failing)
+
+
+@pytest.mark.parametrize("failing", [[5, 6], [6]], ids=["every channel", "one channel"])
+def test_a_plot_whose_computation_fails_is_drawn_but_not_kept(
+    qtbot: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tab: Triad,
+    panel: List[str],
+    failing: List[int],
+) -> None:
+    """The pore sizes come from the experiment and are drawn; the plot is not a session's."""
+    _fail_channels(monkeypatch, failing)
+
+    assert _plot(tab, [5, 6]) is True
+    _drawn(qtbot, tab, 2)
+
+    assert tab.tab_controller.kept_actions() == []
+    assert (
+        f"No 1 Hz noise for channel(s) {', '.join(map(str, failing))}: their "
+        f"computation did not finish, so this plot is not saved in the tab's history"
+    ) in panel
+
+
+def test_a_plot_that_cannot_read_the_experiment_is_not_kept(
+    qtbot: Any, monkeypatch: pytest.MonkeyPatch, tab: Triad, panel: List[str]
+) -> None:
+    """A second plot of kept values draws at once, so it is refused rather than dropped."""
+    _plot(tab, [5])
+    _drawn(qtbot, tab, 1)
+
+    def unreadable(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("the folder has gone")
+
+    monkeypatch.setattr(tab.tab_controller.model, "plot_data", unreadable)
+
+    assert _plot(tab, [5], good_noise=1.0, decent_noise=2.0) is False
+    assert [e["kwargs"]["good_noise"] for e in tab.tab_controller.kept_actions()] == [
+        1e9
+    ]
+    assert (
+        f"Unable to read the experiment {LOADER}: the folder has gone, so this plot "
+        f"is not saved in the tab's history"
+    ) in panel
+
+
+def test_a_replayed_plot_whose_computation_fails_stops_the_replay(
+    qtbot: Any, monkeypatch: pytest.MonkeyPatch, tab: Triad
+) -> None:
+    _fail_channels(monkeypatch, [6])
+    asked: List[Any] = []
+
+    def ask(*args: Any) -> str:
+        asked.append(args)
+        return "keep"
+
+    tab.tab_view.ask_after_replay_failure = ask  # type: ignore[method-assign]
+    values = named(
+        tab, "plot_conditioning", LOADER, [5, 6], 1.0, 30.0, 1e9, 2e9, 1e-4, True
+    )
+
+    assert tab.tab_controller.start_replay(
+        [{"action": "plot_conditioning", "args": [], "kwargs": values}]
+    )
+    qtbot.waitUntil(lambda: not tab.tab_controller.is_replaying(), timeout=60_000)
+
+    assert [(a[0], a[3], a[4]) for a in asked] == [
+        (
+            "ConditioningController",
+            "plot_conditioning",
+            "No 1 Hz noise for channel(s) 6: their computation did not finish",
+        )
+    ]

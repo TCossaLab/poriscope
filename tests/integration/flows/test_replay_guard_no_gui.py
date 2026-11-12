@@ -14,8 +14,9 @@ and capture again. The captures must be equal. Four things are compared:
 Replay runs under the tripwire (``poriscope.utils.ReplayGuard``), so an action that reached a
 helper that reads a controls panel fails here as an error, not as a quiet difference.
 
-Every declared action must be covered: a test lists the actions each tab declares and fails for
-one no scenario records, so an action added without a fixture cannot land.
+Every declared action of the tabs Poriscope ships with (``TABS``) must be covered: a test lists
+the actions each of them declares and fails for one no scenario records, so an action added to
+one of them without a fixture cannot land.
 
 The same scenarios replay the kept history too - what a restored session replays - and it must
 draw what the whole history drew.
@@ -32,12 +33,18 @@ import pytest
 
 from poriscope.models.main_model import MainModel
 from poriscope.plugins.analysistabs.ClusteringController import ClusteringController
+from poriscope.plugins.analysistabs.ConditioningController import (
+    ConditioningController,
+)
 from poriscope.plugins.analysistabs.EventAnalysisController import (
     EventAnalysisController,
 )
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.RawDataController import RawDataController
+from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
+    NIConditioningLoader,
+)
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.utils.kept_history import build_kept_history
 from poriscope.utils.MetaController import declarations_of
@@ -49,8 +56,13 @@ from tests.integration.flows._triad import (
     build_triad,
     hdbscan_config,
 )
+from tests.synthetic_data.synthetic_ni import (
+    ConditioningDataset,
+    generate_conditioning_folder,
+)
 
 LOADER = "loader"
+EXPERIMENT = "experiment"
 READER = "reader"
 FINDER = "finder"
 EVENTS = "events"
@@ -61,6 +73,9 @@ FILTERS = {
     "F2": "duration >= 2",
     "F3": "duration >= 3",
 }
+#: The analysis tabs Poriscope ships with, each of whose recorded actions must have a scenario
+#: here. A tab added elsewhere is not checked: like the rest of a tab's behaviour, its replay
+#: scenarios are its author's to write.
 CONTROLLER_TYPES = {
     cls.__name__: cls
     for cls in (
@@ -69,15 +84,10 @@ CONTROLLER_TYPES = {
         ClusteringController,
         MetadataController,
         ProteinController,
+        ConditioningController,
     )
 }
-TABS = [
-    "RawDataController",
-    "EventAnalysisController",
-    "ClusteringController",
-    "MetadataController",
-    "ProteinController",
-]
+TABS = list(CONTROLLER_TYPES)
 
 #: What a tab believes about its own plot, which a replay must rebuild.
 BOOKKEEPING = (
@@ -267,6 +277,24 @@ def eventanalysis_tab(tmp_path: Path, events_db: str) -> Triad:
 def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
     """A RawData tab with a reader over the synthetic recording and a finder on it."""
     return build_rawdata_tab(tmp_path, chimera, READER, FINDER)
+
+
+def conditioning_tab(tmp_path: Path, experiment: ConditioningDataset) -> Triad:
+    """A Conditioning tab with the synthetic experiment loaded, a PSD every second cycle."""
+    triad = build_triad("ConditioningController", tmp_path)
+    loader = NIConditioningLoader()
+    settings = loader.get_empty_settings(standalone=True)
+    settings["Folder"]["Value"] = str(experiment.root)
+    settings["PSD Every N Cycles"]["Value"] = 2
+    loader.apply_settings(settings)
+    triad.register(loader, "MetaConditioningLoader", EXPERIMENT)
+    return triad
+
+
+@pytest.fixture
+def conditioning_experiment(tmp_path: Path) -> ConditioningDataset:
+    """The synthetic conditioning experiment the Conditioning tab is built over."""
+    return generate_conditioning_folder(tmp_path / "experiment")
 
 
 def select(triad: Triad, filter_name: str, channel: str) -> None:
@@ -620,6 +648,58 @@ def found_events(triad: Triad) -> Any:
     }
 
 
+def conditioning_act(triad: Triad, qtbot: Any) -> None:
+    """Plot two channels as the panel sends the click, and wait for the drawing."""
+    triad.tab_view.handle_parameter_change(
+        "ConditioningControls",
+        "plot",
+        (
+            {
+                "loader": EXPERIMENT,
+                "channels": [5, 6],
+                "fit_start": 1.0,
+                "fit_end": 30.0,
+                "good_noise": 1e9,
+                "decent_noise": 2e9,
+                "psd_axis_min": 1e-4,
+                "show_bands": True,
+            },
+        ),
+    )
+    # The plot is drawn when the last 1 Hz run's end reaches the tab, after its worker
+    # has gone, so an empty worker list alone is not the end of the click.
+    qtbot.waitUntil(
+        lambda: [ax.get_title() for ax in triad.tab_view.figure.axes if ax.get_title()]
+        == ["Channel 5", "Channel 6"],
+        timeout=60_000,
+    )
+
+
+def conditioning_perturb(triad: Triad) -> None:
+    """Change every value the panel holds: no channels, another fit range and thresholds, no bands."""
+    triad.tab_view.conditioningcontrols.set_values(
+        {
+            "channels": [],
+            "fit_start": 5.0,
+            "fit_end": 50.0,
+            "good_noise": 1.0,
+            "decent_noise": 2.0,
+            "psd_axis_min": 1e-2,
+            "show_bands": False,
+        }
+    )
+
+
+def conditioning_noise(triad: Triad) -> Any:
+    """
+    The 1 Hz noise the tab computed, keyed by experiment and fit range.
+
+    The figure summary counts what is drawn, which a replay on another fit range would
+    match; the values and their key would not.
+    """
+    return normalise(triad.tab_controller.model._results)
+
+
 def nothing(triad: Triad) -> None:
     return None
 
@@ -647,6 +727,29 @@ class Scenario:
     probe: Callable[[Triad], Any] = lambda triad: None
     #: the test id, for a tab with more than one scenario
     name: str = ""
+    #: the action runs several channels on worker threads at once, which interleave their
+    #: plugin calls differently each time, so the calls are compared whatever their order
+    calls_in_any_order: bool = False
+
+
+def _capture(triad: Triad, spy: "Spy", scenario: Scenario) -> Dict[str, Any]:
+    """
+    Capture what the scenario's tab produced, its calls in a fixed order where theirs is not.
+
+    :param triad: the tab
+    :type triad: Triad
+    :param spy: the recording of the plugin calls
+    :type spy: Spy
+    :param scenario: what was run
+    :type scenario: Scenario
+    :return: the capture
+    :rtype: Dict[str, Any]
+    """
+    ignored = scenario.click_only_calls + scenario.replay_only_calls
+    captured = capture(triad, spy, scenario.extra, ignored, scenario.probe)
+    if scenario.calls_in_any_order:
+        captured["plugin_calls"] = sorted(captured["plugin_calls"], key=repr)
+    return captured
 
 
 SCENARIOS = [
@@ -748,6 +851,19 @@ SCENARIOS = [
         # Write-back of the run's loader asks for its columns and their units.
         replay_only_calls=("get_column_names_by_table", "get_column_units"),
     ),
+    Scenario(
+        tab="ConditioningController",
+        covers=("plot_conditioning",),
+        build=conditioning_tab,
+        act=conditioning_act,
+        perturb=conditioning_perturb,
+        needs="conditioning_experiment",
+        probe=conditioning_noise,
+        # Write-back asks for the experiment's channels.
+        replay_only_calls=("get_channels",),
+        # Each channel's 1 Hz noise is computed on its own worker thread.
+        calls_in_any_order=True,
+    ),
 ]
 
 
@@ -789,8 +905,7 @@ def _record(
         spy_a = Spy(tab_a)
         scenario.act(tab_a, qtbot)
         settle(tab_a, qtbot)
-        ignored = scenario.click_only_calls + scenario.replay_only_calls
-        captured_a = capture(tab_a, spy_a, scenario.extra, ignored, scenario.probe)
+        captured_a = _capture(tab_a, spy_a, scenario)
         history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
         return captured_a, history
     finally:
@@ -866,7 +981,6 @@ def run_scenario(
     (tmp_path / "b").mkdir()
     tab_b = scenario.build(tmp_path / "b", data)
     try:
-        ignored = scenario.click_only_calls + scenario.replay_only_calls
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
         spy_b = Spy(tab_b)
@@ -880,7 +994,7 @@ def run_scenario(
             ] == [], (
                 "a listed replay-only lookup was not made: drop it from the scenario"
             )
-        captured_b = capture(tab_b, spy_b, scenario.extra, ignored, scenario.probe)
+        captured_b = _capture(tab_b, spy_b, scenario)
     finally:
         tab_b.close()
     runs[key] = (captured_a, captured_b, history)
@@ -1020,9 +1134,72 @@ def test_a_replayed_ensemble_plot_leaves_the_individual_fit(
 
 
 @pytest.mark.timeout(240)
+def test_a_replayed_conditioning_plot_computes_the_recorded_fit_range_in_both_tabs(
+    qapp,
+    qtbot,
+    tmp_path: Path,
+    conditioning_experiment: ConditioningDataset,
+    runs,
+) -> None:
+    """
+    The two tabs agreeing is not enough: a plot that computed nothing would agree with itself.
+
+    Tab B's panel held another fit range when it replayed; the noise is kept under the one
+    recorded.
+    """
+    scenario = next(s for s in SCENARIOS if s.tab == "ConditioningController")
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, conditioning_experiment, qtbot, runs
+    )
+
+    for captured in (captured_a, captured_b):
+        assert list(captured["probe"]) == [str((EXPERIMENT, 1.0, 30.0))]
+        assert sorted(captured["probe"][str((EXPERIMENT, 1.0, 30.0))]) == ["5", "6"]
+
+
+@pytest.mark.timeout(240)
+def test_a_replayed_conditioning_plot_is_drawn_before_its_replay_is_done(
+    qapp, qtbot, tmp_path: Path, conditioning_experiment: ConditioningDataset
+) -> None:
+    """
+    The plot computes in the background and draws when its runs end; "replay done" comes
+    after that, not when the step returns.
+    """
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tab_a = conditioning_tab(tmp_path / "a", conditioning_experiment)
+    try:
+        conditioning_act(tab_a, qtbot)
+        history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
+    finally:
+        tab_a.close()
+    tab_b = conditioning_tab(tmp_path / "b", conditioning_experiment)
+    try:
+        drawn_when_done: List[List[str]] = []
+
+        def note(text: str, _source: str) -> None:
+            if text == "replay done":
+                drawn_when_done.append(
+                    [
+                        ax.get_title()
+                        for ax in tab_b.tab_view.figure.axes
+                        if ax.get_title()
+                    ]
+                )
+
+        tab_b.tab_controller.add_text_to_display.connect(note)
+        replay_through_the_sequence(tab_b, history, qtbot)
+    finally:
+        tab_b.close()
+
+    assert drawn_when_done == [["Channel 5", "Channel 6"]]
+
+
+@pytest.mark.timeout(240)
 @pytest.mark.parametrize("tab", TABS)
 def test_every_declared_action_has_a_scenario(qapp, tmp_path: Path, tab: str) -> None:
-    """A tab that declares an action nothing records here fails, so a new action cannot land unchecked."""
+    """A shipped tab that declares an action nothing records here fails, so a new one cannot land unchecked."""
     triad = build_triad(tab, tmp_path)
     try:
         declared = set(triad.tab_controller.action_registry())

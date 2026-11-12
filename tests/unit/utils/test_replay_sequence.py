@@ -70,6 +70,10 @@ class _Tab(MetaController):
         self.model = _Model()  # type: ignore[assignment]
         self.calls: List[str] = []
         self.draws: Dict[str, bool] = {}
+        self.background_failure = ""
+
+    def background_step_failure(self) -> str:
+        return self.background_failure
 
     def _setup_connections(self) -> None:
         pass
@@ -96,6 +100,15 @@ class _Tab(MetaController):
     def boom(self) -> None:
         self.calls.append("boom")
         raise RuntimeError("the column is gone")
+
+    @register_action("compute", kind="view", figure="plot", skip_on_false=True)
+    def compute(self, channels: List[int]) -> bool:
+        """A view that starts background runs of plugin ``C`` and draws once they end."""
+        self.calls.append(f"compute:{channels}")
+        running = self.model.thread_running.setdefault("C", {})  # type: ignore[attr-defined]
+        for channel in channels:
+            running[channel] = True
+        return True
 
     @register_action(
         "find",
@@ -334,6 +347,114 @@ class TestResults:
 
         assert sequence.waiting_for == ("A", 1)
         assert sequence.running
+
+
+class TestBackgroundWork:
+    """
+    A step that is not a result but starts background runs - a view computed before it draws.
+
+    The replay waits for every run the step started, so "replay done" and the next step come
+    after the tab has drawn; runs going before the step are not its own.
+    """
+
+    @staticmethod
+    def _start(tab: _Tab, entries: List[Dict[str, Any]], qtbot: Any) -> ReplaySequence:
+        sequence = ReplaySequence(tab)
+        assert sequence.start(entries)
+        qtbot.waitUntil(lambda: bool(tab.calls))
+        qtbot.wait(20)
+        return sequence
+
+    @staticmethod
+    def _end_run(tab: _Tab, sequence: ReplaySequence, channel: int) -> None:
+        """The Model clears the run's flag before ``run_finished`` reaches anyone."""
+        tab.model.thread_running["C"][channel] = False  # type: ignore[attr-defined]
+        _run_ends(tab, sequence, channel, "C")
+
+    def test_the_next_step_waits_for_the_runs_a_step_started(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab, [_entry("compute", [0]), _entry("draw", "b")], qtbot
+        )
+
+        assert tab.calls == ["compute:[0]"]
+        assert sequence.running
+        assert panel == []
+
+        self._end_run(tab, sequence, 0)
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["compute:[0]", "draw:b"]
+        assert panel == ["replay done"]
+
+    def test_the_step_ends_only_once_every_run_it_started_has(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(tab, [_entry("compute", [0, 1])], qtbot)
+
+        self._end_run(tab, sequence, 1)
+        qtbot.wait(20)
+        assert sequence.running
+
+        self._end_run(tab, sequence, 0)
+        _ended(sequence, qtbot)
+        assert sequence.failed_at is None
+
+    def test_a_run_going_before_the_step_is_not_waited_on(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        """A run the user started by hand is not the step's."""
+        tab.model.thread_running = {"C": {5: True}}  # type: ignore[attr-defined]
+        sequence = self._start(
+            tab, [_entry("compute", [0]), _entry("draw", "b")], qtbot
+        )
+
+        self._end_run(tab, sequence, 0)
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["compute:[0]", "draw:b"]
+        assert tab.model.thread_running["C"][5] is True  # type: ignore[attr-defined]
+
+    def test_a_run_ending_that_the_step_did_not_start_does_not_end_it(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(tab, [_entry("compute", [0])], qtbot)
+
+        _run_ends(tab, sequence, 7, "C")
+        _run_ends(tab, sequence, 0, "A")
+        qtbot.wait(20)
+
+        assert sequence.running
+
+    def test_a_step_whose_background_work_failed_stops_the_replay(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """
+        The tab judges its own work when it hears the run end, after the replay has.
+
+        The replay asks on the next turn, so it reads what the tab concluded.
+        """
+        ask = tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        lines: List[str] = []
+        tab.add_text_to_display.connect(lambda text, source: lines.append(text))
+        sequence = self._start(
+            tab, [_entry("compute", [0]), _entry("draw", "b")], qtbot
+        )
+
+        self._end_run(tab, sequence, 0)
+        tab.background_failure = "no 1 Hz noise for channel 0"
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["compute:[0]"]
+        assert sequence.failed_at == 0
+        ask.assert_called_once_with(
+            "_Tab", 1, 2, "compute", "no 1 Hz noise for channel 0", ""
+        )
+        assert lines == ["replay stopped at step 1 of 2: no 1 Hz noise for channel 0"]
+
+    def test_the_base_has_no_failure_to_report(self, tab: _Tab) -> None:
+        assert MetaController.background_step_failure(tab) == ""
 
 
 class TestStop:

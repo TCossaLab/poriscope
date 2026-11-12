@@ -1225,3 +1225,67 @@ def test_the_reset_button_says_what_it_cleared(
     controller.clear_history()
 
     controller._say.assert_called_once_with(said)
+
+
+class TestTheAllPointsLimitsAfterAReset:
+    """
+    An all-points histogram shares its x limits with the datasets already on the figure.
+
+    A new figure starts from none, so the limits handed to the build are read after the
+    reset, never kept from the figure the reset cleared.
+    """
+
+    @staticmethod
+    def overlay(controller: MetadataController, plot_type: str) -> MagicMock:
+        """
+        Overlay one all-points dataset on a figure that holds raw all-points histograms.
+
+        :param controller: Controller under test.
+        :param plot_type: the plot type asked for
+        :return: the mocked build, to read what it was handed
+        """
+        controller.model.overlay = OverlayState(
+            figure=FigureKind.OVERLAY_2D,
+            plot_type="Raw All Points Histogram",
+            bins=[20],
+            sizes=False,
+            hist_min=0.0,
+            hist_max=1.0,
+        )
+        controller.tab_action_history = OrderedDict()
+        # A reset clears the Model's overlay, as the real one does through _clear_figure.
+        controller.reset = MagicMock(  # type: ignore[method-assign]
+            side_effect=controller.model.clear_overlay
+        )
+        build = MagicMock(return_value=True)
+        controller.build_all_points_histogram = build  # type: ignore[method-assign]
+        controller._overlay_event_dataset(
+            loader="L",
+            plot_type=plot_type,
+            axes=[None, None, None],
+            logs=[False, False, False],
+            bins=[20],
+            sizes=False,
+            exp="exp_a",
+            channel="0",
+            subset_name="F0",
+            sql_filter="duration >= 0",
+            label="F0",
+        )
+        return build
+
+    def test_a_new_figure_starts_from_no_limits(
+        self, controller: MetadataController
+    ) -> None:
+        build = self.overlay(controller, "Filtered All Points Histogram")
+
+        controller.reset.assert_called_once_with("2d")  # type: ignore[attr-defined]
+        assert build.call_args.args[6:8] == (None, None)
+
+    def test_a_dataset_added_to_the_figure_shares_its_limits(
+        self, controller: MetadataController
+    ) -> None:
+        build = self.overlay(controller, "Raw All Points Histogram")
+
+        controller.reset.assert_not_called()  # type: ignore[attr-defined]
+        assert build.call_args.args[6:8] == (0.0, 1.0)
