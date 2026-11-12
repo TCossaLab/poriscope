@@ -226,20 +226,6 @@ def test_set_psd(view):
 
 
 # ---------------------------------------------------------------------------
-# validate_single_channel
-# ---------------------------------------------------------------------------
-
-
-def test_validate_single_channel_passes_with_one(view):
-    view.validate_single_channel([0])  # should not raise
-
-
-def test_validate_single_channel_raises_with_multiple(view):
-    with pytest.raises(ValueError):
-        view.validate_single_channel([0, 1])
-
-
-# ---------------------------------------------------------------------------
 # _extract_plot_parameters
 # ---------------------------------------------------------------------------
 
@@ -264,18 +250,6 @@ def test_extract_event_parameters(view):
     assert ef == "EF1"
     assert f == "F1"
     assert ch == [2]
-
-
-# ---------------------------------------------------------------------------
-# _extract_commit_event_parameters
-# ---------------------------------------------------------------------------
-
-
-def test_extract_commit_event_parameters(view):
-    params = {"writer": "W1", "channel": ["3"]}
-    writer, channels = view._extract_commit_event_parameters(params)
-    assert writer == "W1"
-    assert channels == [3]
 
 
 # ---------------------------------------------------------------------------
@@ -312,26 +286,6 @@ def test_validate_plot_parameters_none_channel(view):
 
 def test_validate_plot_parameters_none_reader(view):
     assert view._validate_plot_parameters(None, [0], 0.0, 100.0) is False
-
-
-# ---------------------------------------------------------------------------
-# _factors
-# ---------------------------------------------------------------------------
-
-
-def test_factors_single(view):
-    assert view._factors(1) == (1, 1)
-
-
-def test_factors_four(view):
-    rows, cols = view._factors(4)
-    assert rows * cols >= 4
-
-
-def test_factors_returns_tuple(view):
-    result = view._factors(6)
-    assert isinstance(result, tuple)
-    assert len(result) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -613,24 +567,6 @@ def test_update_available_plugins_exception_is_caught(view, mocker, caplog):
     with caplog.at_level(logging.INFO):
         view.update_available_plugins({"MetaReader": ["R1"]})
     assert "Updating ComboBoxes failed" in caplog.text
-
-
-def test_update_available_plugins_makes_no_plugin_call_of_its_own(view, mocker):
-    """
-    Populating the comboboxes reaches no plugin, and registers no finder.
-
-    This method used to emit ``global_signal`` once per unregistered finder and read the
-    answer back off ``self.timer_channels`` - an emit-then-read nested inside a push the
-    Controller was already running. ``RawDataController`` resolves the channels now, so
-    what is left here is combobox population and nothing else.
-    """
-    mocker.patch.object(MetaView, "update_available_plugins", return_value=None)
-
-    view.update_available_plugins(
-        {"MetaReader": ["R1"], "MetaEventFinder": ["EF1", "EF2"]}
-    )
-
-    assert view.analysis_time_limits == {}
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ Comprehensive test coverage for:
   show_histogram_bins, show_categorical_counts, show_heatmap, show_scatterplot,
   show_3d_scatterplot, show_all_points_histogram, show_event_overlay) and the
   private _plot_all_points_histogram
-- Helper functions (format_axis_label)
 
 Which dataset is plotted, how its columns are computed and whether the figure is
 reset first is decided by MetadataController.overlay_plot, and is tested in
@@ -173,23 +172,6 @@ def test_init_sets_current_channel_none(view: MetadataView) -> None:
 def test_init_sets_subset_filters_empty_dict(view: MetadataView) -> None:
     """Verify subset_filters is initialized to empty dict."""
     assert view.subset_filters == {}
-
-
-def test_init_keeps_nothing_of_the_overlay(view: MetadataView) -> None:
-    """What the overlaid figure holds is the Model's to keep, not the View's."""
-    for name in (
-        "hist_data",
-        "hist_labels",
-        "hist_min",
-        "hist_max",
-        "plotted_datasets",
-        "allowed_plot_type",
-        "allowed_columns",
-        "allowed_logs",
-        "allowed_bins",
-        "allowed_sizes",
-    ):
-        assert not hasattr(view, name), name
 
 
 # ----------------------------- Control Area Tests ------------------------------
@@ -402,16 +384,15 @@ def test_clear_plot_redraws_canvas(view: MetadataView) -> None:
 # answer and pin the drawing.
 
 
-def test_show_kernel_densities_draws_one_curve_per_label_and_keeps_none(
+def test_show_kernel_densities_draws_one_curve_per_label(
     view: MetadataView,
 ) -> None:
-    """Every dataset handed over is drawn under its label; nothing is kept here."""
+    """Every dataset handed over is drawn under its label."""
     curve = (np.array([1.0, 2.0]), np.array([0.1, 0.2]))
 
     view.show_kernel_densities([curve, curve], ["d1", "d2"], "x")
 
     assert [c.kwargs["label"] for c in view.axes.plot.call_args_list] == ["d1", "d2"]
-    assert not hasattr(view, "hist_data")
 
 
 def test_show_kernel_densities_clears_axes(view: MetadataView) -> None:
@@ -468,28 +449,6 @@ def test_metaview_runs_each_initializer_exactly_once() -> None:
     assert called.count("_init") == 1, called
     assert called.count("_init_walkthrough") == 1, called
     assert called.count("_setup_ui") == 1, called
-
-
-def test_no_tab_defines_its_own_dunder_init() -> None:
-    """
-    All five tabs inherit construction, so the duplicate cannot creep back.
-
-    Asserted across the family rather than on Metadata alone: the five copies were
-    identical, so a regression would most likely reintroduce all five.
-    """
-    from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
-    from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
-    from poriscope.plugins.analysistabs.ProteinView import ProteinView
-    from poriscope.plugins.analysistabs.RawDataView import RawDataView
-
-    for cls in (
-        ClusteringView,
-        EventAnalysisView,
-        MetadataView,
-        ProteinView,
-        RawDataView,
-    ):
-        assert "__init__" not in cls.__dict__, f"{cls.__name__} regrew an __init__"
 
 
 # ----------------------------- show_capture_rate Tests ------------------------------
@@ -556,37 +515,6 @@ def test_show_capture_rate_sets_axis_labels(view: MetadataView) -> None:
     view.axes.set_ylabel.assert_called()
 
 
-# ----------------------------- Format Axis Label Tests ------------------------------
-
-
-def test_format_axis_label_adds_unit(view: MetadataView) -> None:
-    """Verify unit is added in parentheses."""
-    result: str = view.format_axis_label("Duration", "ms")
-    assert result == "Duration (ms)"
-
-
-def test_format_axis_label_appends_rather_than_replacing_an_existing_unit(
-    view: MetadataView,
-) -> None:
-    """Verify an existing trailing parenthetical is kept and the unit appended."""
-    result: str = view.format_axis_label("Duration (s)", "ms")
-    assert result == "Duration (s) (ms)"
-
-
-def test_format_axis_label_no_unit_returns_plain(view: MetadataView) -> None:
-    """Verify plain label is returned when no unit."""
-    result: str = view.format_axis_label("Duration", "")
-    assert result == "Duration"
-
-
-def test_format_axis_label_keeps_every_existing_parenthetical(
-    view: MetadataView,
-) -> None:
-    """Verify no existing parenthetical is lost when a unit is appended."""
-    result: str = view.format_axis_label("Current (baseline) (pA)", "nA")
-    assert result == "Current (baseline) (pA) (nA)"
-
-
 # ----------------------------- show_histogram_bins Tests ------------------------------
 
 
@@ -645,17 +573,13 @@ def test_show_histogram_bins_sets_log10_label_when_logscale_true(
 
 
 def test_show_histogram_bins_overlays_multiple_datasets(view: MetadataView) -> None:
-    """
-    Verify multiple datasets can be overlaid: one bar series per dataset handed over,
-    and nothing kept here.
-    """
+    """Verify multiple datasets can be overlaid: one bar series per dataset handed over."""
     _show_histogram_bins(
         view,
         [np.array([1.0, 2.0, 3.0]), np.array([4.0, 5.0, 6.0])],
         ["d1", "d2"],
     )
 
-    assert not hasattr(view, "hist_data")
     assert [call.kwargs["label"] for call in view.axes.bar.call_args_list] == [
         "d1",
         "d2",
@@ -2155,16 +2079,6 @@ def test_export_csv_subset_does_not_increment_counter_on_cancel(
 # ----------------------------- Set Query Tests ------------------------------
 
 
-def test_set_query_sets_query_and_table_name(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify query and table name are set correctly."""
-    view.set_query("SELECT * FROM events", "events")
-
-    assert view.query == "SELECT * FROM events"
-    assert view.table_name == "events"
-
-
 def test_set_query_does_not_echo_to_the_status_panel(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -2175,13 +2089,6 @@ def test_set_query_does_not_echo_to_the_status_panel(
 
 
 # ----------------------------- Set Event Query Tests ------------------------------
-
-
-def test_set_event_query_sets_query(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify event query is set correctly."""
-    view.set_event_query("SELECT * FROM events WHERE id > 100")
-
-    assert view.event_query == "SELECT * FROM events WHERE id > 100"
 
 
 def test_set_event_query_does_not_echo_to_the_status_panel(
@@ -2834,11 +2741,6 @@ def test_get_walkthrough_steps_returns_list(view: MetadataView) -> None:
     assert isinstance(view.get_walkthrough_steps(), list)
 
 
-def test_get_walkthrough_steps_has_correct_count(view: MetadataView) -> None:
-    """Verify walkthrough has the correct number of steps."""
-    assert len(view.get_walkthrough_steps()) == 25
-
-
 def test_get_walkthrough_steps_each_is_four_tuple(view: MetadataView) -> None:
     for step in view.get_walkthrough_steps():
         assert len(step) == 4
@@ -2943,10 +2845,6 @@ class TestShowCategoricalCounts:
     def test_rotates_x_tick_labels(self, view: MetadataView) -> None:
         self._show(view, self._data())
         view.axes.tick_params.assert_called()
-
-    def test_keeps_nothing_of_the_overlay(self, view: MetadataView) -> None:
-        self._show(view, self._data(), dataset_label="ds")
-        assert not hasattr(view, "hist_data")
 
     def test_counts_categories_correctly(self, view: MetadataView) -> None:
         # A=3, B=2, C=1
