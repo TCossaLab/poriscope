@@ -166,6 +166,8 @@
 
 * Tests that repeated the same replay, fit, event search, recording or database now share one per module or session, each test keeping its own assertions
 
+* `scripts/new_plugin.py` parses each base module once per run instead of once per generated method
+
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on
