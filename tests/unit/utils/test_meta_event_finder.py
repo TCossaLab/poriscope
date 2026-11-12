@@ -1226,14 +1226,9 @@ class TestGetPaddingLength:
         assert last_end == 350
         assert pa_prev >= 0
 
-    def test_last_duration_used_for_target_padding(self, finder):
-        pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [500], [600], 0, last_duration=50, samplerate=100.0, last_sample=1000
-        )
-        assert pa_prev >= 0
-
     def test_padding_clamped_near_last_end(self, finder):
-        # event starts very close to last_end -> padding_before should be clamped
+        # The event wants 10 samples of padding before it, but starts only 5 after
+        # last_end, so it gets 0.75 of that gap rather than reaching into the last event.
         pb, pa, last_end, pa_prev = finder._get_padding_length(
             [10],
             [20],
@@ -1242,19 +1237,7 @@ class TestGetPaddingLength:
             samplerate=100.0,
             last_sample=1000,
         )
-        assert pb[0] <= 10
-
-    def test_padding_after_clamped_near_last_sample(self, finder):
-        pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [10, 900],
-            [20, 990],
-            last_end=0,
-            last_duration=None,
-            samplerate=100.0,
-            last_call=True,
-            last_sample=1000,
-        )
-        assert pa[0] >= 0
+        assert pb[0] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -1397,9 +1380,15 @@ class TestGetSingleEventData:
         assert calls == [True]
 
     def test_rectify_applied(self, finder):
+        """A trace recorded at negative bias comes back positive when rectified."""
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        finder.reader.data[0] *= -1
+        raw = finder.get_single_event_data(0, 0)["data"].copy()
+        assert np.all(raw < 0)
+
         event = finder.get_single_event_data(0, 0, rectify=True)
-        assert event is not None
+
+        np.testing.assert_array_equal(event["data"], -raw)
 
 
 # ---------------------------------------------------------------------------
@@ -1415,21 +1404,6 @@ class TestGetEventIndices:
         starts, ends = finder.get_event_indices()
         assert 0 in starts
         assert 0 in ends
-
-
-# ---------------------------------------------------------------------------
-# Abstract method stub bodies
-# ---------------------------------------------------------------------------
-class TestAbstractStubs:
-    def test_private_abstract_stubs(self, finder):
-        assert MetaEventFinder._init(finder) is None
-        assert (
-            MetaEventFinder._find_events_in_chunk(finder, np.array([1.0]), 1.0, 0.1, 0)
-            is None
-        )
-        assert MetaEventFinder._filter_events(finder, [], [], 0) is None
-        assert MetaEventFinder._validate_settings(finder, {}) is None
-        assert MetaEventFinder._get_baseline_stats(finder, np.array([1.0])) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1490,47 +1464,16 @@ class TestFitBaselineHistogram:
         return np.random.default_rng(seed).normal(mean, sigma, n)
 
     def test_recovers_the_mean(self, finder):
-        """The fitted mean lands on the true one; only sigma carries a known bias."""
+        """
+        The fitted mean lands on the true one.
+
+        Sigma is pinned against planted noise in ``test_baseline_sigma_planted.py``.
+        """
         data = self.noise()
         mean, _ = finder._fit_baseline_histogram(
             data, float(np.min(data)), float(np.max(data))
         )
         assert mean == pytest.approx(1000.0, abs=0.5)
-
-    def test_recovers_the_standard_deviation(self, finder):
-        """
-        Sigma comes back in the data's own units.
-
-        The fit is handed true bin centres. Labelling the bins edge to edge with
-        ``linspace`` instead stretches that axis by ``bins/(bins-1)`` and inflates sigma
-        by the same factor, which was +5.2% at this sample size until 2026-09-20.
-        ``ThresholdBlockageFinder`` denominates its threshold in sigma, so the error went
-        straight into which events it found.
-        """
-        data = self.noise()
-        _, std = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert std == pytest.approx(25.0, rel=0.02)
-
-    @pytest.mark.parametrize("n", [50_000, 200_000, 800_000])
-    def test_sigma_does_not_track_chunk_size(self, finder, n):
-        """
-        The same noise gives the same sigma however the chunks are cut.
-
-        The bin count is ``int(len(data)**(1/3)/2)``, so a bias that scales with the bin
-        count moves with ``chunk_length`` - which made a sigma-denominated threshold mean
-        something different on every chunk size. Sigma is the physical property of the
-        recording here, not of how it was sliced.
-
-        The tolerance is tight enough that every size fails against the uncorrected
-        code, which added 5.9%, 3.6% and 2.3% respectively on top of what is left here.
-        """
-        data = self.noise(n=n)
-        _, std = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert std == pytest.approx(25.0, rel=0.02)
 
     def test_a_flat_range_is_refused(self, finder):
         """

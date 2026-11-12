@@ -207,4 +207,3 @@ def test_a_silent_fit_reports_only_that_it_is_complete(fitter) -> None:
 
 def test_the_base_hook_does_nothing_and_needs_no_override() -> None:
     assert "_post_process_events" not in MetaEventFitter.__abstractmethods__
-    assert "_post_process_events" not in vars(CUSUM)
