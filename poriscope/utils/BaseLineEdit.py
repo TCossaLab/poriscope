@@ -26,9 +26,10 @@
 import logging
 from typing import Optional
 
-from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QFocusEvent, QValidator
 from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox, QWidget
+
+from poriscope.utils.MessageBoxValidationGuard import MessageBoxValidationGuard
 
 
 class BaseLineEdit(QLineEdit):
@@ -38,10 +39,10 @@ class BaseLineEdit(QLineEdit):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        QApplication.instance().installEventFilter(self)  # Install global event filter
-        QApplication.instance().aboutToQuit.connect(
-            self.on_app_about_to_quit
-        )  # Connect to the aboutToQuit signal
+        # One application-wide guard sets the two class flags for every line edit. Each
+        # instance used to install its own filter, so every Qt event made one Python
+        # call per live line edit.
+        MessageBoxValidationGuard.install(QApplication.instance(), BaseLineEdit)
 
         try:
             validator = self.create_validator()
@@ -85,21 +86,10 @@ class BaseLineEdit(QLineEdit):
             self.setToolTip("")  # Clear tooltip
             super().focusOutEvent(event)
 
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        """Filter out focus-out events caused by QMessageBox to avoid validation issues."""
-        if isinstance(obj, QMessageBox) and event.type() == QEvent.Show:
-            BaseLineEdit.suspend_validation = True  # Suspend validation
-        elif isinstance(obj, QMessageBox) and event.type() == QEvent.Hide:
-            BaseLineEdit.suspend_validation = False  # Resume validation
-        # QLineEdit does not reimplement eventFilter, so the inherited
-        # QObject::eventFilter is `return false`. Returning it directly matters
-        # here: this filter is installed on the application and never removed,
-        # so it keeps running after the widget behind it is destroyed. Nothing
-        # above touches a C++ member of `self`, but calling up into the base
-        # class does, and that is what raises "Internal C++ object already
-        # deleted" on a stale filter.
-        return False
-
     def on_app_about_to_quit(self) -> None:
-        """Handle the application's about to quit signal."""
+        """
+        Mark the application as closing, so no line edit validates on its way out.
+
+        The application's ``MessageBoxValidationGuard`` sets the same flag at quit.
+        """
         BaseLineEdit.app_closing = True  # Set the flag indicating the app is closing

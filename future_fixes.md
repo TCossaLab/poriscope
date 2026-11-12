@@ -734,11 +734,6 @@ itself stays on the application.
   its combobox. Note the original rationale for parenting it - that it would stop
   `_close_leftover_widgets` sweeping it as a top-level - **was measured and is false**: a
   parented widget that keeps its window flags is still returned by `topLevelWidgets()`.
-- **`BaseLineEdit` still registers one application-wide filter and one `aboutToQuit`
-  connection per instance** (3 per controls build; `utils/BaseLineEdit.py:45-48`). Both are now harmless - its `eventFilter`
-  returns `False` directly and nothing in its body touches a C++ member of `self`. Replacing
-  them with a single application-owned watcher would remove the leak outright, but it is a
-  new class and a breaking change to something re-exported from `exposed.py`.
 
 ### Community-contributed-plugin compliance gate
 

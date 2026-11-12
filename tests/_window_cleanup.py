@@ -2,8 +2,8 @@
 Destroy every top-level window a test leaves behind.
 
 The whole test session shares one ``QApplication``, so a window one test leaves alive
-is paid for by every test after it. ``close()`` only hides a window; it stays alive, and
-every ``BaseLineEdit`` inside it stays installed as an application-wide event filter.
+is paid for by every test after it. ``close()`` only hides a window; it stays alive,
+with every widget in it, and grows the heap every later garbage collection walks.
 The root conftest calls this after every test and fails the test if anything survives.
 """
 

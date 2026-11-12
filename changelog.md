@@ -67,6 +67,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking:** a `BaseLineEdit` is no longer installed as an application event filter: one `MessageBoxValidationGuard` per application sets `suspend_validation` and `app_closing`, so a subclass overriding `eventFilter` no longer receives every application event
+
 * **Breaking:** `RawDataView.psd_data_requested` and `RawDataView.calculate_psd` carry the PSD options as a dict, and `RawDataController.calculate_psd` takes it; `load_psd_data` takes them as keyword parameters, defaulting to the PSD Update PSD always drew
 
 * **Breaking:** `RawDataModel.get_baseline_stats` and `RawDataView.update_plot`'s `baseline_stats` now carry `(mean, stdev)` rather than `(amplitude, mean, stdev)`, and `RawDataModel.gaussian_fit` is removed; the amplitude was never read
