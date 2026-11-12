@@ -254,6 +254,10 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Other queued items
 
+- **The full suite is too slow to run before every commit (2026-11-11).** In a clean worktree on the dev machine,
+  `develop` (5,732 tests) took 23.5 min and `feature/conditioning-analysis` (5,776) 1,402 s; recent GitHub CI runs are about the same (Kyle's reading). Profile first (`pytest --durations=50`, `--marker-stats`) and cut the slowest fixtures and integration/e2e
+  builds before reaching for `pytest-xdist`, whose splits risk the Qt-state leaks that make reordered runs segfault.
+  Starts once `feature/conditioning-analysis` and action replay land; the e2e tests stay (Kyle, 2026-11-11).
 - **`EventWorker`/`MetaModel`'s worker lifecycle has no test coverage**, nor does
   `App.configure_logger`; `tests/unit/utils/test_qt_handler.py` covers `QtHandler` only by
   calling `show_message_box` directly. Owed by whoever owns test-writing; the scenarios worth

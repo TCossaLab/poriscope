@@ -289,19 +289,22 @@ def test_every_analysis_tab_base_has_a_page_at_all(module: str) -> None:
 
 
 @needs_autodoc
-def test_the_controls_classes_are_documented_despite_having_no_docstring() -> None:
+def test_the_controls_classes_are_documented_with_or_without_a_docstring() -> None:
     """
     A missing class docstring does not cost a plugin-tree class its page.
 
-    All five classes lack a docstring and all five are documented anyway. Asserted
-    so the corrected understanding is held rather than drifting back.
+    Every controls class is documented, whether or not it has a class docstring, and at
+    least one of them has none, so the docstring-less case stays exercised. Asserted so
+    the corrected understanding is held rather than drifting back.
     """
     utils = REPO_ROOT / "poriscope" / "plugins" / "analysistabs" / "utils"
+    undocumented = []
     for source in sorted(utils.glob("*ontrols*.py")):
         tree = ast.parse(source.read_text(encoding="utf-8"))
         classes = [n for n in tree.body if isinstance(n, ast.ClassDef)]
         assert classes, source.name
-        assert ast.get_docstring(classes[0]) is None, source.name
+        if ast.get_docstring(classes[0]) is None:
+            undocumented.append(source.name)
 
         page = (
             AUTODOC
@@ -312,6 +315,7 @@ def test_the_controls_classes_are_documented_despite_having_no_docstring() -> No
         )
         assert page.is_file(), f"{source.name} lost its page"
         assert "automethod" in page.read_text(encoding="utf-8")
+    assert undocumented, "every controls class has a docstring; the case is unexercised"
 
 
 @needs_autodoc

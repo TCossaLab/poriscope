@@ -1241,8 +1241,8 @@ Duplication Ratchet
 --------------------
 
 This one affects you if you edit any plugin or widget file: the ratchet measures ten
-**families**. They are the five ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
-``poriscope/plugins/analysistabs/``, the five ``*controls.py`` under its ``utils/``, the data
+**families**. They are the six ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
+``poriscope/plugins/analysistabs/``, the six ``*controls.py`` under its ``utils/``, the data
 readers, event fitters, event finders, filters, shared widgets, and the five SQLite plugins
 (the event writer, the two database loaders, the database writer and the event loader). Those families carry a
 large amount of byte-identical duplication, and the 2.0.0 refactor removed most of it. The
@@ -1486,8 +1486,8 @@ intent, never data already on the plot. Two checks hold the rule:
 
 ``poriscope.utils.ReplayGuard``
    is a tripwire. Each step of a replay (``poriscope.utils.replay_sequence``) and Undo's
-   ``MetaController.replay`` run inside ``replaying()``, and the seven helpers
-   that read a controls panel (``get_selected_filters``, ``_get_event_index_text`` and the five
+   ``MetaController.replay`` run inside ``replaying()``, and the eight helpers
+   that read a controls panel (``get_selected_filters``, ``_get_event_index_text`` and the six
    ``collect_parameters``) start with ``forbid_while_replaying(...)``, so a recorded action that
    reaches one raises ``ReplayWidgetReadError`` during a replay and nowhere else. It cannot see
    a direct ``.text()`` call; the static test covers those.
@@ -1628,8 +1628,8 @@ branch push:
 
    pytest
 
-There is no subset and no marker filter, at under 10 minutes, e2e tests are worth their cost. CI runs the whole suite everywhere, e2e
-tests included. 
+There is no subset and no marker filter: CI runs the whole suite everywhere, e2e tests
+included. A full run takes about 25 minutes, locally and on CI (2026-11-11).
 
 For per-marker counts and mean
 durations, run ``pytest --marker-stats``.
