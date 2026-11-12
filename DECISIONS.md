@@ -3519,8 +3519,9 @@ scoping is also applied independently of the experiment lookup, where the old co
 **Evidence.** `event_id` is unique only within a channel, so an unscoped match returns
 whichever channel's row happens to share the number - the same "plots the wrong subset" class
 of fault as the three stale reads fixed in `32b3bc34`, and invisible in exactly the same way.
-`test_metadata_fetch_slots` drives it, and reverting the guard fails that one test and no
-other.
+`test_metadata_fetch_slots` drove it, and reverting the guard failed that one test and no
+other. (2026-11-12: that copy was dropped as a duplicate; its Protein twin
+`test_an_unresolvable_experiment_stops_the_plot` fails under the same revert.)
 
 **Revisit if** a database legitimately holds events whose experiment is unknown, in which
 case the fallback needs to be scoped by channel rather than unscoped.
@@ -3687,7 +3688,8 @@ several all still pass, resolving through the MRO, and none of them could have c
 leftover copy - it would shadow the base for that one tab and every test would stay green. A
 new `tests/unit/controllers/test_promoted_controller_methods.py` asserts single ownership,
 MRO identity, and that the stale docstring claim is gone, since nothing else reads a
-docstring.
+docstring. (2026-11-12: those three tests are dropped; the duplication ratchet, which now
+measures the bases, names a leftover copy.)
 
 **Revisit if** 4d moving the pending state to the Model makes the shared body per-tab again,
 which would be a genuine reason rather than the one recorded.

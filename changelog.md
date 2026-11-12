@@ -172,6 +172,8 @@
 
 * Tests that repeated the same replay, fit, event search, recording or database now share one per module or session, each test keeping its own assertions
 
+* About 440 tests that added no protection are removed and about 30 that passed when broken are fixed, each on mutation evidence, and new tests cover gaps the audit found
+
 * `scripts/new_plugin.py` parses each base module once per run instead of once per generated method
 
 * The duplication ratchet also measures the `Meta*` bases, so a base method copied onto one tab counts as duplication, and a rise names the functions it newly duplicated

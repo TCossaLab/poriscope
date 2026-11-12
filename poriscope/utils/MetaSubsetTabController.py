@@ -1482,8 +1482,9 @@ class MetaSubsetTabController(MetaController):
 
         The query runs for the selected experiment and channel like every other raw
         filter, and the ``event_id`` values it names there are the cache. A row per
-        sublevel would repeat each event, so each is listed once, and a query that
-        ignored the selection is cut to the selected pair. Anything wrong is reported
+        sublevel would repeat each event; ``_raw_event_keys`` already lists each
+        (experiment, channel, event) once, and a query that ignored the selection is
+        cut to the selected pair. Anything wrong is reported
         here and leaves the View's answer at None, which is what tells it nothing ran.
 
         :param loader: the database loader plugin's key
