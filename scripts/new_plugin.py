@@ -1096,13 +1096,65 @@ def sibling_imports(name: str, folder: Path, wanted: Sequence[str]) -> List[Impo
     :return: the imports to emit
     :rtype: List[ImportSpec]
     """
-    shipped = Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
-    in_repo = folder.resolve() == shipped.resolve()
-    prefix = f"poriscope.plugins.{TAB_FOLDER}." if in_repo else ""
+    prefix = f"poriscope.plugins.{TAB_FOLDER}." if in_repository(folder) else ""
     return [
         ImportSpec(f"{prefix}{name}{suffix}", f"{name}{suffix}", None)
         for suffix in wanted
     ]
+
+
+def in_repository(folder: Path) -> bool:
+    """
+    Say whether a tab is being written into this repository's own tab folder.
+
+    :param folder: the folder the tab's triad is being written into
+    :type folder: Path
+    :return: True if it is ``poriscope/plugins/analysistabs/`` of this repository
+    :rtype: bool
+    """
+    shipped = Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
+    return folder.resolve() == shipped.resolve()
+
+
+def controls_path(name: str, folder: Path) -> Path:
+    """
+    Work out where an analysis tab's controls panel is written.
+
+    In this repository the tab folder holds only Controller/Model/View files, and every
+    shipped tab keeps its panel in ``utils/<name>controls.py``, so a generated one does
+    too. Anywhere else the panel goes beside the triad, because the app puts only the user
+    plugin folder itself on ``sys.path``.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param folder: the folder the tab's triad is being written into
+    :type folder: Path
+    :return: the path of the controls panel's file
+    :rtype: Path
+    """
+    if in_repository(folder):
+        return Path(folder, "utils", f"{name.lower()}{CONTROLS.lower()}.py")
+    return Path(folder, f"{name}{CONTROLS}.py")
+
+
+def controls_import(name: str, folder: Path) -> ImportSpec:
+    """
+    Work out how the View should import its controls panel.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param folder: the folder the tab's triad is being written into
+    :type folder: Path
+    :return: the import to emit
+    :rtype: ImportSpec
+    """
+    stem = controls_path(name, folder).stem
+    module = (
+        f"poriscope.plugins.{TAB_FOLDER}.utils.{stem}"
+        if in_repository(folder)
+        else stem
+    )
+    return ImportSpec(module, f"{name}{CONTROLS}", None)
 
 
 def collect_module_imports(module_name: str) -> Dict[str, ImportSpec]:
@@ -1365,7 +1417,7 @@ def render_tab_file(role: TabRole, name: str, folder: Path, author: str) -> str:
     if is_controller:
         specs += sibling_imports(name, folder, [TRIAD[1].suffix, TRIAD[2].suffix])
     if is_view:
-        specs += sibling_imports(name, folder, [CONTROLS])
+        specs.append(controls_import(name, folder))
 
     sections: List[str] = []
     for label, chosen in (
@@ -1659,11 +1711,12 @@ def tab_suffixes() -> List[str]:
 
 def tab_folder(args: argparse.Namespace) -> Path:
     """
-    Work out where an analysis tab's four files should be written.
+    Work out where an analysis tab's triad should be written; see ``controls_path`` for its
+    controls panel.
 
     :param args: the parsed command line
     :type args: argparse.Namespace
-    :return: the folder to write into
+    :return: the folder to write the triad into
     :rtype: Path
     """
     if args.output_dir:
@@ -1710,31 +1763,36 @@ def build_tab(
         )
 
     folder = tab_folder(args)
-    paths = [Path(folder, f"{name}{s}.py") for s in tab_suffixes()]
+    panel = controls_path(name, folder)
+    paths = [Path(folder, f"{name}{role.suffix}.py") for role in TRIAD] + [panel]
     clobbered = [path for path in paths if path.exists()]
     if clobbered:
         raise GenerationError(
-            f"{', '.join(p.name for p in clobbered)} already exists in {folder}; "
-            f"delete it or pick another name"
+            f"{', '.join(str(p.relative_to(folder)) for p in clobbered)} already exists "
+            f"in {folder}; delete it or pick another name"
         )
 
     rendered = [render_tab_file(role, name, folder, args.author) for role in TRIAD]
     rendered.append(render_controls_file(name, args.author))
-    folder.mkdir(parents=True, exist_ok=True)
     for path, body in zip(paths, rendered):
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
 
     lines = sum(len(body.splitlines()) for body in rendered)
     print(f"\nCreated {len(paths)} files in {folder}  ({lines} lines)")
     for path in paths:
-        print(f"  {path.name}")
+        print(f"  {path.relative_to(folder)}")
     print("\nNext:")
     print("  1. Restart Poriscope. The tab appears in the Analysis menu under")
     print(f"       {name}Controller, with one button in its control area. Pressing")
     print(f"       it reaches {name}View.handle_parameter_change, which says so on")
     print("       the status panel - that message is the scaffold proving itself.")
-    print(f"  2. Replace that button in {name}Controls.setupUi with the controls")
-    print("       your tab needs, and read them in collect_parameters.")
+    print(
+        f"  2. Replace that button in {name}Controls.setupUi ({panel.relative_to(folder)})"
+    )
+    print(
+        "       with the controls your tab needs, and read them in collect_parameters."
+    )
     print(f"  3. Fill in the methods marked TODO in {name}View.py and {name}Model.py.")
     print(f"  4. Connect them to each other in {name}Controller._setup_connections.")
     return paths

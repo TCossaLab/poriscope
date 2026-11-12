@@ -588,6 +588,46 @@ class TestGeneratedAnalysisTabs:
             "poriscope.plugins.analysistabs.DemoView",
         }
 
+    def test_a_tab_inside_the_repository_puts_its_controls_panel_in_utils(
+        self, script, tmp_path, monkeypatch
+    ):
+        """
+        The shipped tabs keep their controls panels in ``analysistabs/utils/`` and the tab
+        folder itself holds only ``<Name><Role>.py`` triads, which
+        ``test_the_role_suffixes_match_the_shipped_tabs`` enforces - so a generated tab in
+        the repository must follow suit, or its own output fails the suite.
+        """
+        tabs = Path(tmp_path, "poriscope", "plugins", script.TAB_FOLDER)
+        tabs.mkdir(parents=True)
+        monkeypatch.setattr(script, "REPO_ROOT", tmp_path)
+        assert script.main([script.TAB, "InTree", "--author", "Test Author"]) == 0
+
+        assert sorted(p.name for p in tabs.glob("*.py")) == [
+            "InTreeController.py",
+            "InTreeModel.py",
+            "InTreeView.py",
+        ]
+        controls = Path(tabs, "utils", "intreecontrols.py")
+        assert "class InTreeControls(MetaControls):" in controls.read_text(
+            encoding="utf-8"
+        )
+        view = Path(tabs, "InTreeView.py").read_text(encoding="utf-8")
+        assert (
+            "from poriscope.plugins.analysistabs.utils.intreecontrols import "
+            "InTreeControls" in view
+        )
+
+    def test_an_existing_controls_panel_in_utils_blocks_the_whole_tab(
+        self, script, tmp_path, monkeypatch
+    ):
+        """The panel's path in ``utils/`` is checked with the other three before any write."""
+        utils = Path(tmp_path, "poriscope", "plugins", script.TAB_FOLDER, "utils")
+        utils.mkdir(parents=True)
+        Path(utils, "takencontrols.py").write_text("# already here\n", encoding="utf-8")
+        monkeypatch.setattr(script, "REPO_ROOT", tmp_path)
+        assert script.main([script.TAB, "Taken", "--author", "Test Author"]) == 1
+        assert list(utils.parent.glob("*.py")) == []
+
     def test_the_view_builds_the_generated_controls_panel(self, script, tmp_path):
         """
         ``_build_controls`` is not abstract, so nothing would stub it - and the base's

@@ -124,6 +124,8 @@
 
 * `scripts/new_plugin.py --list` sizes its columns to the longest name
 
+* `python scripts/new_plugin.py AnalysisTab` writes a tab's controls panel into this repository as `analysistabs/utils/<name>controls.py`, beside the shipped tabs' panels; `--user` and `--output-dir` still write it beside the triad
+
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
 
 * Branch CI runs the suite and the wheel smoke at both ends of the supported range: exactly Python 3.12.0 with the pins in `requirements.txt` (on `ubuntu-24.04`, the only image with that build, and on Windows) and Python 3.14 with the runtime stack resolved from `pyproject.toml`'s ranges (on `ubuntu-latest` and Windows); the pull-request, docs and release jobs test the floor
