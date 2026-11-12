@@ -34,7 +34,8 @@ finished channel with results. A run of that plugin on that channel that is alre
 is waited out first, since launching another would be refused. Any other entry that starts
 background runs - a view computed before it draws - ends once every run it started has
 ended, a turn of the event loop later, so the tab has drawn before the next entry or
-"replay done"; runs that were going before it are not its own.
+"replay done"; runs that were going before it are not its own. Such a step fails when the
+tab then says its work did not finish (:py:meth:`~poriscope.utils.MetaController.MetaController.background_step_failure`).
 
 A replay stops at the first entry that fails: one that raises, one whose action returns
 ``False`` for a call that did nothing (its declaration's ``skip_on_false``), or a run that
@@ -349,13 +350,18 @@ class ReplaySequence:
 
     def _background_ended(self, generation: int) -> None:
         """
-        End a step whose background runs have all ended, and go on to the next.
+        End a step whose background runs have all ended: fail it if the tab says the work did
+        not finish, else go on to the next.
 
         :param generation: the scheduling this came from; one from before the replay ended
             or restarted does nothing
         :type generation: int
         """
         if generation != self._generation:
+            return
+        failure = self._controller.background_step_failure()
+        if failure:
+            self._fail(failure)
             return
         self._index += 1
         self._schedule()

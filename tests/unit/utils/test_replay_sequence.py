@@ -70,6 +70,10 @@ class _Tab(MetaController):
         self.model = _Model()  # type: ignore[assignment]
         self.calls: List[str] = []
         self.draws: Dict[str, bool] = {}
+        self.background_failure = ""
+
+    def background_step_failure(self) -> str:
+        return self.background_failure
 
     def _setup_connections(self) -> None:
         pass
@@ -422,6 +426,35 @@ class TestBackgroundWork:
         qtbot.wait(20)
 
         assert sequence.running
+
+    def test_a_step_whose_background_work_failed_stops_the_replay(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """
+        The tab judges its own work when it hears the run end, after the replay has.
+
+        The replay asks on the next turn, so it reads what the tab concluded.
+        """
+        ask = tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        lines: List[str] = []
+        tab.add_text_to_display.connect(lambda text, source: lines.append(text))
+        sequence = self._start(
+            tab, [_entry("compute", [0]), _entry("draw", "b")], qtbot
+        )
+
+        self._end_run(tab, sequence, 0)
+        tab.background_failure = "no 1 Hz noise for channel 0"
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["compute:[0]"]
+        assert sequence.failed_at == 0
+        ask.assert_called_once_with(
+            "_Tab", 1, 2, "compute", "no 1 Hz noise for channel 0", ""
+        )
+        assert lines == ["replay stopped at step 1 of 2: no 1 Hz noise for channel 0"]
+
+    def test_the_base_has_no_failure_to_report(self, tab: _Tab) -> None:
+        assert MetaController.background_step_failure(tab) == ""
 
 
 class TestStop:
