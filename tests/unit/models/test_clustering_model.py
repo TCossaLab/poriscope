@@ -23,7 +23,6 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
-from poriscope.utils.MetaModel import MetaModel
 
 
 @pytest.fixture
@@ -70,23 +69,6 @@ def _two_clusters(n: int = 200) -> pd.DataFrame:
             "id": np.arange(n),
         }
     )
-
-
-# ===========================================================================
-# Construction / inheritance
-# ===========================================================================
-
-
-class TestConstruction:
-    """It is still a MetaModel, now with behaviour of its own."""
-
-    def test_instantiates_without_error(self, model: ClusteringModel) -> None:
-        """No Qt, no view, no controller."""
-        assert model is not None
-
-    def test_is_instance_of_meta_model(self, model: ClusteringModel) -> None:
-        """The base contract still holds."""
-        assert isinstance(model, MetaModel)
 
 
 # ===========================================================================

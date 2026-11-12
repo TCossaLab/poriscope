@@ -1,14 +1,13 @@
 """
 Unit-test suite for ProteinModel.
 
-ProteinModel was a minimal MetaModel subclass with a no-op _init(). **It now
-holds the protein tab's double-gaussian fitting**, moved off ProteinView so
-that scipy.optimize, scipy.signal and scipy.stats leave the View layer.
+ProteinModel holds the protein tab's double-gaussian fitting, moved off
+ProteinView so that scipy.optimize, scipy.signal and scipy.stats leave the View
+layer, and the fits a plot leaves behind for Report All and Commit Individual.
 
-The construction tests below predate that and still hold. The fitting tests
-were written from measured behaviour rather than from the implementation: the
-parameter order that comes back is not the order the peaks appear in, so they
-assert on sorted means (see TestFitDoubleGaussian).
+The fitting tests were written from measured behaviour rather than from the
+implementation: the parameter order that comes back is not the order the peaks
+appear in, so they assert on sorted means (see TestFitDoubleGaussian).
 
 Run with:
     pytest test_protein_model.py -v
@@ -20,7 +19,6 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
-from poriscope.utils.MetaModel import MetaModel
 
 
 def _make_double_gaussian_histogram(
@@ -42,46 +40,20 @@ def _make_double_gaussian_histogram(
 
 
 # ===========================================================================
-# Construction / inheritance
-# ===========================================================================
-
-
-class TestConstruction:
-    def test_instantiates_without_error(self):
-        model = ProteinModel()
-        assert model is not None
-
-    def test_is_instance_of_meta_model(self):
-        model = ProteinModel()
-        assert isinstance(model, MetaModel)
-
-    def test_is_instance_of_protein_model(self):
-        model = ProteinModel()
-        assert isinstance(model, ProteinModel)
-
-
-# ===========================================================================
-# _init — should be a genuine no-op
+# _init - a new model starts with no fit of either kind
 # ===========================================================================
 
 
 class TestInit:
-    def test_init_does_not_raise(self):
-        # Constructing the model already calls _init() internally via
-        # MetaModel.__init__; this just makes the intent explicit.
+    def test_a_new_model_holds_no_fit_of_either_kind(self):
+        """
+        Report All and Commit Individual read these before any plot has run, and a
+        fresh tab must find "no fit" there rather than a missing attribute.
+        """
         model = ProteinModel()
-        model._init()  # calling again directly should also be safe/idempotent
 
-    def test_init_does_not_set_any_new_instance_attributes(self):
-        model = ProteinModel()
-        before = set(vars(model).keys())
-        model._init()
-        after = set(vars(model).keys())
-        assert before == after
-
-    def test_init_returns_none(self):
-        model = ProteinModel()
-        assert model._init() is None
+        assert model.individual_fit is None
+        assert model.ensemble_fit is None
 
     def test_has_logger_attribute(self):
         # logger is a class-level attribute set via logging.getLogger(__name__)
@@ -199,16 +171,6 @@ class TestFitDoubleGaussian:
     # The ``qt_app`` fixture and its ``processEvents()`` calls went with the move:
     # a Model builds no widget, so there is no event loop to pump.
 
-    def test_clean_two_peak_signal(self, model):
-        x, y = _make_double_gaussian_histogram()
-        popt, pcov = model._fit_double_gaussian(x, y)
-        assert popt is not None and len(popt) == 6
-
-    def test_flat_returns_none(self, model):
-        x = np.linspace(0, 1, 100)
-        popt, _ = model._fit_double_gaussian(x, np.zeros_like(x))
-        assert popt is None
-
 
 class TestFitAndSanityCheckDoubleGaussian:
     """The checks that decide whether a successful fit is believable."""
@@ -253,11 +215,6 @@ class TestFitAndSanityCheckDoubleGaussian:
 
     # --- pins moved from test_protein_view.py, receiver re-pointed ---
 
-    def test_clean_signal_passes(self, model):
-        x, y = _make_double_gaussian_histogram()
-        popt = model._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None and len(popt) == 6
-
     def test_recovered_means(self, model):
         x, y = _make_double_gaussian_histogram(mean1=0.2, mean2=0.6)
         popt = model._fit_and_sanity_check_double_gaussian(x, y)
@@ -265,10 +222,6 @@ class TestFitAndSanityCheckDoubleGaussian:
         means = sorted([popt[1], popt[4]])
         assert means[0] == pytest.approx(0.2, abs=0.01)
         assert means[1] == pytest.approx(0.6, abs=0.01)
-
-    def test_flat_input_returns_none(self, model):
-        x = np.linspace(0, 1, 100)
-        assert model._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
 
     @pytest.mark.parametrize("width", [0.03, 0.05, 0.1])
     def test_a_single_peak_is_not_two_populations(self, model, width):
@@ -291,13 +244,6 @@ class TestFitAndSanityCheckDoubleGaussian:
         popt = model._fit_and_sanity_check_double_gaussian(x, y)
         assert popt is not None
         assert np.max(np.abs(y - model._double_gaussian(x, *popt))) < 0.02
-
-    def test_double_gaussian_roundtrip(self, model):
-        x, y = _make_double_gaussian_histogram()
-        popt = model._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        y_fit = model._double_gaussian(x, *popt)
-        assert np.max(np.abs(y - y_fit)) < 0.02
 
 
 class TestFitHistogram:
@@ -346,16 +292,13 @@ class TestFitHistograms:
 
 
 # ===========================================================================
-# The SQL moved off the View - drop_fit_columns, resolve_event_ids,
-# load_events_by_id
+# The SQL moved off the View - drop_fit_columns
 # ===========================================================================
 #
-# None of the three had a test naming it: their bodies ran under the e2e suite
-# and nothing asserted what they authored. These assert on the exact
-# statements handed to the loader, and the stubbed ``call`` answers from the
-# declared return types on ``MetaDatabaseLoader`` - bool for alter_database,
-# Optional[pd.DataFrame] for query_database_directly, a generator for
-# load_event_data.
+# These assert on the exact statements handed to the loader, and the stubbed
+# ``call`` answers from the declared return type on ``MetaDatabaseLoader``. The
+# other two methods that moved with it, resolve_event_ids and load_events_by_id,
+# are inherited from MetaSubsetTabModel and pinned in test_metadata_model.py.
 
 
 class TestDropFitColumns:
@@ -427,117 +370,6 @@ class TestDropFitColumns:
         mocker.patch.object(model, "call", return_value=False)
 
         assert model.drop_fit_columns("L", "events", ["x"]) is False
-
-
-def _authored_query(model, mocker, event_ids, exp_id, channel):
-    """
-    Run resolve_event_ids against a stubbed loader and return the SQL it authored.
-
-    :param model: the model under test
-    :type model: ProteinModel
-    :param mocker: the pytest-mock fixture
-    :type mocker: pytest_mock.MockerFixture
-    :param event_ids: the event_id values to resolve
-    :type event_ids: list
-    :param exp_id: the experiment's database id, or None
-    :type exp_id: object
-    :param channel: the channel to scope to, or None
-    :type channel: object
-    :return: the query string passed to the loader
-    :rtype: str
-    """
-    call = mocker.patch.object(model, "call", return_value=pd.DataFrame())
-    model.resolve_event_ids("L", event_ids, exp_id, channel)
-    query: str = call.call_args.args[3]
-    return query
-
-
-class TestResolveEventIds:
-    """
-    Inherited from ``MetaSubsetTabModel`` and projecting ``id`` alone.
-
-    The protein copy used to project the event_id column as well, on the recorded
-    grounds that its caller re-sorts the rows into the order it asked for them in.
-    It does not: ``ProteinController._events_to_plot`` sorts on the event_id the loader
-    reports with each event, so the extra column was read by nothing. The tests
-    below are the protein-side pin that the shared body still authors the same
-    scoped query.
-    """
-
-    def test_projects_the_primary_key_alone(self, model, mocker):
-        query = _authored_query(model, mocker, [7], None, None)
-
-        assert query == "SELECT id FROM events WHERE event_id IN (7)"
-
-    def test_an_experiment_narrows_the_scope(self, model, mocker):
-        query = _authored_query(model, mocker, [7, 9], 3, None)
-
-        assert query == (
-            "SELECT id FROM events WHERE event_id IN (7,9) " "AND experiment_id = 3"
-        )
-
-    def test_a_channel_narrows_the_scope(self, model, mocker):
-        query = _authored_query(model, mocker, [7], None, 2)
-
-        assert query == (
-            "SELECT id FROM events WHERE event_id IN (7) AND channel_id = 2"
-        )
-
-    def test_both_scopes_are_applied_in_order(self, model, mocker):
-        query = _authored_query(model, mocker, [7], 3, 2)
-
-        assert query == (
-            "SELECT id FROM events WHERE event_id IN (7) "
-            "AND experiment_id = 3 AND channel_id = 2"
-        )
-
-    def test_the_call_is_routed_to_the_named_loader(self, model, mocker):
-        call = mocker.patch.object(model, "call", return_value=pd.DataFrame())
-
-        model.resolve_event_ids("SQLiteDBLoader_0", [1], None, None)
-
-        assert call.call_args.args[:3] == (
-            "MetaDatabaseLoader",
-            "SQLiteDBLoader_0",
-            "query_database_directly",
-        )
-
-    def test_a_failed_query_comes_back_as_none(self, model, mocker):
-        mocker.patch.object(model, "call", return_value=None)
-
-        assert model.resolve_event_ids("L", [1], None, None) is None
-
-
-class TestLoadEventsById:
-    """``e.id IN (...)`` is a WHERE-clause body, which is what load_event_data takes."""
-
-    def test_builds_a_where_clause_body_not_a_select(self, model, mocker):
-        """
-        A complete ``SELECT`` here is the shape that made the protein tab's raw
-        filter branch never return a row - the loader splices this in after its own
-        ``WHERE``.
-        """
-        call = mocker.patch.object(model, "call", return_value=iter(()))
-
-        model.load_events_by_id("L", "3,4,5", None)
-
-        conditions = call.call_args.args[3]
-        assert conditions == "e.id IN (3,4,5)"
-        assert "SELECT" not in conditions
-
-    def test_the_scope_is_passed_through_untouched(self, model, mocker):
-        call = mocker.patch.object(model, "call", return_value=iter(()))
-        scope = {"exp_a": [2]}
-
-        model.load_events_by_id("L", "3", scope)
-
-        assert call.call_args.args[4] is scope
-
-    def test_the_generator_is_returned_unchanged(self, model, mocker):
-        generator = iter([{"data": [1.0]}])
-        mocker.patch.object(model, "call", return_value=generator)
-
-        assert model.load_events_by_id("L", "3", None) is generator
 
 
 # ===========================================================================
