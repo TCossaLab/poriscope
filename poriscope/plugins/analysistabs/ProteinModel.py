@@ -41,6 +41,7 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from matplotlib.path import Path
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
 from scipy.stats import t
@@ -60,6 +61,8 @@ class EnsembleFit:
     :ivar sizes: does bins refer to a bin width
     :ivar prolate: the prolate solutions sampled from the fit
     :ivar oblate: the oblate solutions sampled from the fit
+    :ivar prolate_reachable_fraction: the share of the fit some prolate spheroid can produce
+    :ivar oblate_reachable_fraction: the share of the fit some oblate spheroid can produce
     """
 
     params: Any
@@ -67,6 +70,8 @@ class EnsembleFit:
     sizes: bool
     prolate: pd.DataFrame
     oblate: pd.DataFrame
+    prolate_reachable_fraction: float
+    oblate_reachable_fraction: float
 
 
 @inherit_docstrings
@@ -76,6 +81,21 @@ class ProteinModel(MetaSubsetTabModel):
     """
 
     logger = logging.getLogger(__name__)
+
+    # The geometry space the sampler proposes from. The reachable region is traced
+    # from the same limits, so the two cannot describe different spaces.
+    #: The smallest volume proposed, in nm^3: nothing smaller is visible in any pore.
+    MIN_VOLUME = 1.0
+    #: The largest prolate shape factor proposed, short of an impossible 1-D string.
+    MAX_PROLATE_SHAPE = 50.0
+    #: The smallest oblate shape factor proposed, short of an impossible 2-D sheet.
+    MIN_OBLATE_SHAPE = 0.02
+    #: No blockage sigma is taken as narrower than this fraction of its mean.
+    MIN_RELATIVE_STD = 0.01
+    #: Points along each edge of the reachable region's boundary.
+    REGION_EDGE_POINTS = 100
+    #: Quadrature points per axis across a fit's +/-4 sigma.
+    REACH_GRID_POINTS = 65
 
     @log(logger=logger)
     @override
@@ -422,18 +442,28 @@ class ProteinModel(MetaSubsetTabModel):
         one removes its row from the ``columns`` metadata table, which is what tells
         the rest of the application the column exists.
 
+        Only the columns that table lists are dropped. A fit committed before a column
+        was added to the set lacks it, and SQLite refuses to drop a missing column,
+        which would roll back the whole replacement.
+
         :param loader: the database loader's plugin key
         :type loader: str
         :param table: the table the fit columns are in
         :type table: str
-        :param columns: the fit columns to remove
+        :param columns: the fit columns to remove, where the table has them
         :type columns: Sequence[str]
-        :return: True if the loader reported success
+        :return: True if the loader reported success, False if it refused or could not list the table's columns
         :rtype: bool
         """
+        listed: Optional[List[str]] = self.call(
+            "MetaDatabaseLoader", loader, "get_column_names_by_table", table
+        )
+        if listed is None:
+            return False
+        present = [column for column in columns if column in listed]
         queries = [
-            f"ALTER TABLE {table} DROP COLUMN {column}" for column in columns
-        ] + [f"DELETE FROM columns WHERE name = '{column}'" for column in columns]
+            f"ALTER TABLE {table} DROP COLUMN {column}" for column in present
+        ] + [f"DELETE FROM columns WHERE name = '{column}'" for column in present]
         status: bool = self.call(
             "MetaDatabaseLoader", loader, "alter_database", queries
         )
@@ -848,7 +878,7 @@ class ProteinModel(MetaSubsetTabModel):
         highest_blockage = mean_max + cutoff_std * std_max
         V_max = highest_blockage * K / gamma_min
 
-        V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
+        V_min = self.MIN_VOLUME
 
         if V_min >= V_max:
             V_max = V_min * 10.0
@@ -876,9 +906,11 @@ class ProteinModel(MetaSubsetTabModel):
 
                 V_prop = V_prop_raw[valid_mask]
 
-                # Clip the upper bound to a physical maximum (e.g., m=50.0)
+                # Clip the upper bound to a physical maximum
                 # to prevent sampling impossible "1D string" geometries
-                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1, 50.0)
+                m_upper_bounds = np.clip(
+                    m_upper_bounds_raw[valid_mask], 1, self.MAX_PROLATE_SHAPE
+                )
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
@@ -892,9 +924,11 @@ class ProteinModel(MetaSubsetTabModel):
 
                 V_prop = V_prop_raw[valid_mask]
 
-                # Clip the lower bound to a physical minimum (e.g., m=0.01)
+                # Clip the lower bound to a physical minimum
                 # to prevent divide-by-zero errors and impossible "2D sheet" geometries
-                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 1)
+                m_lower_bounds = np.clip(
+                    m_lower_bounds_raw[valid_mask], self.MIN_OBLATE_SHAPE, 1
+                )
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
@@ -922,8 +956,8 @@ class ProteinModel(MetaSubsetTabModel):
 
             # 3. Calculate probability
             # Use safe standard deviations to prevent infinite Z-scores on artificially sharp fits
-            safe_std_max = max(std_max, mean_max * 0.01)
-            safe_std_min = max(std_min, mean_min * 0.01)
+            safe_std_max = self._sampling_std(std_max, mean_max)
+            safe_std_min = self._sampling_std(std_min, mean_min)
 
             z_sq_max = ((dI_max_calc - mean_max) / safe_std_max) ** 2
             z_sq_min = ((dI_min_calc - mean_min) / safe_std_min) ** 2
@@ -1049,6 +1083,152 @@ class ProteinModel(MetaSubsetTabModel):
         return self._vm_frame(prolate_V, prolate_m), self._vm_frame(oblate_V, oblate_m)
 
     @log(logger=logger)
+    def _sampling_std(self, std: float, mean: float) -> float:
+        """
+        The sigma the sampler aims at for one fitted blockage.
+
+        A fit can come back far narrower than the blockage it describes, and a
+        Z-score against it would be all but infinite, so no sigma is taken as
+        narrower than a fixed fraction of its mean.
+
+        :param std: the fitted standard deviation
+        :type std: float
+        :param mean: the fitted mean
+        :type mean: float
+        :return: the standard deviation, raised to the floor where it is below it
+        :rtype: float
+        """
+        return max(std, mean * self.MIN_RELATIVE_STD)
+
+    @log(logger=logger)
+    def _reachable_region(self, d: float, L: float, prolate: bool) -> Optional[Path]:
+        """
+        Every (larger, smaller) blockage pair one family of spheroids can produce in this pore.
+
+        The sampler proposes volumes from ``MIN_VOLUME`` to that of a sphere as wide
+        as the pore's smaller dimension, ``min(d, L)``, and for each volume the shape
+        factors from 1 to the largest whose long axis still fits (capped at
+        ``MAX_PROLATE_SHAPE``), or down to the flattest that does (capped at
+        ``MIN_OBLATE_SHAPE``). The forward map is one-to-one over that space - its
+        Jacobian keeps one sign throughout - so the blockages it can produce are
+        exactly the region enclosed by the image of the space's edge. The fit plays
+        no part: the sampler's fit-dependent upper volume only excludes volumes whose
+        blockage lies beyond the fit's 4 sigma anyway.
+
+        The m = 1 edge is traced a hair off the sphere, where the forward model's
+        shape terms are 0/0.
+
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param prolate: trace the prolate (m > 1) family, or the oblate (m < 1) one
+        :type prolate: bool
+        :return: the region as a closed path in (larger, smaller) blockage, or None if no volume fits the pore
+        :rtype: Optional[Path]
+        """
+        sphere_volume = np.pi * min(d, L) ** 3 / 6.0
+        if sphere_volume <= self.MIN_VOLUME:
+            return None
+        near_sphere = 1e-6
+        volumes = np.geomspace(self.MIN_VOLUME, sphere_volume, self.REGION_EDGE_POINTS)
+        if prolate:
+            sphere = 1.0 + near_sphere
+            far_edge = np.clip(
+                np.sqrt(sphere_volume / volumes), sphere, self.MAX_PROLATE_SHAPE
+            )
+        else:
+            sphere = 1.0 - near_sphere
+            far_edge = np.clip(volumes / sphere_volume, self.MIN_OBLATE_SHAPE, sphere)
+        # Out along the sphere edge, back along the far edge; the closing segment is
+        # the smallest volume's edge.
+        edge_volumes = np.concatenate([volumes, volumes[::-1]])
+        edge_shapes = np.concatenate([np.full_like(volumes, sphere), far_edge[::-1]])
+        dI_max, dI_min = self._compute_theoretical_blockages(
+            edge_volumes, edge_shapes, d, L
+        )
+        vertices = np.column_stack([dI_max, dI_min])
+        return Path(np.vstack([vertices, vertices[:1]]), closed=True)
+
+    @log(logger=logger)
+    def _reachable_fraction(
+        self,
+        region: Optional[Path],
+        mean_max: float,
+        std_max: float,
+        mean_min: float,
+        std_min: float,
+    ) -> float:
+        """
+        The share of a fitted blockage Gaussian that lies inside a reachable region.
+
+        Integrated on a fixed grid over +/-4 sigma on each axis, weighted by the
+        Gaussian, so the answer is deterministic and needs no proposals. The sigmas
+        are the ones the sampler aims at, so the fraction describes the target the
+        ensemble beside it was drawn from.
+
+        :param region: the reachable region, or None when no spheroid fits the pore
+        :type region: Optional[Path]
+        :param mean_max: the mean of the larger blockage
+        :type mean_max: float
+        :param std_max: the standard deviation of the larger blockage
+        :type std_max: float
+        :param mean_min: the mean of the smaller blockage
+        :type mean_min: float
+        :param std_min: the standard deviation of the smaller blockage
+        :type std_min: float
+        :return: the fraction, from 0 to 1
+        :rtype: float
+        """
+        if region is None:
+            return 0.0
+        z = np.linspace(-4.0, 4.0, self.REACH_GRID_POINTS)
+        grid_max, grid_min = np.meshgrid(
+            mean_max + self._sampling_std(std_max, mean_max) * z,
+            mean_min + self._sampling_std(std_min, mean_min) * z,
+            indexing="ij",
+        )
+        inside = region.contains_points(
+            np.column_stack([grid_max.ravel(), grid_min.ravel()])
+        )
+        profile = np.exp(-0.5 * z**2)
+        weights = np.outer(profile, profile).ravel()
+        return float(weights[inside].sum() / weights.sum())
+
+    @log(logger=logger)
+    def reachable_fractions(
+        self, popt: npt.NDArray[np.float64], d: float, L: float
+    ) -> Tuple[float, float]:
+        """
+        How much of one fit some prolate, and some oblate, spheroid can produce.
+
+        The reverse sampler's answer to drawing blockage pairs from the fit and
+        counting the ones a spheroid can produce: near 1 for a fit well inside the
+        geometry space, near 0 for one no spheroid in this pore matches, and about
+        a half for a narrow fit on its edge. The sampler's own acceptance rate does
+        not measure this, because every proposal it makes is producible by
+        construction.
+
+        :param popt: the six fitted parameters, two amplitude/mean/sigma triples
+        :type popt: npt.NDArray[np.float64]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :return: the prolate and the oblate fraction
+        :rtype: Tuple[float, float]
+        """
+        blockages = self._ordered_blockages(popt)
+        return (
+            self._reachable_fraction(
+                self._reachable_region(d, L, prolate=True), *blockages
+            ),
+            self._reachable_fraction(
+                self._reachable_region(d, L, prolate=False), *blockages
+            ),
+        )
+
+    @log(logger=logger)
     def sample_event_geometries(
         self,
         fits: Sequence[
@@ -1069,7 +1249,8 @@ class ProteinModel(MetaSubsetTabModel):
         could not be built and one whose fit was refused drop out the same way and
         neither shifts the others. The per-event row is the median of that event's
         own ensembles, which is what the fit columns written back to the database
-        hold.
+        hold, alongside the share of its fit each family can reach. Both reachable
+        regions depend only on the pore, so they are traced once for every event.
 
         :param fits: one (fit parameters, fitted curve) pair per event
         :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
@@ -1089,6 +1270,8 @@ class ProteinModel(MetaSubsetTabModel):
         prolate_frames: List[pd.DataFrame] = []
         oblate_frames: List[pd.DataFrame] = []
         rows: List[Dict[str, Any]] = []
+        prolate_region = self._reachable_region(d, L, prolate=True)
+        oblate_region = self._reachable_region(d, L, prolate=False)
 
         for index, event in enumerate(event_data):
             # An event with no histogram had no fit either; skipping it here is what
@@ -1119,6 +1302,12 @@ class ProteinModel(MetaSubsetTabModel):
                     "min_fractional_blockage_std": std_min,
                     "max_fractional_blockage": mean_max,
                     "max_fractional_blockage_std": std_max,
+                    "prolate_reachable_fraction": self._reachable_fraction(
+                        prolate_region, mean_max, std_max, mean_min, std_min
+                    ),
+                    "oblate_reachable_fraction": self._reachable_fraction(
+                        oblate_region, mean_max, std_max, mean_min, std_min
+                    ),
                 }
             )
 

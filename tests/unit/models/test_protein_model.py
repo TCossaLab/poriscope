@@ -301,20 +301,49 @@ class TestFitHistograms:
 # are inherited from MetaSubsetTabModel and pinned in test_metadata_model.py.
 
 
+def _loader(listed, verdict=True):
+    """
+    A stand-in for ``MetaModel.call`` that answers the two loader methods the drop uses.
+
+    :param listed: what ``get_column_names_by_table`` answers
+    :type listed: object
+    :param verdict: what ``alter_database`` answers
+    :type verdict: bool
+    :return: a function with ``call``'s signature
+    :rtype: object
+    """
+
+    def call(metaclass, key, method, *args):
+        return listed if method == "get_column_names_by_table" else verdict
+
+    return call
+
+
 class TestDropFitColumns:
     """
     Two statements per column: one drops it from the events table, one removes its
     row from the ``columns`` metadata table, which is what tells the rest of the
     application the column exists. Dropping only the first leaves the column
-    advertised and gone.
+    advertised and gone. Only the columns the table has are dropped, so a fit
+    committed before a column was added can still be replaced.
     """
 
+    def _statements(self, call):
+        """
+        :param call: the patched ``call``
+        :type call: object
+        :return: the statements sent to ``alter_database``
+        :rtype: list
+        """
+        (alter,) = [c for c in call.call_args_list if c.args[2] == "alter_database"]
+        return alter.args[3]
+
     def test_both_statements_are_issued_for_one_column(self, model, mocker):
-        call = mocker.patch.object(model, "call", return_value=True)
+        call = mocker.patch.object(model, "call", side_effect=_loader(["fit_a"]))
 
         model.drop_fit_columns("L", "events", ["fit_a"])
 
-        assert call.call_args.args[3] == [
+        assert self._statements(call) == [
             "ALTER TABLE events DROP COLUMN fit_a",
             "DELETE FROM columns WHERE name = 'fit_a'",
         ]
@@ -326,26 +355,58 @@ class TestDropFitColumns:
         would look equivalent and is not: a failure partway through would leave a
         different half-state.
         """
-        call = mocker.patch.object(model, "call", return_value=True)
+        call = mocker.patch.object(model, "call", side_effect=_loader(["a", "b"]))
 
         model.drop_fit_columns("L", "events", ["a", "b"])
 
-        assert call.call_args.args[3] == [
+        assert self._statements(call) == [
             "ALTER TABLE events DROP COLUMN a",
             "ALTER TABLE events DROP COLUMN b",
             "DELETE FROM columns WHERE name = 'a'",
             "DELETE FROM columns WHERE name = 'b'",
         ]
 
-    def test_the_table_name_is_used_as_given(self, model, mocker):
-        call = mocker.patch.object(model, "call", return_value=True)
+    def test_a_column_the_table_does_not_have_is_not_dropped(self, model, mocker):
+        """
+        A fit committed before a column existed lacks it, and SQLite refuses to drop
+        a missing column, which used to roll the whole replacement back.
+        """
+        call = mocker.patch.object(
+            model, "call", side_effect=_loader(["id", "old_a", "unrelated"])
+        )
 
-        model.drop_fit_columns("L", "sublevels", ["x"])
+        model.drop_fit_columns("L", "events", ["old_a", "new_b"])
 
-        assert call.call_args.args[3][0] == "ALTER TABLE sublevels DROP COLUMN x"
+        assert self._statements(call) == [
+            "ALTER TABLE events DROP COLUMN old_a",
+            "DELETE FROM columns WHERE name = 'old_a'",
+        ]
+
+    def test_the_columns_are_listed_for_the_table_being_altered(self, model, mocker):
+        call = mocker.patch.object(model, "call", side_effect=_loader(["x"]))
+
+        model.drop_fit_columns("SQLiteDBLoader_0", "sublevels", ["x"])
+
+        assert call.call_args_list[0].args == (
+            "MetaDatabaseLoader",
+            "SQLiteDBLoader_0",
+            "get_column_names_by_table",
+            "sublevels",
+        )
+        assert self._statements(call)[0] == "ALTER TABLE sublevels DROP COLUMN x"
+
+    def test_a_failed_listing_drops_nothing_and_says_so(self, model, mocker):
+        """
+        Without the listing the drop cannot tell which columns are safe to name, and
+        guessing would either fail in SQLite or leave old columns behind.
+        """
+        call = mocker.patch.object(model, "call", side_effect=_loader(None))
+
+        assert model.drop_fit_columns("L", "events", ["x"]) is False
+        assert [c.args[2] for c in call.call_args_list] == ["get_column_names_by_table"]
 
     def test_the_call_is_routed_to_alter_database(self, model, mocker):
-        call = mocker.patch.object(model, "call", return_value=True)
+        call = mocker.patch.object(model, "call", side_effect=_loader(["x"]))
 
         model.drop_fit_columns("SQLiteDBLoader_0", "events", ["x"])
 
@@ -356,18 +417,18 @@ class TestDropFitColumns:
         )
 
     def test_no_columns_issues_no_statements(self, model, mocker):
-        call = mocker.patch.object(model, "call", return_value=True)
+        call = mocker.patch.object(model, "call", side_effect=_loader(["x"]))
 
         model.drop_fit_columns("L", "events", [])
 
-        assert call.call_args.args[3] == []
+        assert self._statements(call) == []
 
     def test_the_loaders_verdict_is_returned(self, model, mocker):
         """
         A refused write must not read as a success - the caller announces new columns
         to the other tabs on the strength of this.
         """
-        mocker.patch.object(model, "call", return_value=False)
+        mocker.patch.object(model, "call", side_effect=_loader(["x"], verdict=False))
 
         assert model.drop_fit_columns("L", "events", ["x"]) is False
 
@@ -1064,6 +1125,39 @@ class TestSampleEventGeometries:
 
         assert fit_data["id"].tolist() == [7]
         assert np.isnan(fit_data.iloc[0]["prolate_volume"])
+        assert fit_data.iloc[0]["prolate_reachable_fraction"] == 0.0
+        assert fit_data.iloc[0]["oblate_reachable_fraction"] == 0.0
+
+    def test_each_row_carries_the_fraction_its_own_fit_reaches(self, model):
+        """
+        The two fractions are the event's own, in the same row as its geometry: a
+        reachable fit and an unreachable one side by side keep their own values.
+        """
+        reachable = _fit_at(model, 50.0, 2.0, 10.0, 20.0, 0.05)
+        too_long = _fit_at(model, 200.0, 2.0, 10.0, 20.0, 0.05)
+
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [(reachable, None), (too_long, None)],
+            [_histogram_pair(), _histogram_pair()],
+            [{"id": 1}, {"id": 2}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        rows = fit_data.set_index("id")
+        for event_id, popt in ((1, reachable), (2, too_long)):
+            prolate, oblate = model.reachable_fractions(popt, 10.0, 20.0)
+            assert rows.loc[event_id, "prolate_reachable_fraction"] == pytest.approx(
+                prolate
+            )
+            assert rows.loc[event_id, "oblate_reachable_fraction"] == pytest.approx(
+                oblate
+            )
+        assert rows.loc[1, "prolate_reachable_fraction"] > 0.98
+        # Too long for a prolate spheroid, but an oblate one of that volume fits.
+        assert rows.loc[2, "prolate_reachable_fraction"] < 0.05
+        assert rows.loc[2, "oblate_reachable_fraction"] > 0.98
 
 
 class TestSampleVmSolutions:
@@ -1111,6 +1205,277 @@ class TestSampleVmSolutions:
         )
 
         assert df_prolate.empty and df_oblate.empty
+
+
+# ===========================================================================
+# reachable_fractions - how much of a fit any spheroid can produce
+# ===========================================================================
+#
+# The oracle and the domain below are written out here rather than read from the
+# Model, so that a change to the sampler's limits or to the Model's region shows up
+# as a disagreement instead of moving both sides together.
+
+
+def _domain(x, prolate, n):
+    """
+    A grid over the interior of the sampler's (V, m) domain for a pore of size x.
+
+    :param x: the smaller of the pore's diameter and length, in nm
+    :type x: float
+    :param prolate: prolate (m > 1) or oblate (m < 1)
+    :type prolate: bool
+    :param n: points per axis
+    :type n: int
+    :return: volumes and shape factors, flattened
+    :rtype: tuple
+    """
+    v_sphere = np.pi * x**3 / 6.0
+    V = np.geomspace(1.0, v_sphere * (1 - 1e-6), n)
+    u = np.linspace(1e-4, 1 - 1e-4, n)
+    VV, UU = np.meshgrid(V, u, indexing="ij")
+    if prolate:
+        top = np.clip(np.sqrt(v_sphere / VV), 1 + 2e-4, 50.0)
+        MM = 1 + 1e-4 + UU * (top - 1 - 1e-4)
+    else:
+        low = np.clip(VV / v_sphere, 0.02, 1 - 2e-4)
+        MM = low + UU * (1 - 1e-4 - low)
+    return VV.ravel(), MM.ravel()
+
+
+def _binned_reach(model, d, L, prolate, volume, mean_max, std_max, mean_min, std_min):
+    """
+    Brute-force reach: forward-map uniform proposals and mark the bins they land in.
+
+    A bin straddling the edge of the reachable region counts as wholly reachable, so
+    this reads high of the exact answer by about a bin's share of the edge. It reads
+    low where too few proposals land in the fit's box: over every volume, with m
+    uniform, 142 of 500,000 reached a fit on the flat oblate edge. So the volumes are
+    drawn from a window around the fit's own, quartered and quadrupled, which still
+    holds every geometry that lands within the fit's 4 sigma at these widths, and m
+    log-uniformly, which crowds the long and flat edges where the map stretches.
+    Any proposal density over the geometry space marks the same bins, given enough
+    proposals.
+
+    :param model: the Model, for its forward map only
+    :type model: ProteinModel
+    :param d: the pore diameter in nm
+    :type d: float
+    :param L: the pore length in nm
+    :type L: float
+    :param prolate: prolate (m > 1) or oblate (m < 1)
+    :type prolate: bool
+    :param volume: the volume the fit was made from, in nm^3
+    :type volume: float
+    :param mean_max: the larger blockage
+    :type mean_max: float
+    :param std_max: its sigma
+    :type std_max: float
+    :param mean_min: the smaller blockage
+    :type mean_min: float
+    :param std_min: its sigma
+    :type std_min: float
+    :return: the fraction of the Gaussian lying in bins some proposal reached
+    :rtype: float
+    """
+    rng = np.random.default_rng(2)
+    x = min(d, L)
+    V = rng.uniform(max(1.0, volume / 4), volume * 4, 500_000)
+    if prolate:
+        bound = np.sqrt(np.pi * x**3 / (6 * V))
+        V = V[bound >= 1]
+        m = np.exp(rng.uniform(0, np.log(np.clip(bound[bound >= 1], 1, 50.0))))
+    else:
+        bound = 6 * V / (np.pi * x**3)
+        V = V[bound <= 1]
+        m = np.exp(rng.uniform(np.log(np.clip(bound[bound <= 1], 0.02, 1)), 0))
+    dmax, dmin = model._compute_theoretical_blockages(V, m, d, L)
+    edges_max = np.linspace(mean_max - 4 * std_max, mean_max + 4 * std_max, 65)
+    edges_min = np.linspace(mean_min - 4 * std_min, mean_min + 4 * std_min, 65)
+    hits, _, _ = np.histogram2d(dmax, dmin, [edges_max, edges_min])
+    gx = rng.normal(mean_max, std_max, 200_000)
+    gy = rng.normal(mean_min, std_min, 200_000)
+    ix = np.digitize(gx, edges_max) - 1
+    iy = np.digitize(gy, edges_min) - 1
+    inside = (ix >= 0) & (ix < 64) & (iy >= 0) & (iy < 64)
+    return float((hits[ix[inside], iy[inside]] > 0).sum() / gx.size)
+
+
+def _fit_at(model, V, m, d, L, relative_std):
+    """
+    The double-Gaussian fit a spheroid of this geometry would leave, with sigmas set
+    as a fraction of each mean.
+
+    A fit names its larger mean the maximum, which near m = 1 is not always the
+    forward model's ``dI_max``: the two correction terms differ, and for a near-sphere
+    ``dI_max`` comes out a fraction of a percent below ``dI_min``.
+
+    :param model: the Model, for its forward map only
+    :type model: ProteinModel
+    :param V: the volume in nm^3
+    :type V: float
+    :param m: the shape factor
+    :type m: float
+    :param d: the pore diameter in nm
+    :type d: float
+    :param L: the pore length in nm
+    :type L: float
+    :param relative_std: each sigma as a fraction of its mean
+    :type relative_std: float
+    :return: (amp1, mean1, std1, amp2, mean2, std2), the larger blockage first
+    :rtype: np.ndarray
+    """
+    dmax, dmin = model._compute_theoretical_blockages(
+        np.array([V]), np.array([m]), d, L
+    )
+    mean_max, mean_min = sorted((float(dmax[0]), float(dmin[0])), reverse=True)
+    return np.array(
+        [
+            1.0,
+            mean_max,
+            relative_std * mean_max,
+            1.0,
+            mean_min,
+            relative_std * mean_min,
+        ]
+    )
+
+
+class TestReachableFractions:
+    """
+    The share of a fitted blockage Gaussian that some spheroid in the sampler's
+    geometry space can produce: the reverse-sampler analogue of drawing blockage pairs
+    and counting the ones with a (V, m) root.
+    """
+
+    def test_a_fit_well_inside_the_geometry_space_is_wholly_reachable(self, model):
+        prolate, _ = model.reachable_fractions(
+            _fit_at(model, 50.0, 2.0, 10.0, 20.0, 0.05), 10.0, 20.0
+        )
+        _, oblate = model.reachable_fractions(
+            _fit_at(model, 50.0, 0.5, 10.0, 20.0, 0.05), 10.0, 20.0
+        )
+
+        assert prolate > 0.98
+        assert oblate > 0.98
+
+    def test_a_prolate_too_long_for_the_pore_is_almost_unreachable(self, model):
+        """A V = 200, m = 2 spheroid is longer than the 10 nm pore admits."""
+        prolate, _ = model.reachable_fractions(
+            _fit_at(model, 200.0, 2.0, 10.0, 20.0, 0.05), 10.0, 20.0
+        )
+
+        assert prolate < 0.05
+
+    @pytest.mark.parametrize("volume", [50.0, 200.0])
+    def test_a_fit_centred_on_the_longest_shape_that_fits_is_half_reachable(
+        self, model, volume
+    ):
+        """
+        The longest prolate, and the flattest oblate, spheroid of a volume that still
+        fits the 10 nm pore lie on the far edge of each family's geometry space, so a
+        narrow fit centred there has half its mass on each side.
+        """
+        sphere_volume = np.pi * 10.0**3 / 6
+        longest = _fit_at(
+            model, volume, np.sqrt(sphere_volume / volume), 10.0, 20.0, 0.02
+        )
+        flattest = _fit_at(model, volume, volume / sphere_volume, 10.0, 20.0, 0.02)
+
+        assert model.reachable_fractions(longest, 10.0, 20.0)[0] == pytest.approx(
+            0.5, abs=0.02
+        )
+        assert model.reachable_fractions(flattest, 10.0, 20.0)[1] == pytest.approx(
+            0.5, abs=0.02
+        )
+
+    def test_the_peaks_may_arrive_in_either_order(self, model):
+        popt = _fit_at(model, 50.0, 2.0, 10.0, 20.0, 0.15)
+        swapped = np.concatenate([popt[3:], popt[:3]])
+
+        assert model.reachable_fractions(swapped, 10.0, 20.0) == pytest.approx(
+            model.reachable_fractions(popt, 10.0, 20.0)
+        )
+
+    def test_a_pore_too_small_for_any_spheroid_reaches_nothing(self, model):
+        """With min(d, L) = 1 nm no sampled volume fits, and the sampler draws nothing."""
+        popt = np.array([1.0, 0.98, 0.01, 1.0, 0.97, 0.01])
+
+        assert model.reachable_fractions(popt, 1.0, 1.0) == (0.0, 0.0)
+
+    def test_a_sigma_below_the_sampler_floor_is_raised_to_it(self, model):
+        """
+        The sampler never aims at a Gaussian narrower than 1% of its mean, and the
+        fraction describes the target the ensemble was drawn from. The fit is centred
+        just beyond the longest prolate shape that fits, where the width decides the
+        answer: taken at face value, a sigma of 1e-6 would reach nothing.
+        """
+        longest = np.sqrt(np.pi * 10.0**3 / 6 / 100.0)
+        popt = _fit_at(model, 100.0, longest * 1.02, 10.0, 20.0, 0.01)
+        narrow = popt.copy()
+        narrow[[2, 5]] = 1e-6
+
+        at_floor = model.reachable_fractions(popt, 10.0, 20.0)[0]
+        assert 0.1 < at_floor < 0.9
+        assert model.reachable_fractions(narrow, 10.0, 20.0)[0] == pytest.approx(
+            at_floor
+        )
+
+    @pytest.mark.parametrize(
+        ("V", "m", "d", "L", "relative_std", "prolate"),
+        [
+            (50.0, 2.0, 10.0, 20.0, 0.15, True),
+            (200.0, 2.0, 10.0, 20.0, 0.15, True),
+            (100.0, 2.2882, 10.0, 20.0, 0.05, True),
+            (50.0, 0.5, 10.0, 20.0, 0.15, False),
+            (20.0, 40.0, 20.0, 30.0, 0.05, True),
+            (50.0, 2.0, 20.0, 30.0, 0.15, True),
+        ],
+    )
+    def test_agrees_with_the_brute_force_estimate(
+        self, model, V, m, d, L, relative_std, prolate
+    ):
+        """
+        The brute-force estimate over-counts the bins on the region's edge and cannot
+        undercount at these widths, so the exact answer sits at or a little below it.
+        The last two cases use a 20 nm pore, where the m = 50 limit is an edge. The
+        flat oblate edge is left to the half-reachable test: this estimate still read
+        0.469 of its 0.496 there at 2,000,000 proposals, so it would need more than a
+        unit test should spend.
+        """
+        popt = _fit_at(model, V, m, d, L, relative_std)
+        prolate_fraction, oblate_fraction = model.reachable_fractions(popt, d, L)
+        exact = prolate_fraction if prolate else oblate_fraction
+        oracle = _binned_reach(
+            model, d, L, prolate, V, popt[1], popt[2], popt[4], popt[5]
+        )
+
+        assert oracle - 0.04 <= exact <= oracle + 0.005
+
+    @pytest.mark.parametrize(
+        "pore", [(10.0, 20.0), (5.0, 10.0), (20.0, 10.0), (7.0, 30.0)]
+    )
+    @pytest.mark.parametrize("prolate", [True, False])
+    def test_the_forward_map_never_folds_over_the_geometry_space(
+        self, model, pore, prolate
+    ):
+        """
+        The fraction is the Gaussian's mass inside the image of the geometry space's
+        edge, which is the whole reachable region only while the forward map is
+        one-to-one. A Jacobian of one sign everywhere is what makes it so; a change
+        to the forward model that folds the map fails here rather than silently
+        miscounting.
+        """
+        d, L = pore
+        V, m = _domain(min(d, L), prolate, 200)
+        step_V = V * 1e-6
+        step_m = (np.abs(m - 1) * 1e-4 + 1e-9) * (1 if prolate else -1)
+        max0, min0 = model._compute_theoretical_blockages(V, m, d, L)
+        max_V, min_V = model._compute_theoretical_blockages(V + step_V, m, d, L)
+        max_m, min_m = model._compute_theoretical_blockages(V, m + step_m, d, L)
+        jacobian = (max_V - max0) * (min_m - min0) - (max_m - max0) * (min_V - min0)
+
+        assert np.all(np.isfinite(jacobian))
+        assert np.all(jacobian < 0) or np.all(jacobian > 0)
 
 
 #: Seven samples at 3 MHz is 2.333... us; multiplied back it is 6.9999..., which a

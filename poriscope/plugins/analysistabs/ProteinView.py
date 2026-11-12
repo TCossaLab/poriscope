@@ -71,7 +71,7 @@ warnings.filterwarnings(
 )
 
 
-#: The fitted columns ``_commit_fits`` writes, in the order they are written.
+#: The fitted columns ``ProteinController.commit_fits`` writes, in the order they are written.
 #: ``FIT_COLUMN_UNITS`` is index-aligned with it, ``None`` where dimensionless, and
 #: the two are kept beside each other because a column added to one and not the other
 #: silently mislabels every column after it.
@@ -88,6 +88,8 @@ FIT_COLUMNS = [
     "min_fractional_blockage_std",
     "max_fractional_blockage",
     "max_fractional_blockage_std",
+    "prolate_reachable_fraction",
+    "oblate_reachable_fraction",
 ]
 
 #: Units for :py:data:`FIT_COLUMNS`, index-aligned with it.
@@ -100,6 +102,8 @@ FIT_COLUMN_UNITS: List[Optional[str]] = [
     None,
     "nm",
     "nm",
+    None,
+    None,
     None,
     None,
     None,
@@ -409,9 +413,11 @@ class ProteinView(MetaSubsetTabView):
         sizes: bool,
         prolate: pd.DataFrame,
         oblate: pd.DataFrame,
+        prolate_reachable_fraction: float,
+        oblate_reachable_fraction: float,
     ) -> None:
         """
-        Report the Ensemble plot's double-Gaussian fit and V/m sample summaries.
+        Report the Ensemble plot's double-Gaussian fit, how much of it each family can reach, and V/m sample summaries.
 
         Ensemble mode has no per-event id to write these back to the database against, so
         this is a display-only report rather than a database commit. Called by the
@@ -427,6 +433,10 @@ class ProteinView(MetaSubsetTabView):
         :type prolate: pd.DataFrame
         :param oblate: the oblate solutions sampled from the fit
         :type oblate: pd.DataFrame
+        :param prolate_reachable_fraction: the share of the fit some prolate spheroid can produce
+        :type prolate_reachable_fraction: float
+        :param oblate_reachable_fraction: the share of the fit some oblate spheroid can produce
+        :type oblate_reachable_fraction: float
         :return: None
         :rtype: None
         """
@@ -442,6 +452,8 @@ class ProteinView(MetaSubsetTabView):
             f"<b>Ensemble double-Gaussian fit</b> ({bin_desc})",
             f"&nbsp;&nbsp;Peak 1: amplitude={amp1:.4g}, mean={mean1:.4g}, std={std1:.4g}",
             f"&nbsp;&nbsp;Peak 2: amplitude={amp2:.4g}, mean={mean2:.4g}, std={std2:.4g}",
+            f"&nbsp;&nbsp;Reachable fraction: prolate {prolate_reachable_fraction:.3g}, "
+            f"oblate {oblate_reachable_fraction:.3g}",
             "",
         ]
 

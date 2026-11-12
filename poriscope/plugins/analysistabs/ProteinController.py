@@ -380,6 +380,7 @@ class ProteinController(MetaSubsetTabController):
 
         try:
             df_prolate, df_oblate = self.model.sample_vm_solutions(popt, d, L, N)
+            prolate_reach, oblate_reach = self.model.reachable_fractions(popt, d, L)
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to sample the ensemble geometry: {repr(e)}")
             self.add_text_to_display.emit(
@@ -406,7 +407,9 @@ class ProteinController(MetaSubsetTabController):
         fitted["Amplitude"] = curve
         self.view.show_histogram("ensemble", fitted, "Fit")
         self.model.set_ensemble_fit(
-            EnsembleFit(popt, bins, sizes, df_prolate, df_oblate)
+            EnsembleFit(
+                popt, bins, sizes, df_prolate, df_oblate, prolate_reach, oblate_reach
+            )
         )
         self._show_distribution("ensemble", df_prolate, df_oblate, None)
 
@@ -659,7 +662,13 @@ class ProteinController(MetaSubsetTabController):
             self.logger.warning("No ensemble fit available to report")
             return
         self.view.show_ensemble_report(
-            fit.params, fit.bins, fit.sizes, fit.prolate, fit.oblate
+            fit.params,
+            fit.bins,
+            fit.sizes,
+            fit.prolate,
+            fit.oblate,
+            fit.prolate_reachable_fraction,
+            fit.oblate_reachable_fraction,
         )
 
     @log(logger=logger)

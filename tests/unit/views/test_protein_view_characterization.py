@@ -199,6 +199,8 @@ class TestReportEnsembleFit:
         sizes: bool = False,
         prolate: pd.DataFrame = NONE,
         oblate: pd.DataFrame = NONE,
+        prolate_reachable: float = 0.5,
+        oblate_reachable: float = 0.5,
     ) -> str:
         """
         Report a fit and return the text the view pushed to the status panel.
@@ -213,10 +215,22 @@ class TestReportEnsembleFit:
         :type prolate: pd.DataFrame
         :param oblate: the oblate solutions
         :type oblate: pd.DataFrame
+        :param prolate_reachable: the fit's prolate reachable fraction
+        :type prolate_reachable: float
+        :param oblate_reachable: the fit's oblate reachable fraction
+        :type oblate_reachable: float
         :return: the emitted message
         :rtype: str
         """
-        view.show_ensemble_report(self.PARAMS, bins, sizes, prolate, oblate)
+        view.show_ensemble_report(
+            self.PARAMS,
+            bins,
+            sizes,
+            prolate,
+            oblate,
+            prolate_reachable,
+            oblate_reachable,
+        )
         return view.add_text_to_display.emit.call_args.args[0]
 
     def test_both_peaks_are_reported(self, view: ProteinView) -> None:
@@ -269,3 +283,14 @@ class TestReportEnsembleFit:
 
         assert "<b>Prolate</b>" in text
         assert "Oblate" not in text
+
+    def test_both_reachable_fractions_are_reported_even_with_nothing_sampled(
+        self, view: ProteinView
+    ) -> None:
+        """
+        A family that sampled nothing is exactly the case where the fraction says
+        why, so it is reported whether or not the family has a summary.
+        """
+        text = self.reported(view, prolate_reachable=0.9913, oblate_reachable=0.0)
+
+        assert "Reachable fraction: prolate 0.991, oblate 0" in text

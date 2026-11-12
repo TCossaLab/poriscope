@@ -496,7 +496,12 @@ class TestCommitFits:
         # construction lives there, and stubbing the Model method would hide it.
         controller.model = with_fit(
             recording_tab_model(
-                ProteinModel, {"alter_database": True, "add_columns_to_table": True}
+                ProteinModel,
+                {
+                    "get_column_names_by_table": ["id", "not_written"] + FIT_COLUMNS,
+                    "alter_database": True,
+                    "add_columns_to_table": True,
+                },
             )
         )
 
@@ -508,6 +513,41 @@ class TestCommitFits:
             assert f"ALTER TABLE events DROP COLUMN {column}" in queries
             assert f"DELETE FROM columns WHERE name = '{column}'" in queries
         assert not any("id" == q.rsplit(" ", 1)[-1] for q in queries)
+        assert not any("not_written" in q for q in queries)
+
+    def test_a_fit_committed_before_a_column_existed_is_replaced(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        A database holding an older set of fit columns has the old ones dropped and
+        the whole new set written. Naming a column the table lacks makes SQLite
+        refuse the drop, and the replacement used to stop there.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        older = FIT_COLUMNS[:-2]
+        controller.model = with_fit(
+            recording_tab_model(
+                ProteinModel,
+                {
+                    "get_column_names_by_table": ["id"] + older,
+                    "alter_database": True,
+                    "add_columns_to_table": True,
+                },
+            )
+        )
+
+        controller.commit_fits("ldr", "events")
+
+        ((queries,),) = controller.model.calls_to("alter_database")
+        assert sorted(queries) == sorted(
+            [f"ALTER TABLE events DROP COLUMN {column}" for column in older]
+            + [f"DELETE FROM columns WHERE name = '{column}'" for column in older]
+        )
+        ((written, _units, _table),) = controller.model.calls_to("add_columns_to_table")
+        assert list(written.columns) == ["id"] + FIT_COLUMNS
+        controller.view.on_fit_commit_finished.assert_called_once_with("ldr")
 
     def test_a_failed_drop_does_not_write_over_half_a_table(
         self, controller: ProteinController

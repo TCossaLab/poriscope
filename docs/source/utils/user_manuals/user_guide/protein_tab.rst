@@ -70,10 +70,17 @@ Step 7a: Commit Individual Fits
 
 In **Individual** mode, once a fit has been generated, click **Commit Individual** to write the per-event fit results to the database. If the target columns already exist, you'll be prompted before anything is overwritten.
 
+Each event's row gets the median prolate and oblate volume, shape factor and semi-axes, its two fitted blockages and their standard deviations, and two **reachable fractions**:
+
+- ``prolate_reachable_fraction`` and ``oblate_reachable_fraction`` are the share of the event's fitted blockage distribution that some prolate, or oblate, spheroid fitting the pore can produce. Near 1, the fit is well inside what that shape can do; near 0, no spheroid of that shape matches it, and any geometry sampled for it lies on the edge of what that shape can do, nearest the fit; about 0.5, the fit is centred on that edge. The standard deviations are taken as at least 1% of their mean, as the sampling does.
+- To keep only events a shape can explain, commit, then add a subset filter on the column (for example ``prolate_reachable_fraction >= 0.5``), select it, and run **Update Plot** again.
+
+Committing over a fit made by an earlier version replaces it and adds any columns that version did not write.
+
 Step 7b: Report Ensemble Fit
 -------------------------------
 
-In **Ensemble** mode, click **Report All** to display the double-Gaussian fit parameters (peak amplitude, mean, standard deviation) for the current binning, along with median ± standard deviation summaries of Prolate and Oblate volume, ``a``, ``b``, and shape factor ``m`` from the Monte Carlo sample. Ensemble mode has no single event to write a database row against, so this is display-only.
+In **Ensemble** mode, click **Report All** to display the double-Gaussian fit parameters (peak amplitude, mean, standard deviation) for the current binning, the Prolate and Oblate reachable fractions of the fit (see Step 7a), and median ± standard deviation summaries of Prolate and Oblate volume, ``a``, ``b``, and shape factor ``m`` from the Monte Carlo sample. Ensemble mode has no single event to write a database row against, so this is display-only.
 
 Step 8: Apply Filters
 -----------------------

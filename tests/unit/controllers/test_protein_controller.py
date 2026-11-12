@@ -706,7 +706,7 @@ class TestUpdateEnsembleDistribution:
         self._drawing(controller)
         self._fetch(controller, [_event(1), _event(2, rng_seed=1)])
         controller.model.set_ensemble_fit(
-            EnsembleFit(np.ones(6), [25], False, _solutions(), _solutions())
+            EnsembleFit(np.ones(6), [25], False, _solutions(), _solutions(), 1.0, 0.5)
         )
         controller.model.fit_histogram = MagicMock(return_value=(None, None))
 
@@ -777,6 +777,10 @@ class TestFitEnsemble:
         fit = controller.model.ensemble_fit
         np.testing.assert_array_equal(fit.params, self.POPT)
         assert (fit.bins, fit.sizes) == ([25], True)
+        assert (
+            fit.prolate_reachable_fraction,
+            fit.oblate_reachable_fraction,
+        ) == pytest.approx(controller.model.reachable_fractions(self.POPT, 10.0, 12.0))
         mode, drawn, label = controller.view.show_histogram.call_args.args
         assert (mode, label) == ("ensemble", "Fit")
         np.testing.assert_array_equal(drawn["Amplitude"].values, curve)
@@ -824,16 +828,17 @@ class TestReportEnsembleFit:
         controller.view.show_ensemble_report = MagicMock()
         prolate, oblate = _solutions(), _solutions(3)
         controller.model.set_ensemble_fit(
-            EnsembleFit(np.ones(6), [25], False, prolate, oblate)
+            EnsembleFit(np.ones(6), [25], False, prolate, oblate, 0.9, 0.25)
         )
 
         controller.report_ensemble_fit()
 
-        params, bins, sizes, sent_prolate, sent_oblate = (
+        params, bins, sizes, sent_prolate, sent_oblate, reach_p, reach_o = (
             controller.view.show_ensemble_report.call_args.args
         )
         assert (bins, sizes) == ([25], False)
         assert sent_prolate is prolate and sent_oblate is oblate
+        assert (reach_p, reach_o) == (0.9, 0.25)
 
     def test_no_fit_reports_that_rather_than_an_empty_table(
         self, controller, mocker
@@ -855,7 +860,9 @@ class TestReset:
     def test_it_clears_its_mode_s_figures_and_keeps_both_fits(self, controller) -> None:
         controller.view.clear_plot = MagicMock()
         individual = pd.DataFrame({"id": [1]})
-        ensemble = EnsembleFit(np.ones(6), None, False, _solutions(), _solutions())
+        ensemble = EnsembleFit(
+            np.ones(6), None, False, _solutions(), _solutions(), 1.0, 0.5
+        )
         controller.model.set_individual_fit(individual)
         controller.model.set_ensemble_fit(ensemble)
 

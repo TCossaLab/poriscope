@@ -113,6 +113,7 @@
 * **Breaking:** every Protein drawing names the mode whose figures it uses: the recorded reset is `ProteinController.reset(axis_type, mode)`, drawn by `ProteinView.clear_plot`, the View draws through `show_histogram`, `show_solutions`, `show_peak_fits` and `show_ensemble_report`, and its mode-following `fig_hist`, `ax_hist`, `canvas_hist`, `fig_vm`, `ax_vm` and `canvas_vm` properties, `update_plot`, `set_distribution_fits`, `set_ensemble_histogram`, `set_ensemble_geometry_fit` and its `plotted_datasets` and `allowed_*` fields are gone
 * **Breaking:** `MetaSubsetTabView.scatterplot_requested` and `MetaSubsetTabController.filter_scatterplot` are removed; `set_scatterplot` stays
 * **Breaking:** Protein's Plot Events and Plot Histogram are recorded on `ProteinController.plot_events` and `plot_event_histograms`, which take the loader, the event ids the Event ID resolved to, the experiment, the channel, the filter's name and SQL, and Raw or the bins and Sizes, asked for through `plot_events_requested` and `event_histograms_requested`; `event_histogram_fits_requested`, `fit_event_histograms`, `_update_event_histogram` and `_fetch_event_data` are gone, and `_update_event_plot` and `set_event_histogram_fits` are the public `show_events` and `show_event_histograms`
+* **Breaking:** `EnsembleFit` carries `prolate_reachable_fraction` and `oblate_reachable_fraction`, which `ProteinView.show_ensemble_report` takes as two new last arguments
 * **Breaking:** the event-plot round trip leaves the subset-tab bases: `MetaSubsetTabView.event_plot_data_requested`, `set_event_plot_data_generator` and `plot_events_generator`, and `MetaSubsetTabController.load_event_plot_data`, are removed; a Controller calls `fetch_event_plot_data`
 * **Breaking:** recorded actions are declared on Controllers only: `MetaView.record_action` is removed and `MetaController.action_registry` no longer reads the View, so a `@register_action` on a View method is neither recorded nor replayed
 
@@ -209,6 +210,8 @@
 * Code that could never change a result is removed: `_parse_event_indices`'s `allow_floats` (every caller parsed integers), `MetaDatabaseLoader`'s longest-first column sort, and `SQLiteDBLoader`'s object-dtype check
 
 * `ProteinModel._compute_theoretical_blockages` raises for a negative form factor, as its docstring says, instead of returning NaN
+
+* `ProteinModel.reachable_fractions` gives a fit's prolate and oblate reachable fractions, the sampler's geometry limits are the class constants `MIN_VOLUME`, `MAX_PROLATE_SHAPE`, `MIN_OBLATE_SHAPE` and `MIN_RELATIVE_STD`, and `drop_fit_columns` drops only the columns the table lists
 
 * `MetaView.noise_shade` colours a noise value green, orange or red against two thresholds, for every tab that shades a PSD by its 1 Hz noise
 
@@ -471,6 +474,8 @@
 * Clustering's Commit with no clustering yet now says so on the status panel instead of raising an error inside the tab
 
 * Clustering's Merge now says on the status panel how many events it moved, and refuses the same label in both dropdowns instead of redrawing and recording a merge that changed nothing
+
+* The Protein tab's Commit Individual writes `prolate_reachable_fraction` and `oblate_reachable_fraction`, the share of each event's fitted blockage distribution that some prolate or oblate spheroid in the pore can produce, and replaces a fit committed before them; Report All shows both for the Ensemble fit
 
 ### Documentation:
 

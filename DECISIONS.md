@@ -18,6 +18,36 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - Protein's reachable fraction is the fit's mass inside the traced region, not an acceptance rate
+
+**Context.** A user asked for a per-event "success rate", the reverse-sampler analogue of their old
+forward n/N (blockage pairs drawn from the fit that have a (V, m) root). Accepted / proposals inside
+4 sigma stays at 0.065-0.20 whatever the geometry (0.095 for a fit 98% unreachable, 0.126 for one
+wholly reachable): every proposal is producible by construction, and each batch is normalised by its
+own best likelihood. Binning forward-mapped proposals over the fit's box (the user confirmed it tracks
+their old n/N) costs 1.05-1.47 s per family per event at 10M proposals, against 12 ms for both
+families' sampling at N=100, and reads 0.01-0.03 high at the region's edge.
+
+**Decision** (Kyle, 2026-11-12: "prioritize speed"). The forward map's Jacobian keeps one sign over the
+sampler's geometry space (360,000 points, 4 pores, both families), so the reachable region is exactly
+the image of that space's edge; `ProteinModel.reachable_fractions` integrates the fit's Gaussian over it
+on a 65x65 grid across +/-4 sigma, 100 points per edge: 1.9 ms per family, within 0.0006 of a
+257x257, 4,000-point reference. The sigmas are the sampler's floored ones (1% of the mean), so the
+fraction describes the target the ensemble beside it was drawn from; a fit narrower than half a bin is
+rejected before this anyway. A fit names its larger mean the maximum, while near m = 1 the forward
+model's `dI_max` is up to 0.3% below its `dI_min` (V = 200, d = 10, L = 20); the sampler compares them
+the same unsorted way, so the region and the ensemble agree.
+
+**Rejected.** The 4 sigma acceptance ratio (measures the cutoff, not reachability); the binned estimate
+(slow, budget-dependent, biased high, and under-reads the flat oblate corner: 142 of 500,000 proposals
+reached a fit there); a root-finder over drawn blockage pairs (new inversion code, Monte Carlo in N).
+
+**Revisit if** `_compute_theoretical_blockages` changes and `test_the_forward_map_never_folds_over_the_geometry_space`
+fails (sorting `dI_max`/`dI_min` inside it, the tidy-looking fix for the near-sphere swap, folds the map
+and fails it), or the sampler's geometry limits move off the shared class constants.
+
+---
+
 ## 2026-11-12 - The duplication baseline names the duplicated functions; tests that only pinned a copy go
 
 **Context.** The test-value audit found six tests asserting that a base class owns the only copy
