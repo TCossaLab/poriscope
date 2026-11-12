@@ -14,7 +14,7 @@ Coverage targets:
 - _define_event_metadata_units / _define_sublevel_metadata_units
 - construct_fitted_event (None paths)
 - get_plot_features (None paths + Some/All/None plot feature paths)
-- _init / _pre_process_events / _post_process_events / _validate_settings / close_resources
+- get_empty_settings (the shipped defaults)
 - redefine_padding (the uncalled CUSUM detector: its reset rule and edge guard)
 - _gaussian_intersection
 - _fit_double_gaussian_bounded_at_valley
@@ -1456,28 +1456,13 @@ class TestGetPlotFeatures(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Noop overrides
+# get_empty_settings
 # ---------------------------------------------------------------------------
 
 
-class TestNoopOverrides(unittest.TestCase):
+class TestDefaultSettings(unittest.TestCase):
     def setUp(self):
         self.pf = _make_pf()
-
-    def test_init_noop(self):
-        self.assertIsNone(self.pf._init())
-
-    def test_pre_process_noop(self):
-        self.assertIsNone(self.pf._pre_process_events(0))
-
-    def test_post_process_noop(self):
-        self.assertIsNone(self.pf._post_process_events(0))
-
-    def test_validate_settings_noop(self):
-        self.assertIsNone(self.pf._validate_settings({}))
-
-    def test_close_resources_noop(self):
-        self.assertIsNone(self.pf.close_resources())
 
     def test_default_settings(self):
         """
