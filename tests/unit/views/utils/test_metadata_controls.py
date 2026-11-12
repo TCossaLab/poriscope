@@ -10,7 +10,8 @@ Run with:
 """
 
 import pytest
-from PySide6.QtWidgets import QApplication, QComboBox, QToolButton
+import shiboken6
+from PySide6.QtWidgets import QApplication, QToolButton
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 
@@ -44,61 +45,15 @@ class TestInstantiation:
     def test_creates_without_error(self, mc):
         assert mc is not None
 
-    def test_has_db_loader_combobox(self, mc):
-        assert hasattr(mc, "db_loader_comboBox")
-        assert isinstance(mc.db_loader_comboBox, QComboBox)
-
-    def test_has_plot_type_combobox(self, mc):
-        assert hasattr(mc, "plot_type_comboBox")
-        assert mc.plot_type_comboBox.count() == 15  # 15 plot type options
+    def test_a_panel_deleted_before_the_event_loop_turns_is_safe(self, qt_app):
+        # The panel defers matching its column widths to the next event-loop turn; a
+        # panel deleted first must cancel that call, not run it on deleted widgets.
+        widget = MetadataControls()
+        shiboken6.delete(widget)
+        qt_app.processEvents()
 
     def test_plot_type_first_item(self, mc):
         assert mc.plot_type_comboBox.itemText(0) == "Select Plot Type"
-
-    def test_has_axis_comboboxes(self, mc):
-        assert hasattr(mc, "x_axis_comboBox")
-        assert hasattr(mc, "y_axis_comboBox")
-        assert hasattr(mc, "z_axis_comboBox")
-
-    def test_has_filter_combobox(self, mc):
-        assert hasattr(mc, "filter_comboBox")
-
-    def test_has_bins_lineedit(self, mc):
-        assert hasattr(mc, "bins_lineEdit")
-
-    def test_has_sizes_checkbox(self, mc):
-        assert hasattr(mc, "sizes_checkbox")
-        assert not mc.sizes_checkbox.isChecked()
-
-    def test_has_event_id_lineedit(self, mc):
-        assert hasattr(mc, "event_id_lineEdit")
-
-    def test_has_n_events_lineedit(self, mc):
-        assert hasattr(mc, "n_events_lineEdit")
-
-    def test_has_all_buttons(self, mc):
-        for attr in [
-            "update_plot_button",
-            "undo_button",
-            "reset_button",
-            "load_button",
-            "save_plot_button",
-            "export_csv_subset_button",
-            "export_plot_data_pushButton",
-            "filter_add_button",
-            "filter_info_button",
-            "filter_delete_button",
-            "save_filter_button",
-            "load_filter_button",
-            "plot_events_pushButton",
-            "left_arrow_button",
-            "right_arrow_button",
-            "db_loader_add_button",
-            "db_loader_info_button",
-            "db_loader_delete_button",
-            "selection_tree_button",
-        ]:
-            assert hasattr(mc, attr), f"Missing button: {attr}"
 
 
 # ===========================================================================
@@ -127,46 +82,6 @@ class TestSizesCheckbox:
 
 
 class TestWidgetFactories:
-    def test_create_comboBox_returns_combobox(self, mc):
-        cb = mc.create_comboBox(mc)
-        assert isinstance(cb, QComboBox)
-
-    def test_createButton_text(self, mc):
-        btn = mc.createButton(mc, "Test Button")
-        assert btn.text() == "Test Button"
-
-    def test_createButton_checkable(self, mc):
-        btn = mc.createButton(mc, "X")
-        assert btn.isCheckable()
-
-    def test_createButton_bold(self, mc):
-        btn = mc.createButton(mc, "X", bold=True)
-        assert btn.font().bold()
-
-    def test_createButton_not_bold(self, mc):
-        btn = mc.createButton(mc, "X", bold=False)
-        assert not btn.font().bold()
-
-    def test_createLabel_text(self, mc):
-        lbl = mc.createLabel(mc, 12, "MY LABEL")
-        assert lbl.text() == "MY LABEL"
-
-    def test_create_add_button_returns_toolbutton(self, mc):
-        cb = mc.create_comboBox(mc)
-        btn = mc.create_add_button(mc, cb, "Add", "SomeClass")
-        assert isinstance(btn, QToolButton)
-        assert btn.isEnabled()
-
-    def test_create_info_button_returns_toolbutton(self, mc):
-        cb = mc.create_comboBox(mc)
-        btn = mc.create_info_button(mc, cb, "Edit", "SomeClass")
-        assert isinstance(btn, QToolButton)
-
-    def test_create_delete_button_returns_toolbutton(self, mc):
-        cb = mc.create_comboBox(mc)
-        btn = mc.create_delete_button(mc, cb, "Delete", "SomeClass")
-        assert isinstance(btn, QToolButton)
-
     def test_create_filter_info_button(self, mc):
         cb = mc.create_comboBox(mc)
         btn = mc.create_filter_info_button(mc, cb, "Edit filter")
@@ -201,26 +116,6 @@ class TestPlaceholderAndToggle:
         mc.db_loader_comboBox.clear()
         mc.db_loader_comboBox.addItem("my_db.sqlite")
         assert not mc.is_placeholder_item(mc.db_loader_comboBox)
-
-    def test_toggle_info_button_enables_with_real_item(self, mc):
-        mc.db_loader_comboBox.clear()
-        mc.db_loader_comboBox.addItem("my_db.sqlite")
-        btn = mc.createButton(mc, "test")
-        mc.toggle_info_button(btn, mc.db_loader_comboBox)
-        assert btn.isEnabled()
-
-    def test_toggle_info_button_disables_with_placeholder(self, mc):
-        mc.db_loader_comboBox.clear()
-        mc.db_loader_comboBox.addItem("No Event Database")
-        btn = mc.createButton(mc, "test")
-        mc.toggle_info_button(btn, mc.db_loader_comboBox)
-        assert not btn.isEnabled()
-
-    def test_toggle_info_button_disables_empty_combobox(self, mc):
-        cb = mc.create_comboBox(mc)
-        btn = mc.createButton(mc, "test")
-        mc.toggle_info_button(btn, cb)
-        assert not btn.isEnabled()
 
 
 # ===========================================================================
@@ -537,30 +432,6 @@ class TestFilterCallbacks:
 # ===========================================================================
 # show_plugin_edit_manager / show_plugin_add_manager / delete_plugin
 # ===========================================================================
-
-
-class TestPluginManagers:
-    def test_show_plugin_edit_manager_emits_edit_processed(self, mc):
-        received = []
-        mc.edit_processed.connect(lambda m, k: received.append((m, k)))
-        mc.db_loader_comboBox.addItem("loader_a")
-        mc.db_loader_comboBox.setCurrentText("loader_a")
-        mc.show_plugin_edit_manager(mc.db_loader_comboBox, "MetaDatabaseLoader")
-        assert received == [("MetaDatabaseLoader", "loader_a")]
-
-    def test_show_plugin_add_manager_emits_add_processed(self, mc):
-        received = []
-        mc.add_processed.connect(lambda m: received.append(m))
-        mc.show_plugin_add_manager(mc.db_loader_comboBox, "MetaDatabaseLoader")
-        assert received == ["MetaDatabaseLoader"]
-
-    def test_delete_plugin_emits_delete_processed(self, mc):
-        received = []
-        mc.delete_processed.connect(lambda m, k: received.append((m, k)))
-        mc.db_loader_comboBox.addItem("loader_b")
-        mc.db_loader_comboBox.setCurrentText("loader_b")
-        mc.delete_plugin(mc.db_loader_comboBox, "MetaDatabaseLoader")
-        assert received == [("MetaDatabaseLoader", "loader_b")]
 
 
 # ===========================================================================

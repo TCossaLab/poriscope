@@ -23,7 +23,6 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
-from poriscope.utils.MetaModel import MetaModel
 
 
 @pytest.fixture
@@ -70,23 +69,6 @@ def _two_clusters(n: int = 200) -> pd.DataFrame:
             "id": np.arange(n),
         }
     )
-
-
-# ===========================================================================
-# Construction / inheritance
-# ===========================================================================
-
-
-class TestConstruction:
-    """It is still a MetaModel, now with behaviour of its own."""
-
-    def test_instantiates_without_error(self, model: ClusteringModel) -> None:
-        """No Qt, no view, no controller."""
-        assert model is not None
-
-    def test_is_instance_of_meta_model(self, model: ClusteringModel) -> None:
-        """The base contract still holds."""
-        assert isinstance(model, MetaModel)
 
 
 # ===========================================================================
@@ -205,6 +187,18 @@ class TestClusterHDBSCAN:
 # ===========================================================================
 
 
+@pytest.fixture(scope="module")
+def two_blob_mixture():
+    """
+    One seeded mixture fit of ``_two_clusters(60)``, shared by the tests that read it.
+
+    The fit is a pure function of its rows and returns fresh arrays, so sharing one
+    result changes no assertion; each test that needs a second, independent fit
+    still runs its own.
+    """
+    return ClusteringModel().cluster_gaussian_mixture(_two_clusters(60), 2)
+
+
 class TestClusterGaussianMixture:
     """
     The mixture branch, which had no direct coverage while it lived on the View.
@@ -214,34 +208,34 @@ class TestClusterGaussianMixture:
     """
 
     def test_returns_one_label_and_one_confidence_per_row(
-        self, model: ClusteringModel
+        self, two_blob_mixture
     ) -> None:
         """The shape contract the plotting code depends on."""
-        labels, probs = model.cluster_gaussian_mixture(_two_clusters(60), 2)
+        labels, probs = two_blob_mixture
 
         assert len(labels) == 60
         assert len(probs) == 60
 
-    def test_finds_the_requested_number_of_components(
-        self, model: ClusteringModel
-    ) -> None:
+    def test_finds_the_requested_number_of_components(self, two_blob_mixture) -> None:
         """``n_components`` is honoured, unlike HDBSCAN which decides for itself."""
-        labels, _ = model.cluster_gaussian_mixture(_two_clusters(60), 2)
+        labels, _ = two_blob_mixture
 
         assert len(set(labels)) == 2
 
-    def test_is_seeded(self, model: ClusteringModel) -> None:
+    def test_is_seeded(self, model: ClusteringModel, two_blob_mixture) -> None:
         """
         Two runs on the same rows agree.
 
         1.9.0 fixed the unseeded version; this pins that the fix survived the move.
         """
-        first, _ = model.cluster_gaussian_mixture(_two_clusters(60), 2)
+        first, _ = two_blob_mixture
         second, _ = model.cluster_gaussian_mixture(_two_clusters(60), 2)
 
         assert np.array_equal(first, second)
 
-    def test_id_is_not_a_feature(self, model: ClusteringModel) -> None:
+    def test_id_is_not_a_feature(
+        self, model: ClusteringModel, two_blob_mixture
+    ) -> None:
         """
         ``id`` is carried for row identity and must not influence the fit.
 
@@ -251,7 +245,7 @@ class TestClusterGaussianMixture:
         frame = _two_clusters(60)
         reversed_ids = frame.assign(id=frame["id"].to_numpy()[::-1])
 
-        first, _ = model.cluster_gaussian_mixture(frame, 2)
+        first, _ = two_blob_mixture
         second, _ = model.cluster_gaussian_mixture(reversed_ids, 2)
 
         assert np.array_equal(first, second)

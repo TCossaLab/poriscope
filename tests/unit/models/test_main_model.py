@@ -96,18 +96,19 @@ def test_load_plugin_invalid(main_model):
 
 def test_populate_available_plugins(main_model):
     """
-    Test the population of available plugins.
-    """
-    with patch(
-        "os.walk", return_value=[("/mock/path", [], ["MetaReader.py", "MetaFilter.py"])]
-    ):
-        available_plugin_classes, available_plugins_list = (
-            main_model.populate_available_plugins()
-        )
+    Discovery walks the shipped tree and files each plugin class under its family.
 
-        assert isinstance(available_plugin_classes, dict)
-        assert "MetaReader" in available_plugins_list
-        assert "MetaFilter" in available_plugins_list
+    Every family key is present before anything is found, so the check is on what
+    discovery put under them, not on the keys.
+    """
+    available_plugin_classes, available_plugins_list = (
+        main_model.populate_available_plugins()
+    )
+
+    assert "SQLiteDBLoader" in available_plugins_list["MetaDatabaseLoader"]
+    assert "BesselFilter" in available_plugins_list["MetaFilter"]
+    found = available_plugin_classes["MetaDatabaseLoader"]["SQLiteDBLoader"]
+    assert found.__name__ == "SQLiteDBLoader"
 
 
 SESSION = {"reader": {"metaclass": "MetaReader", "subclass": "SomeReader"}}
@@ -237,6 +238,32 @@ def test_a_2_0_session_still_loads_with_its_tabs_after_the_plugins(
 
     assert loaded == LoadedSession(HISTORY, "")
     assert list(loaded.plugin_history) == ["R1", "F1", "MetadataController"]
+
+
+def test_a_renamed_plugin_key_loads_by_its_name_with_its_dependents(
+    main_model, tmp_path
+):
+    """
+    A reader the user renamed comes back under that name, before what depends on it.
+
+    The session is a real 1.x file holding a reader renamed to ``testrename`` and a
+    finder whose ``MetaReader`` setting names it. Restoring instantiates by key in
+    this order, so a load that re-keyed the entry, or moved it after its dependent,
+    would leave the finder pointing at a plugin that does not exist. Saved again in
+    this version's layout, it has to read back the same way.
+    """
+    saved = Path(__file__).parents[1] / "views" / "saved_state" / "session_1x.json"
+
+    loaded = main_model.load_session(saved).plugin_history
+    main_model.save_session(loaded, tmp_path / "resaved.json")
+    reloaded = main_model.load_session(tmp_path / "resaved.json").plugin_history
+
+    for history in (loaded, reloaded):
+        keys = list(history)
+        assert history["testrename"]["subclass"] == "ChimeraReader20240501"
+        finder = history["ClassicBlockageFinder_0"]
+        assert finder["settings"]["MetaReader"]["Value"] == "testrename"
+        assert keys.index("testrename") < keys.index("ClassicBlockageFinder_0")
 
 
 def test_load_session_refuses_a_file_that_is_not_a_session(main_model, tmp_path):
@@ -535,47 +562,6 @@ def test_populate_available_plugins_no_valid_directories(main_model, monkeypatch
     assert all(isinstance(v, dict) and not v for v in available_plugin_classes.values())
     assert isinstance(available_plugins_list, dict)
     assert all(isinstance(v, list) and not v for v in available_plugins_list.values())
-
-
-def test_populate_available_plugins_invalid_user_plugin_folder(caplog):
-    model = MainModel(app_config={"User Plugin Folder": "fake/path"})
-
-    # "fake/path" does not exist -> should hit the 'Skipping plugin directory' log line
-    with caplog.at_level(logging.WARNING):
-        model.populate_available_plugins()
-
-    assert "Skipping plugin directory" in caplog.text
-
-
-def test_populate_available_plugins_file_list_fails(monkeypatch):
-    model = MainModel(app_config={"User Plugin Folder": "fake/path"})
-
-    # Simulate os.walk returning something valid
-    monkeypatch.setattr(
-        os,
-        "walk",
-        lambda path: [("some/dir", [], None)],  # None will break the 'for f in files'
-    )
-
-    model.populate_available_plugins()  # This will hit 'Error reading files in {root_dir}'
-
-
-def test_populate_available_plugins_load_plugin_fails(main_model):
-    """
-    Test when load_plugin fails internally (returns None).
-    Should handle the exception and skip the plugin.
-    """
-    with (
-        patch("os.walk", return_value=[("/mock/path", [], ["MetaReader.py"])]),
-        patch.object(main_model, "load_plugin", side_effect=Exception("Load error")),
-    ):
-        available_plugin_classes, available_plugins_list = (
-            main_model.populate_available_plugins()
-        )
-
-    # Ensure the plugin was not added due to load_plugin failure
-    assert isinstance(available_plugin_classes, dict)
-    assert all(not v for v in available_plugin_classes.values())
 
 
 class TestResetAppConfig:

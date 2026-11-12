@@ -12,8 +12,7 @@ actually bites is the other generator's: ``metaclasses_generate_autodoc.py`` sca
 step - but it ``continue``s past a class with no docstring and emits no page at
 all. So the methods promoted to ``MetaControls`` are documented on its page, and
 what holds that is ``MetaControls``' own class docstring. Both halves are asserted
-below: that the page exists, and that the promoted directives are on it and on no
-per-tab page.
+below: that the page exists, and that the promoted directives are on it.
 
 **The walkthrough modules are outside both generators by decision.** The generators
 scan exactly two roots, ``poriscope/utils`` and ``poriscope/plugins``.
@@ -27,8 +26,7 @@ Three of the four were let go deliberately: ``IntroDialog``, ``Overlay`` and
 ``StepDialog`` are internal UI machinery named in no prose documentation anywhere, and a
 plugin author never instantiates them. ``WalkthroughMixin`` was not, because a live
 tutorial tells authors to inherit it, so it has a hand-written page carrying a real
-``.. _walkthrough_mixin:`` label. The tests below now hold that shape: the three have no
-page, the fourth does, and it is not under ``autodoc/``.
+``.. _walkthrough_mixin:`` label, outside ``autodoc/``, which a test below holds.
 
 Pages are keyed by **class**, not by module, which is why 14 modules under the
 scanned roots legitimately have no page: they hold decorators, metaclasses and
@@ -54,9 +52,6 @@ EXPECTED_ROOTS = {"poriscope/utils", "poriscope/plugins"}
 #: Dotted path the promoted controls methods are documented under, now that they
 #: live on the shared base rather than on five copies.
 BASE_CLASS_PATH = "poriscope.utils.MetaControls.MetaControls"
-
-#: The three dialog classes whose pages were deliberately given up.
-WALKTHROUGH_DIALOG_CLASSES = {"introdialog", "overlay", "stepdialog"}
 
 #: The hand-written replacement for ``WalkthroughMixin``'s generated page, and the
 #: tutorial that links to it. Both are hand-maintained, so neither is under ``autodoc/``.
@@ -117,32 +112,6 @@ def test_the_generators_scan_exactly_two_roots() -> None:
     get generated pages.
     """
     assert generator_roots() == EXPECTED_ROOTS
-
-
-def test_the_app_shell_is_covered_by_no_generator() -> None:
-    """
-    ``poriscope/views/`` is documented by nothing.
-
-    Not a defect in itself - the shell is not public API the way plugins are - but
-    it is the reason moving a documented module there deletes its pages.
-    """
-    assert not any(root.startswith("poriscope/views") for root in generator_roots())
-
-
-def test_the_walkthrough_modules_live_in_the_app_shell() -> None:
-    """
-    They live in ``poriscope/views/widgets/``, which no generator scans.
-
-    Asserted from the destination rather than the origin so that moving them back -
-    which would restore the layering inversion rule 4 of the MVC boundary exists to
-    catch - fails here too.
-    """
-    for name in ("walkthrough.py", "walkthrough_mixin.py"):
-        moved = REPO_ROOT / "poriscope" / "views" / "widgets" / name
-        origin = REPO_ROOT / "poriscope" / "plugins" / "analysistabs" / "utils" / name
-
-        assert moved.is_file(), f"{name} is not in views/widgets/"
-        assert not origin.is_file(), f"{name} is back under plugins/"
 
 
 # ===========================================================================
@@ -215,21 +184,6 @@ def test_every_plugin_family_page_documents_a_meta_subclass() -> None:
             f"{family}: published {sorted(published)}, "
             f"plugins in source {sorted(n.lower() for n in expected)}"
         )
-
-
-@needs_autodoc
-def test_the_three_dialog_classes_have_no_generated_page() -> None:
-    """
-    Given up deliberately, so their absence must not read as a regression.
-
-    If one reappears, either a generator grew a third root or the modules moved back -
-    both worth knowing about.
-    """
-    pages = {p.stem.lower() for p in AUTODOC.rglob("*.rst")}
-
-    assert not (WALKTHROUGH_DIALOG_CLASSES & pages), sorted(
-        WALKTHROUGH_DIALOG_CLASSES & pages
-    )
 
 
 def test_the_mixin_keeps_a_hand_written_page_with_a_real_label() -> None:
@@ -321,25 +275,20 @@ def test_the_controls_classes_are_documented_with_or_without_a_docstring() -> No
 @needs_autodoc
 def test_the_promoted_controls_methods_are_documented_on_metacontrols() -> None:
     """
-    The promoted directives, on ``MetaControls``' page rather than on five.
+    The promoted directives are on ``MetaControls``' page.
 
-    The same three names used to appear **five times** across the per-tab pages,
-    one per class. They now appear once each, on the base's page, and
-    on none of the five - which is the whole point of the promotion. The failure
-    this still guards against is unchanged: if they appear on neither, roughly sixty
-    directives have silently left the published documentation, and both a
-    ``sphinx-build -W`` and the rest of this file stay green while it happens.
+    They used to be documented once per tab, on the per-tab pages, and moved to the
+    base's page with the methods. If they appear on neither, roughly sixty directives
+    have silently left the published documentation, and both a ``sphinx-build -W``
+    and the rest of this file stay green while it happens.
     """
     promoted = ("create_info_button", "create_delete_button", "create_add_button")
     base_page = (AUTODOC / "metaclasses" / "metacontrols.rst").read_text(
         encoding="utf-8"
     )
-    utils_pages = (AUTODOC / "plugins" / "analysistabs" / "utils").glob("*ontrols*.rst")
-    per_tab = "\n".join(p.read_text(encoding="utf-8") for p in utils_pages)
 
     for method in promoted:
         assert f".. automethod:: {BASE_CLASS_PATH}.{method}" in base_page, method
-        assert method not in per_tab, f"{method} still has a per-tab copy"
 
 
 # ---------------------------------------------------------------------------

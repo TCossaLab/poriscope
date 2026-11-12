@@ -10,8 +10,6 @@ before applying settings. A script has no names and no controller: it holds the 
 scripting guide's pipeline - assign the object, apply the settings - works as written.
 """
 
-import gc
-
 import pytest
 
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
@@ -73,7 +71,6 @@ def reader(tmp_path):
     yield opened
     opened.close_resources()
     del opened
-    gc.collect()
 
 
 def test_a_script_assigns_the_parent_object_and_applies(reader):

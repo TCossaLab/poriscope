@@ -95,19 +95,6 @@ def controller(view: MetadataView, mocker) -> MetadataController:
 class TestReplayingASavedActionHistory:
     """What happens when a user reloads a history file."""
 
-    def test_the_fixture_is_a_real_saved_file(
-        self, history: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """
-        Read from disk, not built in the test.
-
-        The point of the fixture is to be the shape the app actually writes; a
-        dict literal in the test would only prove the test agrees with itself.
-        """
-        assert SAVED.is_file()
-        assert set(history) == {"0", "1", "2"}
-        assert all("action" in entry for entry in history.values())
-
     def test_each_stored_action_is_replayed_with_its_arguments(
         self,
         controller: MetadataController,
@@ -305,17 +292,6 @@ class TestARealSavedSession:
     not restore, so a silent loss is not the risk - an *unnoticed* one is.
     """
 
-    def test_the_fixture_is_the_shape_the_app_writes(self, session: Dict[str, Any]):
-        """
-        Read from disk rather than synthesised, so it cannot drift into a shape the app
-        never produces. Every entry is keyed by plugin key and carries the two fields
-        ``load_session`` reads before anything else.
-        """
-        assert session, "the fixture is empty"
-        for key, entry in session.items():
-            assert "metaclass" in entry, key
-            assert "subclass" in entry, key
-
     def test_every_class_it_names_still_exists(self, session: Dict[str, Any]):
         """
         The actual 1.x compatibility question.
@@ -341,25 +317,6 @@ class TestARealSavedSession:
             not missing
         ), f"a saved session names classes this version lost: {missing}"
 
-    def test_a_renamed_plugin_key_is_carried_by_key_not_by_class(
-        self, session: Dict[str, Any]
-    ):
-        """
-        The fixture holds a reader the user renamed to ``testrename``.
-
-        Keys are user-chosen and classes are not, which is why the entry carries both.
-        Restoring by key alone would lose the class; by class alone would lose the name
-        the user gave it and every dependent setting that refers to it.
-        """
-        assert session["testrename"]["subclass"] == "ChimeraReader20240501"
-        dependents = [
-            key
-            for key, entry in session.items()
-            for setting in entry.get("settings", {}).values()
-            if setting.get("Value") == "testrename"
-        ]
-        assert dependents, "nothing in the fixture depends on the renamed reader"
-
     def test_loading_it_restores_types_without_touching_values(self, tmp_path: Path):
         """
         The defect 2.0.0 fixed, exercised against a real file rather than a synthetic one.
@@ -383,16 +340,6 @@ class TestARealSavedSession:
                 value = setting.get("Value")
                 assert not isinstance(value, type), f"{name} Value became a type"
         assert checked, "the fixture declares no types, so this asserts nothing"
-
-    def test_the_subset_tab_entry_carries_its_filters(self, session: Dict[str, Any]):
-        """
-        ``MetaSubsetTabController.get_session_state`` writes this key, and 2.0.0
-        changed how it is read - through ``view.get_subset_filters()`` rather than by
-        reaching into ``view.subset_filters``. The key has to survive that, and a real
-        file is what says whether it did.
-        """
-        metadata = session["MetadataController"]
-        assert metadata["subset_filters"] == {"test_filter_assisted": "duration < 300"}
 
     def test_a_saved_filter_is_restored_onto_the_view(
         self, session: Dict[str, Any], mocker

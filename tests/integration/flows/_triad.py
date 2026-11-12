@@ -31,7 +31,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
@@ -77,20 +77,6 @@ class Triad:
         plugins.update_available_plugins.emit(
             metaclass, plugins.model.get_instantiated_plugins_list()[metaclass]
         )
-
-    def available(self, metaclass: str) -> List[str]:
-        """
-        The keys the tab can currently see for a family.
-
-        :param metaclass: the family to look up
-        :type metaclass: str
-        :return: the registered keys
-        :rtype: List[str]
-        """
-        listing: Dict[str, List[str]] = (
-            self.controller.data_plugin_controller.model.get_instantiated_plugins_list()
-        )
-        return listing.get(metaclass, [])
 
     def close(self) -> None:
         """

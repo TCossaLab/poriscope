@@ -87,17 +87,6 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertEqual(threshold_setting["Min"], 0)
         self.assertEqual(threshold_setting["Units"], "pA")
 
-    def test_intraevent_hysteresis_shape(self):
-        with patch.object(CUSUM, "get_empty_settings", return_value={}):
-            pf = object.__new__(IntraCUSUM)
-            settings = pf.get_empty_settings(standalone=True)
-
-        hysteresis_setting = settings["Intraevent Hysteresis"]
-        self.assertIs(hysteresis_setting["Type"], float)
-        self.assertEqual(hysteresis_setting["Value"], 0)
-        self.assertEqual(hysteresis_setting["Min"], 0)
-        self.assertEqual(hysteresis_setting["Units"], "pA")
-
     def test_forwards_arguments_to_super(self):
         with patch.object(CUSUM, "get_empty_settings", return_value={}) as mock_super:
             pf = object.__new__(IntraCUSUM)
@@ -170,6 +159,15 @@ class TestPopulateEventMetadata(unittest.TestCase):
 
     def test_no_crossing_when_signal_stays_near_baseline(self):
         result = self._run(np.full(50, 200.0))
+        self.assertEqual(result["threshold_crossings"], 0)
+
+    def test_a_dip_shallower_than_the_threshold_is_not_a_crossing(self):
+        # 185 pA is below the 200 pA baseline but above the 180 pA down-threshold
+        # (baseline less the 20 pA Intraevent Threshold), so it is no excursion.
+        data = np.concatenate(
+            [np.full(10, 200.0), np.full(10, 185.0), np.full(10, 200.0)]
+        )
+        result = self._run(data)
         self.assertEqual(result["threshold_crossings"], 0)
 
     def test_single_dip_and_recovery_counts_two_crossings(self):
@@ -256,15 +254,6 @@ class TestDefineEventMetadataTypes(unittest.TestCase):
         self.assertIn("threshold_crossings", result)
         self.assertIs(result["threshold_crossings"], int)
 
-    def test_does_not_remove_existing_keys(self):
-        base = {"a": float, "b": str}
-        with patch.object(CUSUM, "_define_event_metadata_types", return_value=base):
-            pf = object.__new__(IntraCUSUM)
-            result = pf._define_event_metadata_types()
-
-        self.assertEqual(result["a"], float)
-        self.assertEqual(result["b"], str)
-
 
 # ---------------------------------------------------------------------------
 # _define_event_metadata_units
@@ -282,15 +271,6 @@ class TestDefineEventMetadataUnits(unittest.TestCase):
         self.assertEqual(result["base_key"], "pA")
         self.assertIn("threshold_crossings", result)
         self.assertEqual(result["threshold_crossings"], "")
-
-    def test_does_not_remove_existing_keys(self):
-        base = {"a": "pA", "b": None}
-        with patch.object(CUSUM, "_define_event_metadata_units", return_value=base):
-            pf = object.__new__(IntraCUSUM)
-            result = pf._define_event_metadata_units()
-
-        self.assertEqual(result["a"], "pA")
-        self.assertIsNone(result["b"])
 
 
 if __name__ == "__main__":

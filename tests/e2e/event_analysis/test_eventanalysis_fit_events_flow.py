@@ -16,8 +16,8 @@ E2E/UX flow for Event Fitting:
      selection is needed here.
    - Fill numeric fields (Step Size, Rise Time, Max Sublevels, Sensitivity)
      and OK.
-6) Fit Events, wait for fitting to complete, Plot Events again to confirm
-   the fit overlay renders.
+6) Fit Events and wait for fitting to complete. The fit overlay on a replot
+   is test_eventanalysis_plot_flow.py's last stage.
 7) Add DB Writer (SQLiteDBWriter), auto-fill fields, commit events to DB.
 
 Ground truth and Step Size / event-depth relationship
@@ -330,17 +330,10 @@ def test_event_fitting_flow_clicks(
         # Rejection reason ("Too Few Levels") was confirmed directly against
         # the real CUSUM class's .rejected attribute (see module docstring)
         # rather than through a GUI-exposed getter -- MetaEventFitter has
-        # no public get_rejected_events method to check this through the
-        # signal bus, so the count assertion above is what this case relies
+        # no public get_rejected_events method to check this through
+        # ask_plugin, so the count assertion above is what this case relies
         # on for verification.
         pass
-
-    before_fit_lines = _count_lines(ea_view.figure)
-    QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(
-        lambda: _count_lines(ea_view.figure) >= before_fit_lines,
-        timeout=QT_WAIT_TIMEOUT_MS,
-    )
 
     # --- Writer (only exercised for the fully-successful case) ---
     if expected_good_fits > 0:

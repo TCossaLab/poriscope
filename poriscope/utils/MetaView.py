@@ -100,7 +100,6 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         # attribute _init assigns is also assigned anywhere in the _setup_ui call
         # tree, in any of the five tabs, so the second call rewrote its own values.
         self._init_walkthrough()
-        self.plot_data: Optional[Any] = None
         self.threads: List[Any] = []
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)
@@ -123,10 +122,6 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         self, available_subclasses: Optional[Mapping[str, List[str]]]
     ) -> None:
         self.available_subclasses = available_subclasses
-
-    @log(logger=logger)
-    def update_plot_data(self, data: Optional[Any]) -> None:
-        self.plot_data = data
 
     @log(logger=logger)
     def _clear_cache(self) -> None:

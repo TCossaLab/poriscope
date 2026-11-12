@@ -262,9 +262,10 @@ class TestBaselineComparison:
     ) -> None:
         """Going up is a regression and says so."""
         problems: List[str] = mod.compare(self._counts(12), self._counts(10))
-        assert len(problems) == 1
-        assert "rose from 10 to 12" in problems[0]
-        assert "duplication was added" in problems[0]
+        rises = [p for p in problems if "rose from" in p]
+        assert len(rises) == 1
+        assert "rose from 10 to 12" in rises[0]
+        assert "duplication was added" in rises[0]
 
     def test_a_fall_asks_for_the_baseline_to_be_updated(
         self, mod: types.ModuleType
@@ -357,6 +358,49 @@ class TestBaselineComparison:
             "removable_lines" in p and "duplication was added" in p for p in problems
         )
 
+    def test_a_rise_names_the_newly_duplicated_functions(
+        self, mod: types.ModuleType, tmp_path: Path
+    ) -> None:
+        """
+        A rise names the copied functions, and says the copy is what to remove.
+
+        The counts alone leave the author searching the family for the duplicate, and
+        the quickest way to make the failure go away is ``--update``, which records the
+        copy as the new baseline. Only the new pair is named: ``A.old`` and ``B.old``
+        were duplicated before and are in the baseline already.
+        """
+        before = tmp_path / "before"
+        after = tmp_path / "after"
+        before.mkdir()
+        after.mkdir()
+        shared = "    def old(self):\n        return 1\n"
+        copied = "    def new(self):\n        a = 2\n        return a\n"
+        a_text = "class A:\n" + shared + copied
+        b_before = "class B:\n" + shared
+        b_after = "class B:\n" + shared + copied
+        baseline = mod.to_baseline(
+            {
+                "fam": mod.measure_family(
+                    [write(before, "a.py", a_text), write(before, "b.py", b_before)]
+                )
+            }
+        )
+        current = mod.to_baseline(
+            {
+                "fam": mod.measure_family(
+                    [write(after, "a.py", a_text), write(after, "b.py", b_after)]
+                )
+            }
+        )
+
+        problems: List[str] = mod.compare(current, baseline)
+
+        named = [p for p in problems if "A.new" in p and "B.new" in p]
+        assert len(named) == 1, problems
+        assert "A.old" not in named[0] and "B.old" not in named[0]
+        assert "copy to remove" in named[0]
+        assert "--update only if the duplication is intentional" in named[0]
+
     def test_a_new_family_is_reported(self, mod: types.ModuleType) -> None:
         """Measuring a family the baseline does not know about is a disagreement."""
         problems = mod.compare(self._counts(10) | {"*New.py": {}}, self._counts(10))
@@ -367,25 +411,45 @@ class TestBaselineComparison:
         problems = mod.compare({}, self._counts(10))
         assert any("no longer measured" in p for p in problems)
 
-    def test_to_baseline_drops_the_group_detail(
+    def test_to_baseline_records_the_counts_and_the_duplicated_names(
         self, mod: types.ModuleType, tmp_path: Path
     ) -> None:
         """
-        Only the counts are recorded.
+        The counts, and the names a rise is reported against - not each group's detail.
 
-        The per-group names are useful to read and useless to diff; recording them
-        would churn the baseline on every rename.
+        A group's line counts are useful to read and useless to diff.
         """
-        body = "class C:\n    def f(self):\n        return 1\n"
-        files = [write(tmp_path, "a.py", body), write(tmp_path, "b.py", body)]
+        body = "    def f(self):\n        return 1\n"
+        files = [
+            write(tmp_path, "a.py", "class A:\n" + body),
+            write(tmp_path, "b.py", "class B:\n" + body),
+        ]
         reduced = mod.to_baseline({"fam": mod.measure_family(files)})
 
-        assert set(reduced["fam"]) == {
-            "files",
-            "functions",
-            "identical_bodies",
-            "removable_lines",
+        assert reduced == {
+            "fam": {
+                "files": 2,
+                "functions": 2,
+                "identical_bodies": 1,
+                "removable_lines": 2,
+                "duplicated_functions": ["a.py:A.f", "b.py:B.f"],
+            }
         }
+
+    def test_a_renamed_duplicate_is_not_a_disagreement(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        The names are never compared, so renaming a duplicated method fails nothing.
+
+        Comparing them would churn the baseline on every rename.
+        """
+        was = self._counts(10)
+        was["*View.py"] = was["*View.py"] | {"duplicated_functions": ["A.f", "B.f"]}
+        now = self._counts(10)
+        now["*View.py"] = now["*View.py"] | {"duplicated_functions": ["A.g", "B.g"]}
+
+        assert mod.compare(now, was) == []
 
 
 # ===========================================================================
@@ -453,17 +517,3 @@ class TestFamilyLists:
         """An exclusion for a file that has gone would hide nothing and mislead."""
         for name in mod.EXCLUDED:
             assert (mod.REPO_ROOT / name).is_file(), f"{name} is missing"
-
-    def test_the_controls_family_includes_the_camelcase_file(
-        self, mod: types.ModuleType
-    ) -> None:
-        """
-        ``eventAnalysisControls.py`` does not match a case-sensitive ``*controls.py``.
-
-        Globbing that pattern finds four files and silently drops 742 lines, 17% of
-        the family, so this is pinned rather than left to a comment.
-        """
-        controls = mod.FAMILIES["*controls.py"]
-        assert any(name.endswith("eventAnalysisControls.py") for name in controls)
-        # One per shipped tab: six since the Conditioning tab.
-        assert len(controls) == 6

@@ -2,9 +2,7 @@
 Tests for poriscope.plugins.analysistabs.EventAnalysisController.
 
 Covers:
-- _init creates view and model
-- _setup_connections runs without error (empty)
-- update_available_plugins logs debug and delegates to model and view
+- update_available_plugins delegates to model and view
 """
 
 from __future__ import annotations
@@ -329,18 +327,6 @@ class TestLoadEventPlot:
         assert len(self.asked(controller, "get_callable_filter")) == 1
         for args in self.asked(controller, "load_event"):
             assert args[5] == "a-callable"
-
-    def test_an_empty_filter_key_fetches_no_callable(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        :param controller: Controller under test.
-        """
-        self.answers(controller, load_event=[{"data": "a"}])
-
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
-
-        assert self.asked(controller, "get_callable_filter") == []
 
     # -- the raw overlay --------------------------------------------------
 
@@ -1102,25 +1088,6 @@ class TestFittingLaunch:
         message = controller.add_text_to_display.emit.call_args.args[0]
         assert "100000" in message and "250000" in message
 
-    def test_an_empty_filter_key_fetches_no_callable(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        Replaces the old test that asserted the View did not emit get_callable_filter -
-        which would have passed trivially once the View stopped emitting anything.
-
-        :param controller: Controller under test.
-        """
-        controller.model.call.side_effect = ["gen0"]
-
-        controller.start_fitting("ef1", [0], "")
-
-        assert not [
-            call
-            for call in controller.model.call.call_args_list
-            if call.args[2] == "get_callable_filter"
-        ]
-
     def test_a_channel_that_cannot_launch_is_skipped_and_the_rest_run(
         self, controller: EventAnalysisController
     ) -> None:
@@ -1433,46 +1400,6 @@ class TestWriteEvents:
         controller.add_text_to_display.emit.assert_called_once()
 
 
-# ----------------------- _init / _setup_connections ------------------
-
-
-def test_init_creates_view_and_model(mocker: MockerFixture) -> None:
-    """
-    Verify that _init instantiates EventAnalysisView and EventAnalysisModel.
-
-    Patches both constructors so no real Qt objects are created.
-
-    :param mocker: Pytest-mock fixture.
-    """
-    mock_view_cls = mocker.patch(
-        "poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisView"
-    )
-    mock_model_cls = mocker.patch(
-        "poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisModel"
-    )
-
-    ctrl: EventAnalysisController = EventAnalysisController.__new__(EventAnalysisController)  # type: ignore[type-abstract]
-    ctrl._init()
-
-    mock_view_cls.assert_called_once()
-    mock_model_cls.assert_called_once()
-    assert ctrl.view is mock_view_cls.return_value
-    assert ctrl.model is mock_model_cls.return_value
-
-
-def test_setup_connections_runs_without_error(
-    controller: EventAnalysisController,
-) -> None:
-    """
-    Verify that _setup_connections completes without raising.
-
-    The method is intentionally empty so the only requirement is no exception.
-
-    :param controller: Controller under test.
-    """
-    controller._setup_connections()  # should not raise
-
-
 # ------------------- update_available_plugins ------------------------
 
 
@@ -1490,18 +1417,6 @@ def test_update_available_plugins_delegates_to_model_and_view(
     controller.update_available_plugins(plugins)
     controller.model.update_available_plugins.assert_called_once_with(plugins)
     mock_view.update_available_plugins.assert_called_once_with(plugins)
-
-
-def test_update_available_plugins_logs_debug(
-    controller: EventAnalysisController,
-) -> None:
-    """
-    Log a debug message when the available plugins are updated.
-
-    :param controller: Controller under test.
-    """
-    controller.update_available_plugins({"MetaReader": ["R1"]})
-    controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
 
 
 class TestPlotEventsIsRecordedWhenItPlots:

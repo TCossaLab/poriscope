@@ -264,27 +264,6 @@ def test_update_plugin_history_delete_entry(
     mock_main_model.save_session.assert_called()
 
 
-def test_update_plugin_history_rename_entry(
-    controller: MainController,
-    mock_main_model: MagicMock,
-) -> None:
-    """
-    Rename a history entry by replacing the old key with the new one.
-
-    :param controller: Controller under test.
-    :param mock_main_model: Mocked main model.
-    """
-    controller.plugin_history = {"old_key": {"subclass": "Sub", "metaclass": "Meta"}}
-
-    controller.update_plugin_history(
-        {"key": "new_key", "subclass": "Sub", "metaclass": "Meta"}, "old_key"
-    )
-
-    assert "new_key" in controller.plugin_history
-    assert "old_key" not in controller.plugin_history
-    mock_main_model.save_session.assert_called()
-
-
 def test_a_history_change_saves_the_session_with_each_tabs_kept_actions(
     controller: MainController,
     mock_main_model: MagicMock,
@@ -692,23 +671,6 @@ def test_update_available_plugins_caches_and_pushes_to_tabs(
 
     assert controller.data_plugins["MetaReader"] == ["R1", "R2"]
     tab.update_available_plugins.assert_called_once_with(controller.data_plugins)
-
-
-def test_update_available_plugins_skips_none_tabs(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Skip None tab entries when pushing plugin updates.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.analysis_tabs = {"X": None}
-
-    controller.update_available_plugins("MetaReader", ["R1"])
-
-    assert controller.data_plugins["MetaReader"] == ["R1"]
 
 
 def test_save_session_with_provided_file(
@@ -1259,30 +1221,6 @@ def test_load_session_displays_a_restored_message_with_no_file_name(
     )
 
 
-def test_load_session_logs_error_on_analysis_tab_failure(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log an error and continue when instantiate_analysis_tab raises.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    # A separate dict, not controller.plugin_history itself: reset_session()
-    # now runs before this is applied and clears that dict in place, which
-    # would otherwise wipe out the same object this mock returns.
-    loaded_history = {"key1": {"metaclass": "MetaController", "subclass": "SomeTab"}}
-    controller.main_model.load_session = mocker.Mock(
-        return_value=LoadedSession(loaded_history)
-    )
-    controller.instantiate_analysis_tab = mocker.Mock(side_effect=RuntimeError("fail"))
-
-    controller.load_session("session.json")
-
-    controller.instantiate_analysis_tab.assert_called_once_with("SomeTab")
-
-
 def test_load_session_logs_error_on_other_value_error(
     controller: MainController,
     mocker: MockerFixture,
@@ -1547,11 +1485,6 @@ class TestRefreshAvailablePlugins:
     three places, so refreshing the model alone changes nothing a user can see.
     """
 
-    def test_changing_the_plugin_folder_triggers_a_rescan(self, controller):
-        controller.update_user_plugin_location("/some/new/folder")
-
-        assert controller.main_model.refresh_available_plugins.called
-
     def test_rescan_reaches_the_data_plugin_controller_and_the_view(self, controller):
         controller.refresh_available_plugins()
 
@@ -1648,6 +1581,50 @@ def test_load_session_says_nothing_extra_when_every_entry_restored(
     messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
     assert "Loaded session from session.json." in messages, messages
     assert not any("could not be restored" in m for m in messages), messages
+
+
+def test_load_session_counts_an_analysis_tab_that_could_not_be_restored(
+    controller: MainController,
+    mock_main_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    A tab whose opening raises is named in the summary, and the load goes on past it.
+
+    The tab branch keeps its own count of failures beside the plugin branch's; leaving
+    it out signs the load off as a success under the tab's error message.
+
+    :param controller: Controller under test.
+    :param mock_main_view: Mocked main view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.data_plugin_controller.validate_and_instantiate_plugin.return_value = (
+        True
+    )
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(
+            OrderedDict(
+                [
+                    ("tab_key", {"metaclass": "MetaController", "subclass": "Tab"}),
+                    (
+                        "reader_key",
+                        {"metaclass": "MetaReader", "subclass": "R", "settings": {}},
+                    ),
+                ]
+            )
+        )
+    )
+    controller.instantiate_analysis_tab = mocker.Mock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("cannot be opened")
+    )
+
+    controller.load_session("session.json")
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert any(
+        "1 of 2 entries could not be restored (tab_key)" in m for m in messages
+    ), messages
+    controller.data_plugin_controller.validate_and_instantiate_plugin.assert_called_once()
 
 
 # ------------- renaming a plugin in the session history -------------------

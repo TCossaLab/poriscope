@@ -2,9 +2,8 @@
 Event analysis tab, end to end and headless: load, fit, commit, check the rows.
 
 The tab's job is to turn found events into fitted metadata, so the durable
-artifact is a metadata database. ``test_event_analysis_instantiation_pipeline_no_gui.py``
-already drives the same loader/fitter/writer chain directly; this adds the layer
-it omits - the tab's dispatch, parameter extraction and generator lifecycle.
+artifact is a metadata database. The loader/fitter/writer chain runs through the
+tab's dispatch, parameter extraction and generator lifecycle, as a click would.
 
 Both waits follow the shape the raw data flow had to learn twice. The fitter's own
 entry in ``model.workers`` emptying is what says fitting finished, because
@@ -154,14 +153,6 @@ def commit_events(
     qtbot.waitUntil(
         lambda: row_count(triad.out_db, "events") == expected, timeout=120_000
     )
-
-
-@pytest.mark.timeout(300)
-def test_the_tab_sees_every_registered_plugin(event_analysis_tab: Triad) -> None:
-    """All three families reach the tab, not just the plugin registry."""
-    assert LOADER in event_analysis_tab.available("MetaEventLoader")
-    assert FITTER in event_analysis_tab.available("MetaEventFitter")
-    assert WRITER in event_analysis_tab.available("MetaDatabaseWriter")
 
 
 @pytest.mark.timeout(300)

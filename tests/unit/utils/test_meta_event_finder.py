@@ -416,6 +416,156 @@ class TestEventBoundariesFromTheBaseline:
         data[60:] = -20.0
         assert bare_finder._event_end_from_the_baseline(data, 61) is None
 
+    # The helpers search outward from the crossing in slices that double in size, each
+    # overlapping the last by a run less one sample, rather than scanning the whole
+    # chunk per event. The whole-chunk scan below is the rule they must still give; the
+    # quiet runs are placed at every offset around the first three slice seams, which is
+    # where a wrong overlap would lose a window.
+    _SEAM_OFFSETS = (
+        list(range(1, 12))
+        + list(range(1015, 1030))
+        + list(range(3060, 3080))
+        + list(range(7150, 7175))
+    )
+
+    @staticmethod
+    def _whole_chunk_start(finder, data, crossing, lower_bound):
+        run = finder.EDGE_RUN_SAMPLES
+        within = np.abs(data[: crossing + 1]) <= finder.EDGE_BAND_SIGMA
+        if within.size < run:
+            return max(lower_bound, 0)
+        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
+        candidates = np.flatnonzero(quiet[max(lower_bound, 0) :])
+        if candidates.size == 0:
+            return max(lower_bound, 0)
+        return int(max(lower_bound, 0) + candidates[-1] + run)
+
+    @staticmethod
+    def _whole_chunk_end(finder, data, crossing):
+        run = finder.EDGE_RUN_SAMPLES
+        within = np.abs(data[crossing:]) <= finder.EDGE_BAND_SIGMA
+        if within.size < run:
+            return None
+        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
+        candidates = np.flatnonzero(quiet)
+        if candidates.size == 0:
+            return None
+        return int(crossing + candidates[0])
+
+    def test_the_start_matches_a_whole_chunk_scan_at_every_slice_seam(
+        self, bare_finder
+    ):
+        for crossing in (9000, 8990, 12000):
+            for lower_bound in (0, 5):
+                for offset in self._SEAM_OFFSETS:
+                    data = np.full(12001, 10.0)
+                    data[crossing - offset : crossing - offset + 3] = 0.0
+                    assert bare_finder._event_start_from_the_baseline(
+                        data, crossing, lower_bound
+                    ) == self._whole_chunk_start(
+                        bare_finder, data, crossing, lower_bound
+                    ), (
+                        crossing,
+                        lower_bound,
+                        offset,
+                    )
+
+    def test_the_end_matches_a_whole_chunk_scan_at_every_slice_seam(self, bare_finder):
+        for crossing in (0, 7):
+            for offset in self._SEAM_OFFSETS:
+                data = np.full(9000, 10.0)
+                data[crossing + offset : crossing + offset + 3] = 0.0
+                assert bare_finder._event_end_from_the_baseline(
+                    data, crossing
+                ) == self._whole_chunk_end(bare_finder, data, crossing), (
+                    crossing,
+                    offset,
+                )
+
+    def test_both_match_a_whole_chunk_scan_on_noise(self, bare_finder):
+        rng = np.random.default_rng(0)
+        for size in (1, 2, 3, 50, 1023, 1024, 1025, 5000):
+            for scale in (0.5, 3.0):
+                data = rng.standard_normal(size) * scale
+                for _ in range(20):
+                    crossing = int(rng.integers(0, size + 2))
+                    lower_bound = int(rng.integers(-3, size + 2))
+                    assert bare_finder._event_start_from_the_baseline(
+                        data, crossing, lower_bound
+                    ) == self._whole_chunk_start(
+                        bare_finder, data, crossing, lower_bound
+                    ), (
+                        size,
+                        crossing,
+                        lower_bound,
+                    )
+                    assert bare_finder._event_end_from_the_baseline(
+                        data, crossing
+                    ) == self._whole_chunk_end(bare_finder, data, crossing), (
+                        size,
+                        crossing,
+                    )
+
+
+class TestNextThresholdCrossing:
+    """
+    ``_next_threshold_crossing`` finds the first sample past the threshold from an index.
+
+    It searches forward in slices that double in size instead of comparing the whole
+    rest of the chunk for every event; the whole-rest ``argmax`` below is the rule it
+    must still give, at every offset around the first three slice seams.
+    """
+
+    _SEAM_OFFSETS = (
+        list(range(0, 4))
+        + list(range(1020, 1030))
+        + list(range(3068, 3078))
+        + list(range(7164, 7174))
+    )
+
+    @staticmethod
+    def _whole_rest(data, index, threshold, below):
+        crossed = data[index:] < threshold if below else data[index:] > threshold
+        position = int(np.argmax(crossed))
+        if position == 0 and not crossed[0]:
+            return None
+        return index + position
+
+    def test_a_crossing_at_every_offset_around_the_slice_seams(self, bare_finder):
+        for index in (0, 5):
+            for offset in self._SEAM_OFFSETS:
+                below = np.zeros(9000)
+                below[index + offset] = -10.0
+                above = np.full(9000, -10.0)
+                above[index + offset] = 0.0
+                assert bare_finder._next_threshold_crossing(
+                    below, index, -3.0, below=True
+                ) == self._whole_rest(below, index, -3.0, True), (index, offset)
+                assert bare_finder._next_threshold_crossing(
+                    above, index, -3.0, below=False
+                ) == self._whole_rest(above, index, -3.0, False), (index, offset)
+
+    def test_no_crossing_before_the_chunk_ends_is_none(self, bare_finder):
+        data = np.zeros(5000)
+        assert bare_finder._next_threshold_crossing(data, 10, -3.0, below=True) is None
+        assert bare_finder._next_threshold_crossing(data, 10, 3.0, below=False) is None
+
+    def test_it_matches_the_whole_rest_on_noise(self, bare_finder):
+        rng = np.random.default_rng(1)
+        for size in (1, 2, 1023, 1024, 1025, 5000):
+            data = rng.standard_normal(size) * 2.0
+            data[rng.integers(0, size, size // 50 + 1)] = np.nan
+            for _ in range(30):
+                index = int(rng.integers(0, size))
+                for below, threshold in ((True, -3.0), (False, 3.0)):
+                    assert bare_finder._next_threshold_crossing(
+                        data, index, threshold, below=below
+                    ) == self._whole_rest(data, index, threshold, below), (
+                        size,
+                        index,
+                        below,
+                    )
+
 
 class TestShippedFindersPlaceBoundariesAtTheEdges:
     """Each shipped finder's chunk method hands the base's boundary rule its crossings."""
@@ -692,7 +842,8 @@ class TestFindEventsHappyPath:
         assert finder.num_events_found[0] == 2
 
     def test_invalid_range_is_skipped(self, finder):
-        # second range is degenerate (start >= end) and should be skipped
+        # The second range is degenerate (start >= end); _merge_overlapping_ranges drops
+        # it, so the run finishes over the first range alone.
         gen = finder.find_events(0, [(0, 10.0), (5.0, 5.0)], chunk_length=10.0)
         list(gen)
         assert finder.eventfinding_finished[0] is True
@@ -1075,14 +1226,9 @@ class TestGetPaddingLength:
         assert last_end == 350
         assert pa_prev >= 0
 
-    def test_last_duration_used_for_target_padding(self, finder):
-        pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [500], [600], 0, last_duration=50, samplerate=100.0, last_sample=1000
-        )
-        assert pa_prev >= 0
-
     def test_padding_clamped_near_last_end(self, finder):
-        # event starts very close to last_end -> padding_before should be clamped
+        # The event wants 10 samples of padding before it, but starts only 5 after
+        # last_end, so it gets 0.75 of that gap rather than reaching into the last event.
         pb, pa, last_end, pa_prev = finder._get_padding_length(
             [10],
             [20],
@@ -1091,19 +1237,7 @@ class TestGetPaddingLength:
             samplerate=100.0,
             last_sample=1000,
         )
-        assert pb[0] <= 10
-
-    def test_padding_after_clamped_near_last_sample(self, finder):
-        pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [10, 900],
-            [20, 990],
-            last_end=0,
-            last_duration=None,
-            samplerate=100.0,
-            last_call=True,
-            last_sample=1000,
-        )
-        assert pa[0] >= 0
+        assert pb[0] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -1246,9 +1380,15 @@ class TestGetSingleEventData:
         assert calls == [True]
 
     def test_rectify_applied(self, finder):
+        """A trace recorded at negative bias comes back positive when rectified."""
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        finder.reader.data[0] *= -1
+        raw = finder.get_single_event_data(0, 0)["data"].copy()
+        assert np.all(raw < 0)
+
         event = finder.get_single_event_data(0, 0, rectify=True)
-        assert event is not None
+
+        np.testing.assert_array_equal(event["data"], -raw)
 
 
 # ---------------------------------------------------------------------------
@@ -1264,21 +1404,6 @@ class TestGetEventIndices:
         starts, ends = finder.get_event_indices()
         assert 0 in starts
         assert 0 in ends
-
-
-# ---------------------------------------------------------------------------
-# Abstract method stub bodies
-# ---------------------------------------------------------------------------
-class TestAbstractStubs:
-    def test_private_abstract_stubs(self, finder):
-        assert MetaEventFinder._init(finder) is None
-        assert (
-            MetaEventFinder._find_events_in_chunk(finder, np.array([1.0]), 1.0, 0.1, 0)
-            is None
-        )
-        assert MetaEventFinder._filter_events(finder, [], [], 0) is None
-        assert MetaEventFinder._validate_settings(finder, {}) is None
-        assert MetaEventFinder._get_baseline_stats(finder, np.array([1.0])) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1339,47 +1464,16 @@ class TestFitBaselineHistogram:
         return np.random.default_rng(seed).normal(mean, sigma, n)
 
     def test_recovers_the_mean(self, finder):
-        """The fitted mean lands on the true one; only sigma carries a known bias."""
+        """
+        The fitted mean lands on the true one.
+
+        Sigma is pinned against planted noise in ``test_baseline_sigma_planted.py``.
+        """
         data = self.noise()
         mean, _ = finder._fit_baseline_histogram(
             data, float(np.min(data)), float(np.max(data))
         )
         assert mean == pytest.approx(1000.0, abs=0.5)
-
-    def test_recovers_the_standard_deviation(self, finder):
-        """
-        Sigma comes back in the data's own units.
-
-        The fit is handed true bin centres. Labelling the bins edge to edge with
-        ``linspace`` instead stretches that axis by ``bins/(bins-1)`` and inflates sigma
-        by the same factor, which was +5.2% at this sample size until 2026-09-20.
-        ``ThresholdBlockageFinder`` denominates its threshold in sigma, so the error went
-        straight into which events it found.
-        """
-        data = self.noise()
-        _, std = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert std == pytest.approx(25.0, rel=0.02)
-
-    @pytest.mark.parametrize("n", [50_000, 200_000, 800_000])
-    def test_sigma_does_not_track_chunk_size(self, finder, n):
-        """
-        The same noise gives the same sigma however the chunks are cut.
-
-        The bin count is ``int(len(data)**(1/3)/2)``, so a bias that scales with the bin
-        count moves with ``chunk_length`` - which made a sigma-denominated threshold mean
-        something different on every chunk size. Sigma is the physical property of the
-        recording here, not of how it was sliced.
-
-        The tolerance is tight enough that every size fails against the uncorrected
-        code, which added 5.9%, 3.6% and 2.3% respectively on top of what is left here.
-        """
-        data = self.noise(n=n)
-        _, std = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert std == pytest.approx(25.0, rel=0.02)
 
     def test_a_flat_range_is_refused(self, finder):
         """

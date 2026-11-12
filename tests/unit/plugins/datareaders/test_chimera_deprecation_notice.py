@@ -7,8 +7,6 @@ when it is created is the one place every user of it looks, so the notice goes t
 once per channel, and only at creation, not on every later status refresh.
 """
 
-import gc
-
 import pytest
 
 from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader20240101
@@ -35,7 +33,6 @@ def reader_2024_01(tmp_path):
     yield reader, reader.get_channels()[0]
     reader.close_resources()
     del reader
-    gc.collect()
 
 
 @pytest.fixture
@@ -52,7 +49,6 @@ def reader_2024_05(tmp_path):
     yield reader, reader.get_channels()[0]
     reader.close_resources()
     del reader
-    gc.collect()
 
 
 def test_the_creation_report_names_the_deprecation_and_the_replacement(

@@ -46,6 +46,7 @@ pydoclint and the plugin compliance suite before a line of it is filled in.
 
 import argparse
 import ast
+import functools
 import importlib
 import inspect
 import json
@@ -1157,9 +1158,14 @@ def controls_import(name: str, folder: Path) -> ImportSpec:
     return ImportSpec(module, f"{name}{CONTROLS}", None)
 
 
+@functools.lru_cache(maxsize=None)
 def collect_module_imports(module_name: str) -> Dict[str, ImportSpec]:
     """
     Map every name a module imports to the import statement that binds it.
+
+    Cached, because every stub re-asks for its defining module and parsing it again
+    cost about 1.4 s per generation; the returned mapping is shared, so a caller must
+    not change it.
 
     :param module_name: the dotted module name to read
     :type module_name: str

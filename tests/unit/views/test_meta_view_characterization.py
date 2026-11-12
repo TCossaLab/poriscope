@@ -81,23 +81,14 @@ class TestParseEventIndices:
 
     def test_mixed_ranges_and_singletons(self, view: _ConcreteView) -> None:
         """A singleton becomes a degenerate range."""
-        assert view._parse_event_indices("7-10,12", allow_floats=False) == [
+        assert view._parse_event_indices("7-10,12") == [
             (7, 10),
             (12, 12),
         ]
 
-    def test_floats_are_accepted_when_allowed(self, view: _ConcreteView) -> None:
-        """With floats permitted, fractional bounds survive."""
-        assert view._parse_event_indices("1.5-4.5,6", allow_floats=True) == [
-            (1.5, 4.5),
-            (6.0, 6.0),
-        ]
-
-    def test_a_float_is_rejected_when_floats_are_not_allowed(
-        self, view: _ConcreteView
-    ) -> None:
+    def test_a_float_is_rejected(self, view: _ConcreteView) -> None:
         """``int('1.5')`` raises, so the segment is warned about and dropped."""
-        assert view._parse_event_indices("1.5,3", allow_floats=False) == [(3, 3)]
+        assert view._parse_event_indices("1.5,3") == [(3, 3)]
 
     def test_a_two_hyphen_segment_is_dropped(self, view: _ConcreteView) -> None:
         """
@@ -105,19 +96,19 @@ class TestParseEventIndices:
 
         Recorded rather than fixed: the segment is logged and skipped.
         """
-        assert view._parse_event_indices("1-2-3,5", allow_floats=False) == [(5, 5)]
+        assert view._parse_event_indices("1-2-3,5") == [(5, 5)]
 
     def test_a_negative_bound_is_dropped_because_of_the_hyphen(
         self, view: _ConcreteView
     ) -> None:
         """``'-5'`` splits into ``['', '5']`` and the empty string fails to cast."""
-        assert view._parse_event_indices("-5,7", allow_floats=False) == [(7, 7)]
+        assert view._parse_event_indices("-5,7") == [(7, 7)]
 
     def test_whitespace_and_empty_segments_are_tolerated(
         self, view: _ConcreteView
     ) -> None:
         """Trailing commas and spaces are normal user input, not errors."""
-        assert view._parse_event_indices(" 3 , , 5 ", allow_floats=False) == [
+        assert view._parse_event_indices(" 3 , , 5 ") == [
             (3, 3),
             (5, 5),
         ]
@@ -214,21 +205,6 @@ class TestFormatRanges:
     ) -> None:
         """A degenerate range collapses to a bare number."""
         assert view._format_ranges([(8, 11), (13, 13)]) == "8-11,13"
-
-    def test_floats_round_trip_as_floats(self, view: _ConcreteView) -> None:
-        """No formatting is applied, so fractional bounds keep their point."""
-        assert view._format_ranges([(1.5, 4.5)]) == "1.5-4.5"
-
-    def test_a_whole_float_still_renders_a_trailing_zero(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        ``str(5.0)`` is ``'5.0'``, so a float-parsed integer does not render as ``'5'``.
-
-        Worth pinning: it means a parse-then-format round trip is not the identity
-        when ``allow_floats`` is on.
-        """
-        assert view._format_ranges([(5.0, 5.0)]) == "5.0"
 
     def test_no_ranges_gives_an_empty_string(self, view: _ConcreteView) -> None:
         """Not ``None``, and not a stray comma."""

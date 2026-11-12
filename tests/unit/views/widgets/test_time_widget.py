@@ -66,7 +66,7 @@ class TestTimeRangeValidatorAcceptable(unittest.TestCase):
         self.assertEqual(self._state("0-1,2-3,4-5"), QValidator.Acceptable)
 
     def test_ranges_without_spaces(self):
-        """Validator rejects spaces inside the string (caught by the char regex)."""
+        """Ranges joined by a bare comma, with no space after it, are accepted."""
         self.assertEqual(self._state("0.0-2.5,3.0-6.0"), QValidator.Acceptable)
 
 

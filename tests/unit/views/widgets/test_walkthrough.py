@@ -1,5 +1,5 @@
 """
-Tests for poriscope/plugins/analysistabs/utils/walkthrough.py
+Tests for poriscope/views/widgets/walkthrough.py
 
 Covers:
 - Overlay: __init__, highlight (single/list), eventFilter (Resize/Move/other), paintEvent
@@ -93,17 +93,25 @@ class TestOverlay:
         assert result is False  # passed to super
 
     def test_eventfilter_move_event(self, overlay, parent_widget):
+        # Knocked out of place first, so only the Move handling can restore it.
+        overlay.setGeometry(0, 0, 10, 10)
         event = QEvent(QEvent.Move)
         overlay.eventFilter(parent_widget, event)
         assert overlay.geometry() == parent_widget.rect()
 
+    # The overlay is shown and repainted synchronously, so paintEvent really runs
+    # inside the test: update() on a hidden widget only schedules a paint that never
+    # happens, and pytest-qt fails a test whose paintEvent raises.
+
     def test_paint_event_no_crash_empty_targets(self, overlay):
         overlay.target_widgets = []
-        overlay.update()  # triggers paintEvent internally — should not crash
+        overlay.show()
+        overlay.repaint()
 
     def test_paint_event_no_crash_with_targets(self, overlay, parent_widget):
         overlay.highlight(parent_widget)
-        overlay.update()  # should not crash
+        overlay.show()
+        overlay.repaint()
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +171,9 @@ class TestStepDialogNavigation:
     def test_prev_step_hides_back_btn(self, step_dialog):
         step_dialog.next_step()
         step_dialog.prev_step()
-        assert not step_dialog.back_btn.isVisible()
+        # isHidden, not isVisible: the dialog itself may not be on screen, and then
+        # isVisible() is False for every child whatever the button was told.
+        assert step_dialog.back_btn.isHidden()
 
     def test_prev_step_at_zero_stays_at_zero(self, step_dialog):
         step_dialog.prev_step()
@@ -271,18 +281,12 @@ class TestIntroDialog:
 
 class TestStartWalkthrough:
     def test_returns_step_dialog(self, parent_widget, qtbot):
+        """The real walkthrough, not the bare QDialog the failure paths fall back to."""
         steps = _make_steps(parent_widget, 2)
         result = start_walkthrough(parent_widget, steps)
         if result is not None:
             qtbot.addWidget(result)
-        assert result is not None
-
-    def test_returns_dialog_instance(self, parent_widget, qtbot):
-        steps = _make_steps(parent_widget, 2)
-        result = start_walkthrough(parent_widget, steps)
-        if result is not None:
-            qtbot.addWidget(result)
-        assert isinstance(result, QDialog)
+        assert isinstance(result, StepDialog)
 
     def test_overlay_failure_falls_back_gracefully(self, parent_widget, qtbot):
         """If Overlay raises, start_walkthrough still returns a dialog."""

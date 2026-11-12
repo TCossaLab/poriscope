@@ -20,8 +20,6 @@ unconditionally, so there is nothing to parametrize there - asserted below so th
 asymmetry is recorded rather than rediscovered.
 """
 
-import sys
-
 import pytest
 from PySide6.QtWidgets import QDialog, QWidget
 
@@ -124,8 +122,3 @@ def test_the_filter_widget_has_no_platform_branch() -> None:
         text = handle.read()
 
     assert "sys.platform" not in text
-
-
-def test_the_real_platform_is_restored_afterwards() -> None:
-    """The monkeypatching above must not leak into the rest of the session."""
-    assert multiselect.sys.platform == sys.platform

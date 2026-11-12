@@ -159,19 +159,23 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
 
         while index < len_data:
             if not entry_state:  # we are not in an event
-                pos = int(np.argmax(data[index:] < threshold))
-                if pos == 0 and not (data[index] < threshold):
+                crossing = self._next_threshold_crossing(
+                    data, index, threshold, below=True
+                )
+                if crossing is None:
                     break
-                index += pos
+                index = crossing
                 # back from the crossing to where the signal left the baseline
                 event_start = self._event_start_from_the_baseline(data, index, last_end)
                 entry_state = True
                 event_starts.append(event_start + offset)
             else:
-                pos = int(np.argmax(data[index:] > threshold))
-                if pos == 0 and not (data[index] > threshold):
+                crossing = self._next_threshold_crossing(
+                    data, index, threshold, below=False
+                )
+                if crossing is None:
                     break
-                index += pos
+                index = crossing
                 # forward from the return crossing to where the signal rejoins the
                 # baseline; no such place in this chunk means the event straddles it
                 event_end = self._event_end_from_the_baseline(data, index)

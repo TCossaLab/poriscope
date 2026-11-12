@@ -140,7 +140,11 @@ def test_a_second_plot_of_the_same_values_draws_without_computing(
 
 
 def test_editing_the_experiment_recomputes(
-    qtbot: Any, tab: Triad, experiment: ConditioningDataset, panel: List[str]
+    qtbot: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tab: Triad,
+    experiment: ConditioningDataset,
+    panel: List[str],
 ) -> None:
     _plot(tab, [5])
     _drawn(qtbot, tab, 1)
@@ -154,9 +158,19 @@ def test_editing_the_experiment_recomputes(
     settings["Sensitivity"]["Value"] = 10.0
     loader.apply_settings(settings)
     panel.clear()
+    # The first plot's title is still on the figure, so waiting on the titles would
+    # return before the recompute had drawn anything; count this plot's own draw.
+    draws: List[int] = []
+    draw = tab.tab_view.draw_conditioning
+    monkeypatch.setattr(
+        tab.tab_view,
+        "draw_conditioning",
+        lambda *args, **kwargs: (draws.append(1), draw(*args, **kwargs)),
+    )
     _plot(tab, [5])
     assert any("Computing the 1 Hz noise of 1 channel(s)" in t for t in panel)
-    _drawn(qtbot, tab, 1)
+    qtbot.waitUntil(lambda: len(draws) == 1, timeout=60_000)
+    assert _titles(tab) == ["Channel 5"]
 
 
 @pytest.mark.parametrize(

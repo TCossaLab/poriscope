@@ -721,26 +721,26 @@ class TestPluginReach:
         plugins = Path(mod.REPO_ROOT) / "poriscope" / "plugins"
         assert {f for f in mod.PLUGIN_FAMILIES if not (plugins / f).is_dir()} == set()
 
-    def test_all_nine_families_are_covered(self, mod: types.ModuleType) -> None:
+    def test_every_data_plugin_folder_is_a_family(self, mod: types.ModuleType) -> None:
         """
         Missing one would leave a hole exactly where a plugin lives.
 
-        Named as a set so that adding a tenth family fails here rather than silently
-        going unwatched. Each name is a real folder under ``poriscope/plugins/``: this
-        set once named ``db_writers``, a folder that does not exist, so the database
-        writers went unwatched.
+        Read from the plugin folders on disk, so a new data-plugin family fails here
+        until rule 5 watches it, rather than silently going unwatched. A folder holding
+        no module - one left behind with only a ``__pycache__`` - is not a family.
+        ``analysistabs`` holds the tabs themselves, not data plugins.
         """
-        assert mod.PLUGIN_FAMILIES == {
-            "conditioningloaders",
-            "datareaders",
-            "datawriters",
-            "db_loaders",
-            "dbwriters",
-            "eventfinders",
-            "eventfitters",
-            "eventloaders",
-            "filters",
+        plugins = Path(mod.REPO_ROOT) / "poriscope" / "plugins"
+        on_disk = {
+            folder.name
+            for folder in plugins.iterdir()
+            if folder.is_dir()
+            and not folder.name.startswith(("_", "."))
+            and folder.name != "analysistabs"
+            and any(folder.glob("*.py"))
         }
+
+        assert on_disk - mod.PLUGIN_FAMILIES == set()
 
     def test_the_data_plugin_bases_are_not_tab_modules(
         self, mod: types.ModuleType

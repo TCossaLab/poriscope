@@ -18,6 +18,106 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - The duplication baseline names the duplicated functions; tests that only pinned a copy go
+
+**Context.** The test-value audit found six tests asserting that a base class owns the only copy
+of a method. Each failed together with the duplication ratchet when a copy was pasted into a
+subclass, but the ratchet's failure invited `--update`, and the baseline held counts only, so it
+could not say what had been copied.
+
+**Decision** (Kyle left the redundancy to Claude, 2026-11-12). The ratchet is the single guard: the
+baseline also lists each family's `duplicated_functions` (`file.py:Class.method`), a rise names the
+ones that are new, and its message says a rise is usually a copy to remove. The names are never
+compared, so a rename does not churn the baseline. The per-method "only copy" tests are dropped.
+
+Each family now also holds the `Meta*` bases its files inherit: until then a base method copied
+onto one subclass had no identical twin in the family and counted only as one more function.
+Pasting `show_selection_tree` onto `MetadataView` now fails as duplication and names both copies.
+
+**Revisit if** a copy lands through `--update` unnoticed: then an explicit per-method test is worth
+its upkeep for that method.
+
+---
+
+## 2026-11-12 - A Protein double-Gaussian component narrower than half a bin is no second population
+
+**Context.** `ProteinModel._fit_and_sanity_check_double_gaussian` accepted, on a clean single peak
+(sigma 0.05 or 0.1 over 200 bins) and on a peak 1000x a second, a fit whose second component had
+sigma 0 on top of the first: the degenerate covariance passed the t-test on the means. A noisy single
+peak was rejected. `test_single_peak_fallback_degenerate_bug` pinned the raw helper's output.
+
+**Decision** (Kyle, 2026-11-12: "a zero-width component fit should be treated like failure to find two
+populations"). The sanity check rejects a fit whose narrower component has sigma under half a bin
+(FWHM under about 1.2 bins), the resolution limit of the histogram it was fitted to. The raw
+`_fit_double_gaussian` is unchanged; every acceptance rule stays in the sanity check.
+
+**Revisit if** a real dataset has a population genuinely narrower than one bin: then the binning, not
+this rule, is what should change.
+
+---
+
+## 2026-11-12 - The suite runs in parallel by whole files, workers sized by logical cores and free memory
+
+**Context.** After the window cleanup, a serial run took 493-517 s. With `pytest-xdist` and
+`--dist loadfile`: 128 s at 4 workers, 98 s at 16, all green; one worker peaked at 1.9 GB.
+
+**Decision.** `pytest -n auto` is the gate, locally and on CI; plain `pytest` stays serial.
+`--dist loadfile` is in `addopts`, so a file keeps its order on one worker (leaked Qt state has
+made order matter before). The root conftest's `pytest_xdist_auto_num_workers` returns
+`min(logical cores, free memory // 2 GB)`. Logical, because a 4-vCPU runner reports 2 physical
+cores; memory, because 16 workers do not fit 13 GB free. `psutil` is a dev dependency for the
+memory reading. `test_plugin_compliance` sorts its cases, since workers must collect identically.
+
+**Rejected.** `-n auto` in `addopts`: every single-test run would start a pool of Qt workers.
+`--dist load` (per test): it splits files, reorders them, and runs module fixtures once per worker.
+
+**Revisit if** the longest file stops setting the floor (`test_replay_guard_no_gui.py`, 45 s), or
+a worker's peak memory moves far from 2 GB.
+
+---
+
+## 2026-11-12 - A release with any breaking change is a major version; the 2.1 work ships as 3.0
+
+**Context.** The 2.1 changelog carries about 36 breaking lines (2.0.0 had 54; the 1.x minors 0-2):
+the data-plugin contract (`report_status` with no alias, `close_resources`, `reset_channel`,
+`get_single_event_data`), refused 2.0 plot configurations and action histories, and changed
+scientific results. The wheel declares compatible-release ranges, so a `poriscope~=2.0` pin would
+install it and break. The 2026-10-09 ruling had shipped the plugin breaks in a minor anyway.
+
+**Decision** (Kyle, 2026-11-12). Release numbers follow semantic versioning: a release whose
+`changelog.md` section has any entry under Breaking Changes - API, saved files or results - is a
+major version; compatible additions are a minor; fixes that break nothing are a patch. The in-progress
+2.1.0 is renamed 3.0.0, queued in `future_fixes.md` after the test-suite speed work.
+
+**Revisit if** the project moves to a different scheme, such as calendar versions. Until then,
+read the release's Breaking Changes section before choosing its number.
+
+---
+
+## 2026-11-12 - Qt windows are deleted after every test at root scope, and a survivor fails the test
+
+**Context.** A full serial run took 1,650 s. `Triad.close()` only hid its `MainView`, so the
+integration flows left about 9,300 top-level windows and 2.47M objects alive. Each leaked
+`BaseLineEdit` stayed an application-wide event filter (`ProteinController()` built in 52 ms with
+none alive, 11.6 s with 1,000), and every full `gc.collect()` took about 2.4 s against 0.1 s.
+The views conftest had fixed the same leak in 2026-08, for its own directory only.
+
+**Decision.** An autouse fixture in the root conftest calls `tests/_window_cleanup.py` after
+every test: deliver queued events, close and `deleteLater()` every top-level widget, send the
+deferred deletes, and fail the test if any window survives. The `gc.collect()` calls in the
+SQLite loader, Chimera deprecation and standalone-settings fixtures go: none freed anything a
+test checked, and no file-lock retry ever fired. The views conftest keeps its own pass and its
+gc cadence (2026-08-28 entry).
+
+**Evidence.** Serial run 1,650 s to 493 s, 5,824 passed, no assertion changed. Without the
+first `processEvents()`, a worker's queued "finished" reached a deleted view in the
+conditioning flow.
+
+**Revisit if** a test legitimately needs a window to outlive it (none does today): give it a
+session fixture that owns the window, not an exemption in the guard.
+
+---
+
 ## 2026-11-12 - The Raw Data PSD tests compare to scipy within `rtol=1e-12`, not exactly
 
 **Context.** Branch CI's fresh-stack legs (3.14, Linux and Windows) failed two tests in
@@ -30,6 +130,8 @@ change what every caller receives for no user-visible gain. `rtol=1e-12` still f
 for 125, or a segment one sample short.
 
 **Revisit if** an exact comparison against a library is needed again: pass it the same array type.
+
+---
 
 ## 2026-11-11 - The conditioning app is ported as a data-plugin family, an NI reader, a Raw Data option and a tab
 
@@ -1982,7 +2084,8 @@ is in `future_fixes.md`. Decision C closes at 3 of 5 taken (`raw_data`, `_write_
 deferred channel work is picked up - it breaks every plugin, so it wants a major version.
 
 **Landed in 2.1, step 8, with a different design** (Kyle, 2026-10-09; shipped in a minor
-version regardless, each break marked in `changelog.md`). One `report_status(channel=None,
+version regardless, each break marked in `changelog.md` - superseded 2026-11-12: the release is
+3.0, under the release-number convention below). One `report_status(channel=None,
 init=False)` on `BaseDataPlugin` for every plugin, `report_channel_status` removed with no
 alias ("I do not want multiple paths to getting plugin reports"); `close_resources()` takes no
 channel and is a concrete no-op, overridden only by the two SQLite writers; `reset_channel
@@ -3416,8 +3519,9 @@ scoping is also applied independently of the experiment lookup, where the old co
 **Evidence.** `event_id` is unique only within a channel, so an unscoped match returns
 whichever channel's row happens to share the number - the same "plots the wrong subset" class
 of fault as the three stale reads fixed in `32b3bc34`, and invisible in exactly the same way.
-`test_metadata_fetch_slots` drives it, and reverting the guard fails that one test and no
-other.
+`test_metadata_fetch_slots` drove it, and reverting the guard failed that one test and no
+other. (2026-11-12: that copy was dropped as a duplicate; its Protein twin
+`test_an_unresolvable_experiment_stops_the_plot` fails under the same revert.)
 
 **Revisit if** a database legitimately holds events whose experiment is unknown, in which
 case the fallback needs to be scoped by channel rather than unscoped.
@@ -3584,7 +3688,8 @@ several all still pass, resolving through the MRO, and none of them could have c
 leftover copy - it would shadow the base for that one tab and every test would stay green. A
 new `tests/unit/controllers/test_promoted_controller_methods.py` asserts single ownership,
 MRO identity, and that the stale docstring claim is gone, since nothing else reads a
-docstring.
+docstring. (2026-11-12: those three tests are dropped; the duplication ratchet, which now
+measures the bases, names a leftover copy.)
 
 **Revisit if** 4d moving the pending state to the Model makes the shared body per-tab again,
 which would be a genuine reason rather than the one recorded.

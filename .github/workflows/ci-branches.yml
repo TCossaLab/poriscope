@@ -190,17 +190,18 @@ jobs:
       # ---------------------------------------------------------------------
       # Runs the whole suite, e2e included - no marker filter. At ~6 minutes the
       # e2e tests are worth their cost.
+      # -n auto: workers sized by tests/conftest.py from the runner's cores and memory.
       - name: Run tests under Xvfb
         if: runner.os == 'Linux'
         run: |
-          xvfb-run -a pytest -q
+          xvfb-run -a pytest -q -n auto
 
       # Qt needs no display server here: QT_QPA_PLATFORM=offscreen is set at job
       # level and the e2e tests drive real widgets against that platform plugin.
       - name: Run tests (Windows, offscreen)
         if: runner.os == 'Windows'
         run: |
-          pytest -q
+          pytest -q -n auto
 
   # ---------------------------------------------------------------------------
   # Wheel smoke: the suite above runs against `pip install -e`, which never

@@ -98,7 +98,7 @@ jobs:
 
       - name: Run tests (unit + E2E)
         run: |
-          xvfb-run -a pytest      # Add specific markers (e.g., "not slow") if needed
+          xvfb-run -a pytest -n auto  # workers sized by tests/conftest.py
 
       # Build the wheel and source distribution
       - name: Build package

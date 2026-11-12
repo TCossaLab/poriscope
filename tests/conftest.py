@@ -13,12 +13,16 @@ on the specific layout it builds. The ``main_model`` fixture in
 ``tests/unit/models/test_main_model.py`` relies on this one alone.
 """
 
+import itertools
 import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
+import psutil
 import pytest
+
+from tests._window_cleanup import destroy_leftover_windows
 
 # ===========================================================================
 # Repo root on sys.path
@@ -44,17 +48,37 @@ for _candidate in [_TESTS_DIR, *_TESTS_DIR.parents]:
         break
 
 
-@pytest.fixture(autouse=True)
-def sandbox_user_data_dir(monkeypatch, tmp_path):
+_SANDBOX_NUMBERS = itertools.count()
+
+
+@pytest.fixture(scope="session")
+def _sandbox_parent(tmp_path_factory):
     """
-    Point ``platformdirs.user_data_dir()`` at a per-test temporary directory.
+    One directory per session holding every test's sandbox.
+
+    Asking for ``tmp_path`` in every test is what this avoids: pytest lists its whole
+    base directory to number each new one, so that cost grows with every test run
+    before it - about 47 s over the suite.
+
+    :param tmp_path_factory: pytest's session-wide temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: the directory the sandboxes are made in
+    :rtype: pathlib.Path
+    """
+    return tmp_path_factory.mktemp("appdata_sandboxes", numbered=False)
+
+
+@pytest.fixture(autouse=True)
+def sandbox_user_data_dir(monkeypatch, _sandbox_parent):
+    """
+    Point ``platformdirs.user_data_dir()`` at a fresh per-test directory.
 
     :param monkeypatch: pytest's monkeypatch fixture.
     :type monkeypatch: pytest.MonkeyPatch
-    :param tmp_path: pytest's per-test temporary directory.
-    :type tmp_path: pathlib.Path
+    :param _sandbox_parent: the session directory each test's sandbox is made in.
+    :type _sandbox_parent: pathlib.Path
     """
-    appdata_root = tmp_path / "appdata"
+    appdata_root = _sandbox_parent / str(next(_SANDBOX_NUMBERS)) / "appdata"
     for subdir in ("session", "config", "logs", "user_plugins"):
         (appdata_root / "Poriscope" / subdir).mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +99,50 @@ def sandbox_user_data_dir(monkeypatch, tmp_path):
             _fake_user_data_dir,
             raising=True,
         )
+
+
+# One worker's peak memory, rounded up: 1.9 GB measured on 2026-11-12 with four workers
+# over tests/integration and tests/unit/views, the heaviest directories.
+_WORKER_MEMORY_BYTES = 2 * 1024**3
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config):
+    """
+    Size ``pytest -n auto`` from this machine: one worker per logical core, but no more
+    workers than the available memory holds.
+
+    Logical rather than physical cores, because a 4-vCPU CI runner reports two physical
+    cores. Every worker loads Qt, matplotlib and the session's synthetic data, so memory
+    is the tighter limit on a many-core desktop. ``PYTEST_XDIST_AUTO_NUM_WORKERS`` still
+    overrides the count: returning ``None`` defers to xdist's own hook, which reads it.
+
+    :param config: the pytest configuration
+    :type config: pytest.Config
+    :return: the number of workers, or None to let xdist decide
+    :rtype: Optional[int]
+    """
+    if os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    cores = os.cpu_count() or 1
+    by_memory = psutil.virtual_memory().available // _WORKER_MEMORY_BYTES
+    return max(1, min(cores, int(by_memory)))
+
+
+@pytest.fixture(autouse=True)
+def destroy_windows_after_each_test():
+    """
+    Delete every window a test leaves behind, and fail the test if one survives.
+
+    This is root-level because the ``QApplication`` is shared by the whole session: a
+    window left alive in one directory slows every test in every directory after it.
+    It is autouse and declared here, so it is torn down after every fixture a test
+    asks for - a triad has stopped its workers before its windows go.
+    """
+    yield
+    survivors = destroy_leftover_windows()
+    if survivors:
+        pytest.fail(f"Windows still alive after the cleanup: {survivors}")
 
 
 # ===========================================================================
@@ -115,7 +183,7 @@ def real_data_dir() -> Path:
 # hand-applied: a new file under tests/e2e/ carries the marker the moment it is
 # added, with nothing to remember and nothing to keep in sync.
 #
-# `compliance`, `smoke` and `e2e_ux` stay hand-applied: they are genuine
+# `compliance` and `e2e_ux` stay hand-applied: they are genuine
 # per-test choices that no directory implies.
 _PATH_MARKERS = (
     ("/tests/e2e/", "e2e"),

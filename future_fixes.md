@@ -118,6 +118,10 @@ Step 10 waits for both tracks.
 
 ### Step 10 - docs dead-link gate and release prep
 
+- **Rename the release 2.1.0 to 3.0.0, after the test-suite speed series lands (2026-11-12).** Breaking
+  changes make it a major (DECISIONS 2026-11-12): the `changelog.md` header, this file's "2.1" headers
+  and references, the plan artifact, the Step 10 compatibility page, then `constants.py` and
+  `CITATION.cff` at the release bump.
 - **Settle how every saved format is versioned, before 2.1 merges to main (2026-11-09).** One policy for
   every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
   whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
@@ -202,6 +206,10 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Fitter performance and logging
 
+- **Two loader bases share 66 identical lines** (2026-11-12, seen once the duplication ratchet
+  measured the bases): `MetaDatabaseLoader` and `MetaEventLoader` each define the same 58-line
+  `get_empty_settings` and 8-line `force_serial_channel_operations`. A shared loader base would
+  hold them once; it is a data-plugin API change.
 - **CUSUM costs 6.3 µs per sample, flat from 2k to 200k** (1.3 s for a 200k-sample
   event), holding the GIL, so per-channel threads give no multi-channel speedup;
   `IntraCUSUM.py:151` adds a second per-sample loop. JIT or C-port behind a golden ratchet.
@@ -726,11 +734,6 @@ itself stays on the application.
   its combobox. Note the original rationale for parenting it - that it would stop
   `_close_leftover_widgets` sweeping it as a top-level - **was measured and is false**: a
   parented widget that keeps its window flags is still returned by `topLevelWidgets()`.
-- **`BaseLineEdit` still registers one application-wide filter and one `aboutToQuit`
-  connection per instance** (3 per controls build; `utils/BaseLineEdit.py:45-48`). Both are now harmless - its `eventFilter`
-  returns `False` directly and nothing in its body touches a C++ member of `self`. Replacing
-  them with a single application-owned watcher would remove the leak outright, but it is a
-  new class and a breaking change to something re-exported from `exposed.py`.
 
 ### Community-contributed-plugin compliance gate
 

@@ -86,28 +86,23 @@ class MetaEventTabView(MetaView):
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
-    def _parse_event_indices(
-        self, indices: str, allow_floats: bool
-    ) -> list[tuple[float, float]]:
+    def _parse_event_indices(self, indices: str) -> list[tuple[float, float]]:
         """
-        Parse '7-10,12' → [(7,10), (12,12)]
-        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
-        otherwise every bound is parsed with int().
+        Parse '7-10,12' → [(7,10), (12,12)]; every bound is parsed with int().
         """
         result: list[tuple[float, float]] = []
-        caster = float if allow_floats else int
 
         for segment in indices.split(","):
             segment = segment.strip()
             if "-" in segment:
                 try:
-                    start, end = map(caster, segment.split("-"))
+                    start, end = map(int, segment.split("-"))
                     result.append((start, end))
                 except ValueError:
                     self.logger.warning(f"Invalid range segment: {segment}")
             elif segment:
                 try:
-                    val = caster(segment)
+                    val = int(segment)
                     result.append((val, val))
                 except ValueError:
                     self.logger.warning(f"Invalid index segment: {segment}")
@@ -291,7 +286,7 @@ class MetaEventTabView(MetaView):
             self.logger.debug("Event index input is empty.")
             return
 
-        parsed = self._parse_event_indices(original_str, False)
+        parsed = self._parse_event_indices(original_str)
         self.logger.debug(f"Parsed input into ranges: {parsed}")
 
         shifted = self._shift_ranges(parsed, direction, 1)

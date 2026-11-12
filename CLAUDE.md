@@ -20,7 +20,8 @@ Run the app with the `poriscope` console-script entry point (`poriscope.main_app
 ## Common commands
 
 ```
-pytest                                        # full suite - also what CI runs, everywhere
+pytest -n auto                                # full suite in parallel - what CI runs, everywhere
+pytest                                        # full suite, serial (--marker-stats needs this)
 pytest tests/unit/plugins/test_plugin_compliance.py   # plugin interface compliance
 pytest path/to/test_file.py::test_name        # single test
 pytest --marker-stats                         # per-marker test counts and mean durations
@@ -96,8 +97,9 @@ Three rules apply regardless:
 
 ## Testing conventions
 
-- **Run the whole suite before every commit: plain `pytest`, no path arguments and no
-  marker filter.** A full run takes ~25 minutes, on CI and on the dev machine alike (2026-11-11) - run it in
+- **Run the whole suite before every commit: `pytest -n auto`, no path arguments and no
+  marker filter.** On the dev machine a full run takes about 2 minutes in parallel and 9 serially
+  (2026-11-12); `tests/conftest.py` sizes the workers from the machine's cores and free memory. Run it in
   the background, redirected to a file. That is still no reason to select a subset, because choosing one is itself the error-prone step — a scoped run that skipped
   `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
   failing test while debugging is fine; the gate is a full green run immediately before
@@ -111,6 +113,10 @@ Three rules apply regardless:
   copy fails, so nothing is left to reproduce. A clean copy takes that state out of the result,
   which is cheaper than hunting for it. If the two ever disagree again, run
   `git status --ignored` in the shared checkout and keep the output before touching anything.
+- **The root `tests/conftest.py` deletes every window a test leaves behind, and a survivor
+  fails the test.** The `QApplication` is shared by the whole session, so cleanup of Qt state
+  belongs there, never in one directory's conftest (lesson N17 in
+  `planning-and-executing-changes`): leaked windows tripled the suite's time twice.
 - `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`, with one
   exception: the analysis-tab triads under `poriscope/plugins/analysistabs/` are tested in
   `tests/unit/views/` and `tests/unit/controllers/`, while `tests/unit/plugins/analysistabs/`
@@ -264,7 +270,7 @@ creating, moving, syncing or checking one.
 - **`git flow release finish` is run by a human, interactively — hand it off, do not automate
   it.** Everything up to it is ordinary work: `release start`, the version bumps in
   `poriscope/constants.py` and `CITATION.cff`, dating the `changelog.md` header, a full green
-  `pytest`, and the preparation commit. Then stop and let someone run
+  `pytest -n auto`, and the preparation commit. Then stop and let someone run
   `GIT_MERGE_AUTOEDIT=no git flow release finish <version>` themselves, and push `main`,
   `develop` and the tag afterwards. Only the tag push runs `release.yml`; the release
   branch itself is tested by `ci-branches.yml` and `docs-check.yml` on every push, so push

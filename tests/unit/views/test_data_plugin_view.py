@@ -33,11 +33,14 @@ def test_get_user_settings_returns_expected_tuple(mock_dialog_class, plugin_view
     """
     Test that get_user_settings correctly returns a tuple of
     (settings, key, delete_requested) from the dialog.
+
+    The dialog reports a delete request here, so the third element is only right if
+    the view forwards the dialog's answer rather than a constant.
     """
     # Mock the dialog and its return value
     mock_dialog = MagicMock()
     mock_dialog.get_result.return_value = ({"param": "value"}, "plugin_key")
-    mock_dialog.delete_requested.return_value = False
+    mock_dialog.delete_requested.return_value = True
     mock_dialog_class.return_value = mock_dialog
 
     # Call the method
@@ -54,7 +57,7 @@ def test_get_user_settings_returns_expected_tuple(mock_dialog_class, plugin_view
     # Assert that get_result was called and correct result is returned
     mock_dialog.exec.assert_called_once()
     mock_dialog.get_result.assert_called_once()
-    assert result == ({"param": "value"}, "plugin_key", False)
+    assert result == ({"param": "value"}, "plugin_key", True)
 
 
 @patch("poriscope.views.DataPluginView.DictDialog")

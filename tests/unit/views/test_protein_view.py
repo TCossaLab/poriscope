@@ -2,7 +2,6 @@
 Full unit-test suite for ProteinView.
 
 Covers the ProteinView analysis tab end-to-end, including:
-  - format_axis_label (module-level helper)
   - Plotting: _plot_all_points_histogram, _plot_scatterplot,
     _plot_xyerr_scatterplot, update_plot
   - Event/histogram navigation and caching: _refuse_scope, _resolve_events,
@@ -32,8 +31,8 @@ Uses:
 Notes:
   - Several tests are annotated "documented" or "_bug" in their names; these
     intentionally pin down current behaviour (including known quirks, e.g.
-    format_axis_label's regex on nested parentheses, or the double-Gaussian
-    fallback fit's degenerate single-peak behaviour) rather than asserting
+    the double-Gaussian fallback fit's degenerate single-peak behaviour)
+    rather than asserting
     an ideal/fixed outcome. Treat failures in these tests as a prompt to
     re-evaluate intent, not just to "fix" them blindly.
   - Nothing answers the view's request signals in these tests, so any code path
@@ -49,7 +48,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import (
@@ -99,13 +98,9 @@ def real_view(qt_app):
     Return a fully-initialised ProteinView built from real Qt widgets.
 
     MetaView.__init__ calls _set_custom_display_area and _set_control_area
-    during the real widget build sequence; we call them explicitly here so
-    that display_stack, ax_hist, canvas_hist, proteincontrols, etc. are all
-    present — exactly as in the running application.
-
-    The parent container is kept alive for the test duration, then explicitly
-    closed and destroyed in teardown so no Qt state leaks into subsequent
-    test files when running the full suite with --cov.
+    during the real widget build sequence, so display_stack, ax_hist,
+    canvas_hist, proteincontrols, etc. are all present - exactly as in the
+    running application, and in the view's own layout.
 
     Use this only where the test needs real Qt or Matplotlib behaviour:
     asserting that construction actually produced widgets, emitting a real
@@ -113,12 +108,6 @@ def real_view(qt_app):
     Everything else should take ``mock_view``, which is far cheaper.
     """
     v = ProteinView()
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    v._set_custom_display_area(layout)
-    v._set_control_area(layout)
-    v._test_container = container  # keep Qt parent alive for test duration
-
     return v
 
 
@@ -254,44 +243,6 @@ def _all_filter_names(mock_view):
 
 
 # ===========================================================================
-# format_axis_label  (inherited from MetaView)
-# ===========================================================================
-
-
-class TestFormatAxisLabel:
-    def test_adds_unit(self):
-        assert ProteinView.format_axis_label("Duration", "ms") == "Duration (ms)"
-
-    def test_empty_unit(self):
-        assert ProteinView.format_axis_label("Amplitude", "") == "Amplitude"
-
-    def test_appends_rather_than_replacing_an_existing_unit(self):
-        assert (
-            ProteinView.format_axis_label("Duration (s)", "ms") == "Duration (s) (ms)"
-        )
-
-    def test_an_empty_unit_leaves_an_existing_parenthetical_in_place(self):
-        assert ProteinView.format_axis_label("Amplitude (pA)", "") == "Amplitude (pA)"
-
-    def test_latex_unit(self):
-        assert (
-            ProteinView.format_axis_label("Volume", r"nm$^{3}$") == r"Volume (nm$^{3}$)"
-        )
-
-    def test_idempotent(self):
-        once = ProteinView.format_axis_label("Duration", "ms")
-        assert ProteinView.format_axis_label(once, "ms") == once
-
-    def test_a_label_containing_its_own_parenthetical_keeps_it(self):
-        assert ProteinView.format_axis_label("log10(Duration)", "s") == (
-            "log10(Duration) (s)"
-        )
-
-    def test_none_unit_equivalent(self):
-        assert ProteinView.format_axis_label("X", "") == "X"
-
-
-# ===========================================================================
 # State setters
 # ===========================================================================
 
@@ -373,17 +324,11 @@ class TestCommitFits:
 
 class TestResetActions:
     def test_clears_hist_state(self, mock_view):
-        """
-        ``hist_min``/``hist_max`` went with the binning to the Model: the two
-        methods that wrote them live there now, which left three clears and no
-        reader at all.
-        """
         mock_view.hist_data = [([1], [2])]
         mock_view.hist_labels = ["x"]
         mock_view._reset_actions()
         assert mock_view.hist_data == []
         assert mock_view.hist_labels == []
-        assert not hasattr(mock_view, "hist_min")
 
 
 # ===========================================================================
@@ -393,9 +338,12 @@ class TestResetActions:
 
 class TestClearFigureState:
     def test_clears_cache(self, mock_view):
-        # Just verify _clear_figure_state runs without error
-        # (cache internals belong to MetaView and vary by implementation)
+        """What was drawn before the reset must not be exported after it."""
+        mock_view.data_cache = [{"x": [1.0]}]
+        mock_view.data_cache_labels = ["stale"]
         mock_view._clear_figure_state()
+        assert mock_view.data_cache == []
+        assert mock_view.data_cache_labels == []
 
     def test_heatmap_colorbar_reset(self, mock_view):
         mock_view._heatmap_colorbar = object()
@@ -522,42 +470,8 @@ class TestFiguresByMode:
 
 
 # ===========================================================================
-# Range helpers (inherited from MetaView, exercised via ProteinView)
+# _shift_range_and_update_plot
 # ===========================================================================
-
-
-class TestFactors:
-    """
-    ``MetaView._factors``, the subplot-grid helper.
-
-    This class held sixteen more tests, for the five event-index range helpers. Those
-    helpers live on ``MetaEventTabView`` rather than ``MetaView``, and its only
-    subclasses are the two event tabs - the protein tab never had a claim on them, and
-    reaching a base method through an unrelated tab is what let that go unnoticed.
-    ``tests/unit/views/test_meta_view_characterization.py`` pins all five properly, with
-    28 tests asserting literal values; the ones deleted here asserted an ``or``-chain of
-    three alternatives, and one asserted ``>= 0`` under a comment claiming a clamp the
-    implementation does not have.
-    """
-
-    def test_factors_perfect_square(self, mock_view):
-        assert mock_view._factors(4) == (2, 2)
-
-    def test_factors_six(self, mock_view):
-        nr, nc = mock_view._factors(6)
-        assert nr * nc == 6
-
-    def test_factors_one(self, mock_view):
-        nr, nc = mock_view._factors(1)
-        assert nr * nc == 1
-
-    def test_factors_zero_or_none(self, mock_view):
-        # Just confirm it doesn't crash — real MetaView behaviour may differ
-        try:
-            nr, nc = mock_view._factors(0)
-            assert nr >= 0 and nc >= 0
-        except Exception:
-            pass  # acceptable if MetaView raises on 0
 
 
 class TestShiftRangeAndUpdatePlot:

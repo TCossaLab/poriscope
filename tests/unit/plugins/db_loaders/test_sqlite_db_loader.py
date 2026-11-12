@@ -1,10 +1,10 @@
 """Unit tests for SQLiteDBLoader class."""
 
-import gc
 import os
 import sqlite3
 import tempfile
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 from unittest.mock import patch
@@ -28,9 +28,6 @@ class TestSQLiteDBLoader:
         db_path = Path(tmp_path)
         yield db_path
         # Clean up with retry for Windows
-        import gc
-
-        gc.collect()  # Force garbage collection to close any remaining connections
         for i in range(10):  # More retries
             try:
                 if db_path.exists():
@@ -41,8 +38,6 @@ class TestSQLiteDBLoader:
                     time.sleep(0.2)  # Longer wait
                 else:
                     # If still locked after retries, log but don't fail
-                    import warnings
-
                     warnings.warn(f"Could not delete {db_path} - file may be locked")
 
     @pytest.fixture
@@ -148,11 +143,6 @@ class TestSQLiteDBLoader:
 
         yield temp_db_path
 
-        # Explicit cleanup - ensure no connections remain
-        import gc
-
-        gc.collect()
-
     @pytest.fixture
     def settings(self, mock_db: Path) -> Dict[str, Dict[str, Any]]:
         """Create valid settings dictionary."""
@@ -172,10 +162,10 @@ class TestSQLiteDBLoader:
         assert loader.db_path == mock_db
 
     def test_init_with_invalid_settings(self, loader: SQLiteDBLoader) -> None:
-        """Test initialization with invalid settings raises ValueError.
+        """Settings without an Input File are refused.
 
-        Note: _validate_settings is called during __init__ but the loader fixture
-        bypasses __init__ via __new__, so we test _validate_settings directly.
+        The ``loader`` fixture patches out ``_init``, so this calls
+        ``_validate_settings`` directly rather than through the constructor.
         """
         invalid_settings: Dict[str, Any] = {}
         with pytest.raises(ValueError, match="requires an Input File"):
@@ -240,18 +230,6 @@ class TestSQLiteDBLoader:
         loader.db_path = Path("/nonexistent/path.db")
         prompt = loader.get_llm_prompt()
         assert prompt is None
-
-    def test_close_resources(self, loader: SQLiteDBLoader) -> None:
-        """Test closing resources (should be no-op for SQLiteDBLoader)."""
-        # Should not raise any exceptions
-        loader.close_resources()
-        loader.close_resources()
-
-    def test_reset_channel(self, loader: SQLiteDBLoader) -> None:
-        """Test resetting channel (should be no-op for SQLiteDBLoader)."""
-        # Should not raise any exceptions
-        loader.reset_channel(0)
-        loader.reset_channel(channel=0)
 
     def test_get_experiment_names_all(
         self, loader: SQLiteDBLoader, mock_db: Path
@@ -325,12 +303,21 @@ class TestSQLiteDBLoader:
     def test_get_event_counts_by_experiment(
         self, loader: SQLiteDBLoader, mock_db: Path
     ) -> None:
-        """Test getting event count for specific experiment."""
+        """
+        Count one experiment's events across all its channels.
+
+        Every fixture event is in the first experiment, so the second, which has
+        channels but no events, is what shows the experiment filter is applied.
+        """
         loader.db_path = mock_db
         count = loader.get_event_counts_by_experiment_and_channel(
             experiment="test_experiment_1"
         )
         assert count == 3
+        count = loader.get_event_counts_by_experiment_and_channel(
+            experiment="test_experiment_2"
+        )
+        assert count == 0
 
     def test_get_event_counts_by_experiment_and_channel(
         self, loader: SQLiteDBLoader, mock_db: Path
@@ -726,24 +713,26 @@ class TestSQLiteDBLoader:
         assert isinstance(raw, np.ndarray)
         assert len(raw) == 3
 
-    def test_load_event_data_abort(self, loader: SQLiteDBLoader, mock_db: Path) -> None:
-        """Test aborting event data generator."""
+    def test_load_event_data_abort_yields_no_further_row(
+        self, loader: SQLiteDBLoader, mock_db: Path
+    ) -> None:
+        """Sending True back into the generator ends it before the next row."""
         loader.db_path = mock_db
 
-        # Add event data
         conn = sqlite3.connect(mock_db)
-        cursor = conn.cursor()
-        raw_data = np.array([1.0, 2.0], dtype=np.float64).tobytes()
-        cursor.execute(
-            """
-            INSERT INTO data (event_id, data_format, samplerate, padding_before,
-                            padding_after, raw_data, filtered_data, fit_data)
-            VALUES (1, 'float64', 10000.0, 5, 5, ?, ?, ?)
-            """,
-            (raw_data, raw_data, raw_data),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            raw_data = np.array([1.0, 2.0], dtype=np.float64).tobytes()
+            conn.executemany(
+                """
+                INSERT INTO data (event_id, data_format, samplerate, padding_before,
+                                padding_after, raw_data, filtered_data, fit_data)
+                VALUES (?, 'float64', 10000.0, 5, 5, ?, ?, ?)
+                """,
+                [(event, raw_data, raw_data, raw_data) for event in (1, 2)],
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         query = """
             SELECT e.id, e.event_id, e.channel_id, e.experiment_id,
@@ -752,14 +741,12 @@ class TestSQLiteDBLoader:
             FROM events e
             JOIN data d ON e.id = d.event_id
         """
+        assert len(list(loader._load_event_data(query))) == 2
 
         gen = loader._load_event_data(query)
         next(gen)
-        # Send abort signal
-        try:
+        with pytest.raises(StopIteration):
             gen.send(True)
-        except StopIteration:
-            pass  # Expected when generator is aborted
 
     def test_get_sqlite_type_integer(self, loader: SQLiteDBLoader) -> None:
         """Test SQLite type mapping for integer."""
@@ -784,11 +771,6 @@ class TestSQLiteDBLoader:
     def test_get_sqlite_type_datetime(self, loader: SQLiteDBLoader) -> None:
         """Test SQLite type mapping for datetime."""
         dtype = pd.to_datetime(pd.Series(["2021-01-01", "2021-01-02"])).dtype
-        assert loader._get_sqlite_type(dtype) == "TEXT"
-
-    def test_get_sqlite_type_object(self, loader: SQLiteDBLoader) -> None:
-        """Test SQLite type mapping for object."""
-        dtype = pd.Series([object(), object()]).dtype
         assert loader._get_sqlite_type(dtype) == "TEXT"
 
     def test_ensure_event_counts_creates_table(
@@ -839,7 +821,6 @@ class TestSQLiteDBLoader:
             assert result[3] == 2  # event_count should be 2
         finally:
             # Clean up
-            gc.collect()
             for _ in range(5):
                 try:
                     if test_db_path.exists():
@@ -948,12 +929,6 @@ class TestSQLiteDBLoader:
         )
         assert cursor.fetchone() is not None
         conn.close()
-
-    def test_validate_settings_missing_input_file(self, loader: SQLiteDBLoader) -> None:
-        """Test settings validation with missing Input File."""
-        invalid_settings: Dict[str, Any] = {}
-        with pytest.raises(ValueError, match="requires an Input File"):
-            loader._validate_settings(invalid_settings)
 
     def test_validate_settings_valid(
         self, loader: SQLiteDBLoader, mock_db: Path

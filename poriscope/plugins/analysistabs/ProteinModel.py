@@ -311,6 +311,12 @@ class ProteinModel(MetaSubsetTabModel):
         if np.any(perr > np.abs(popt) * 10):
             return None
 
+        # A component narrower than half a bin cannot be resolved from the histogram:
+        # on a clean single peak the fit can place a zero-width second component on
+        # the first, and its degenerate covariance then passes the test on the means.
+        if min(popt[2], popt[5]) < abs(bins[1] - bins[0]) / 2:
+            return None
+
         mu1_idx, mu2_idx = 1, 4
         mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
         var_mu1, var_mu2 = (
@@ -732,12 +738,13 @@ class ProteinModel(MetaSubsetTabModel):
         """
         m_sq = m**2
 
+        # Checked first: a negative m also satisfies all(m <= 1).
+        if any(m < 0):
+            raise ValueError("Cannot have negative form factors")
         if all(m <= 1):
             prolate = False
         elif all(m >= 1):
             prolate = True
-        elif any(m < 0):
-            raise ValueError("Cannot have negative form factors")
         else:
             raise ValueError(
                 "Cannot mix oblate and prolate form factors in a single call to _compute_theoretical_blockages"

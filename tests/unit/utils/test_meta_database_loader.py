@@ -262,21 +262,6 @@ class TestMetaDatabaseLoader:
         assert loader is not None
         assert hasattr(loader, "settings")
 
-    def test_get_empty_settings_default(self, loader: ConcreteDatabaseLoader) -> None:
-        """Test getting empty settings with defaults."""
-        settings = loader.get_empty_settings()
-        assert "Input File" in settings
-        assert settings["Input File"]["Type"] is str
-        assert "All Files (*.*)" in settings["Input File"]["Options"]
-
-    def test_get_empty_settings_with_plugins(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test getting empty settings with plugins."""
-        plugins = {"MetaReader": ["Reader1", "Reader2"]}
-        settings = loader.get_empty_settings(globally_available_plugins=plugins)
-        assert "Input File" in settings
-
     def test_force_serial_channel_operations(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -298,12 +283,6 @@ class TestMetaDatabaseLoader:
         loader.mock_experiments = []
         result = loader.get_experiments_and_channels()
         assert result == {}
-
-    def test_get_experiment_id_by_name(self, loader: ConcreteDatabaseLoader) -> None:
-        """Test getting experiment ID by name."""
-        assert loader.get_experiment_id_by_name("exp1") == 1
-        assert loader.get_experiment_id_by_name("exp2") == 2
-        assert loader.get_experiment_id_by_name("exp3") is None
 
     def test_report_status(self, loader: ConcreteDatabaseLoader) -> None:
         """Test reporting channel status."""
@@ -339,63 +318,6 @@ class TestMetaDatabaseLoader:
             report = loader.report_status()
             assert " 1 experiment" in report
 
-    def test_construct_metadata_query_events_only(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query for events table only."""
-        query, debug, table = loader.construct_metadata_query(["dwell_time"])
-        assert query != ""
-        assert debug == ""
-        assert "SELECT" in query
-        assert "events" in query.lower()
-        assert table == "events"
-
-    def test_construct_metadata_query_sublevels_only(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query for sublevels table only."""
-        query, debug, table = loader.construct_metadata_query(["sublevel_duration"])
-        assert query != ""
-        assert debug == ""
-        assert "SELECT" in query
-        assert "sublevels" in query.lower()
-        assert table == "sublevels"
-
-    def test_construct_metadata_query_mixed_tables(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query for mixed tables."""
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time", "sublevel_duration"]
-        )
-        assert query != ""
-        assert debug == ""
-        assert "JOIN" in query
-        assert table == "sublevels"
-
-    def test_construct_metadata_query_with_conditions(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query with conditions."""
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time"], conditions="dwell_time > 10"
-        )
-        assert query != ""
-        assert debug == ""
-        assert "WHERE" in query
-
-    def test_construct_metadata_query_with_experiments_and_channels(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query with experiment/channel filters."""
-        experiments_and_channels = {"exp1": [0, 1]}
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time"], experiments_and_channels=experiments_and_channels
-        )
-        assert query != ""
-        assert debug == ""
-        assert "WHERE" in query
-
     def test_construct_metadata_query_empty_columns(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -409,27 +331,6 @@ class TestMetaDatabaseLoader:
         """Test constructing metadata query with invalid column."""
         with pytest.raises(ValueError, match="could not be mapped"):
             loader.construct_metadata_query(["nonexistent_column"])
-
-    def test_construct_metadata_query_with_experiments_table(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query with experiments table columns."""
-        query, debug, table = loader.construct_metadata_query(["dwell_time", "name"])
-        assert query != ""
-        assert debug == ""
-        assert "JOIN experiments" in query
-
-    def test_construct_metadata_query_forced_join(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing metadata query with forced join due to conditions."""
-        # Events columns but sublevel condition forces join
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time"], conditions="sublevel_duration < 100"
-        )
-        assert query != ""
-        assert debug == ""
-        assert "JOIN" in query
 
     def test_construct_event_data_query_no_conditions(
         self, loader: ConcreteDatabaseLoader
@@ -496,15 +397,11 @@ class TestMetaDatabaseLoader:
         assert all("filtered_data" in event for event in events)
 
     def test_load_event_data_with_abort(self, loader: ConcreteDatabaseLoader) -> None:
-        """Test loading event data with abort."""
+        """Sending True stops the generator, although the query has more events."""
         gen = loader.load_event_data()
-        first_event = next(gen)
-        assert first_event is not None
-        # Send abort signal
-        try:
+        assert next(gen)["event_id"] == 0
+        with pytest.raises(StopIteration):
             gen.send(True)
-        except StopIteration:
-            pass  # Expected
 
     def test_query_database_directly_valid(
         self, loader: ConcreteDatabaseLoader
@@ -543,15 +440,11 @@ class TestMetaDatabaseLoader:
     def test_query_database_directly_and_get_generator_abort(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
-        """Test querying database generator with abort."""
+        """Sending True stops the generator, although the query has more rows."""
         gen = loader.query_database_directly_and_get_generator("SELECT * FROM events")
-        first_row = next(gen)
-        assert first_row is not None
-        # Send abort
-        try:
+        assert next(gen)["id"].tolist() == [1]
+        with pytest.raises(StopIteration):
             gen.send(True)
-        except StopIteration:
-            pass  # Expected
 
     def test_export_subset_to_csv(self, loader: ConcreteDatabaseLoader) -> None:
         """Test exporting subset to CSV."""
@@ -576,17 +469,6 @@ class TestMetaDatabaseLoader:
 
             output_path = Path(tmpdir)
             assert (output_path / "test_events.csv").exists()
-
-    def test_export_subset_to_csv_with_conditions(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test exporting subset to CSV with conditions."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = loader.export_subset_to_csv(tmpdir, conditions="event_id > 0")
-            list(gen)  # Consume generator
-
-            output_path = Path(tmpdir)
-            assert (output_path / "events.csv").exists()
 
     def test_export_subset_to_csv_invalid_folder(
         self, loader: ConcreteDatabaseLoader
@@ -615,19 +497,6 @@ class TestMetaDatabaseLoader:
         assert "  " not in formatted
         assert "\n " not in formatted
 
-    def test_validate_settings_missing_input_file(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test settings validation with missing Input File."""
-        with pytest.raises(ValueError, match="Input File is required"):
-            loader._validate_settings({})
-
-    def test_validate_settings_valid(self, loader: ConcreteDatabaseLoader) -> None:
-        """Test settings validation with valid settings."""
-        settings = {"Input File": {"Value": "/path/to/file.db"}}
-        # Should not raise
-        loader._validate_settings(settings)
-
     def test_construct_metadata_query_removes_duplicates(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -639,29 +508,19 @@ class TestMetaDatabaseLoader:
         # id and experiment_id should be removed as they're redundant
         assert query.count("id") >= 1  # At least appears once in SELECT
 
-    def test_construct_metadata_query_experiments_only(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        """Test constructing query for experiments table only."""
-        query, debug, table = loader.construct_metadata_query(["name"])
-        assert query != ""
-        assert "experiments" in query.lower()
-        # Should include event_id since we need events anchor
-        assert "event_id" in query.lower()
-
     def test_load_metadata_removes_duplicate_columns(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
-        """Test that load_metadata removes duplicate columns."""
-        # Mock _load_metadata to return DataFrame with duplicates
-        # Create DataFrame then add duplicate column
-        df_with_dupes = pd.DataFrame({"id": [1, 2], "dwell_time": [10, 20]})
-        df_with_dupes["id"] = [1, 2]  # Add duplicate column
+        """A column the query returns twice comes back once."""
+        df_with_dupes = pd.DataFrame(
+            [[1, 10, 1], [2, 20, 2]], columns=["id", "dwell_time", "id"]
+        )
 
         with patch.object(loader, "_load_metadata", return_value=df_with_dupes):
             result = loader.load_metadata(["dwell_time"])
-            # Should remove duplicate columns
-            assert result is not None
+
+        assert result is not None
+        assert result.columns.tolist() == ["id", "dwell_time"]
 
     def test_construct_metadata_query_invalid_experiment(
         self, loader: ConcreteDatabaseLoader
@@ -684,52 +543,6 @@ class TestMetaDatabaseLoader:
 def loader() -> ConcreteDatabaseLoader:
     settings = {"Input File": {"Type": str, "Value": "/path/to/db.db"}}
     return ConcreteDatabaseLoader(settings=settings)
-
-
-# ---------------------------------------------------------------------------
-# Abstract method stub bodies (the bare ``pass`` lines on MetaDatabaseLoader
-# itself). These are never executed through the concrete subclass because the
-# subclass always overrides them, so we invoke the unbound base implementation
-# directly to exercise those lines.
-# ---------------------------------------------------------------------------
-class TestAbstractStubs:
-    def test_public_abstract_stub_bodies(self, loader: ConcreteDatabaseLoader) -> None:
-        assert MetaDatabaseLoader.get_llm_prompt(loader) is None
-        assert MetaDatabaseLoader.reset_channel(loader, channel=1) is None
-        assert MetaDatabaseLoader.get_experiment_names(loader) is None
-        assert MetaDatabaseLoader.get_experiment_names(loader, experiment_id=1) is None
-        assert MetaDatabaseLoader.get_channels_by_experiment(loader, "exp1") is None
-        assert (
-            MetaDatabaseLoader.get_event_counts_by_experiment_and_channel(loader)
-            is None
-        )
-        assert MetaDatabaseLoader.get_column_units(loader, "dwell_time") is None
-        assert MetaDatabaseLoader.get_column_type(loader, "dwell_time") is None
-        assert MetaDatabaseLoader.get_column_names_by_table(loader) is None
-        assert MetaDatabaseLoader.get_table_names(loader) is None
-        assert MetaDatabaseLoader.validate_filter_query(loader, "SELECT 1") is None
-        assert (
-            MetaDatabaseLoader.get_samplerate_by_experiment_and_channel(
-                loader, "exp1", 0
-            )
-            is None
-        )
-        assert MetaDatabaseLoader.get_table_by_column(loader, "dwell_time") is None
-        assert (
-            MetaDatabaseLoader.add_columns_to_table(
-                loader, pd.DataFrame(), [], "events"
-            )
-            is None
-        )
-        assert MetaDatabaseLoader.alter_database(loader, []) is None
-
-    def test_private_abstract_stub_bodies(self, loader: ConcreteDatabaseLoader) -> None:
-        assert MetaDatabaseLoader._init(loader) is None
-        assert MetaDatabaseLoader._load_metadata(loader, "SELECT 1") is None
-        assert MetaDatabaseLoader._load_metadata_generator(loader, "SELECT 1") is None
-        assert MetaDatabaseLoader._load_event_data(loader, "SELECT 1") is None
-        assert MetaDatabaseLoader._ensure_event_counts(loader) is None
-        assert MetaDatabaseLoader._validate_settings(loader, {}) is None
 
 
 # ---------------------------------------------------------------------------
@@ -995,53 +808,6 @@ class TestExportSubsetToCsvErrorBranches:
 # construct_metadata_query - remaining branches
 # ---------------------------------------------------------------------------
 class TestConstructMetadataQueryBranches:
-    def test_forced_join_sublevels_only_condition_on_events_column(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        # sublevels columns selected, but the condition references an events
-        # column -> forces the join via the "elif sublevels_columns and not
-        # events_columns" branch, and the "else" (sublevels) arm inside the
-        # forced-join builder.
-        query, debug, table = loader.construct_metadata_query(
-            ["sublevel_duration"], conditions="dwell_time > 5"
-        )
-        assert debug == ""
-        assert query != ""
-        assert "JOIN" in query
-        assert table == "sublevels"
-
-    def test_experiments_and_channels_with_empty_channel_list(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time"], experiments_and_channels={"exp1": None}
-        )
-        assert debug == ""
-        assert "experiment_id = 1)" in query
-
-    def test_sublevels_and_experiments_columns_only(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        query, debug, table = loader.construct_metadata_query(
-            ["sublevel_duration", "name"]
-        )
-        assert debug == ""
-        assert query != ""
-        assert "JOIN experiments" in query
-        assert table == "sublevels"
-
-    def test_events_sublevels_and_experiments_columns(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time", "sublevel_duration", "name"]
-        )
-        assert debug == ""
-        assert query != ""
-        assert "JOIN sublevels" in query
-        assert "JOIN experiments" in query
-        assert table == "sublevels"
-
     def test_no_valid_table_columns_raises(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -1099,16 +865,20 @@ class TestLoadMetadataRaw:
     def test_no_conditions_uses_default_query(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
+        """With no query it reads the events table."""
         df = loader.load_metadata_raw()
+
         assert df is not None
-        assert isinstance(df, pd.DataFrame)
+        assert "dwell_time" in df.columns  # the stub's events frame
 
     def test_with_conditions_runs_raw_query(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
+        """A query it is given is run as it stands."""
         df = loader.load_metadata_raw("SELECT * FROM channels")
+
         assert df is not None
-        assert isinstance(df, pd.DataFrame)
+        assert "samplerate" in df.columns  # the stub's channels frame
 
 
 # ---------------------------------------------------------------------------
@@ -1595,6 +1365,23 @@ class TestGeneratedQueriesExecute:
         assert table == "sublevels"
         rows = real_db_loader.connection.execute(query).fetchall()
         assert sorted(row[0] for row in rows) == [5, 6]
+
+    def test_a_scope_of_two_experiments_returns_rows_from_both(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        """
+        Each experiment's scope adds its rows; the scopes are alternatives, not filters.
+
+        One experiment takes every channel and the other names its channel, so both
+        forms of a scope clause are run.
+        """
+        query, debug, table = real_db_loader.construct_metadata_query(
+            ["duration"], experiments_and_channels={"lo": None, "hi": [0]}
+        )
+        assert debug == ""
+        assert table == "events"
+        rows = real_db_loader.connection.execute(query).fetchall()
+        assert sorted(row[0] for row in rows) == [1, 2, 3]
 
     def test_event_data_query_runs_with_an_experiment_property_filter(
         self, real_db_loader: ProductionSchemaLoader

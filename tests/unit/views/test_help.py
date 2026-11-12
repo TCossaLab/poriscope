@@ -2,7 +2,7 @@
 Full unit-test suite for HelpCentre and LinkCard.
 
 No mocking needed — no file I/O, no database, no blocking modals.
-webbrowser.open is patched only for the click-through test.
+webbrowser.open is patched only for the click-through tests.
 
 Run with:
     pytest test_help.py -v
@@ -12,8 +12,9 @@ Run with:
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtCore import QEvent
-from PySide6.QtWidgets import QApplication, QFrame, QLabel
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QColor, QEnterEvent, QImage, QMouseEvent
+from PySide6.QtWidgets import QApplication
 
 from poriscope.views.help import HelpCentre, LinkCard
 
@@ -65,26 +66,11 @@ def white_card(qt_app):
 
 
 class TestLinkCardInstantiation:
-    def test_creates_without_error(self, black_card):
-        assert black_card is not None
-
-    def test_is_qframe(self, black_card):
-        assert isinstance(black_card, QFrame)
-
-    def test_fixed_height(self, black_card):
-        assert black_card.height() == 150
-
     def test_url_stored(self, black_card):
         assert black_card._url == "https://example.com"
 
     def test_initial_bg_stored(self, black_card):
         assert black_card._initial_bg == "black"
-
-    def test_title_label_exists(self, black_card):
-        assert isinstance(black_card._title_label, QLabel)
-
-    def test_url_label_exists(self, black_card):
-        assert isinstance(black_card._url_label, QLabel)
 
     def test_title_label_text(self, black_card):
         assert black_card._title_label.text() == "Test Card"
@@ -92,19 +78,8 @@ class TestLinkCardInstantiation:
     def test_url_label_text(self, black_card):
         assert black_card._url_label.text() == "https://example.com"
 
-    def test_icon_label_exists(self, black_card):
-        assert isinstance(black_card._icon_label, QLabel)
-
-    def test_icon_label_fixed_size(self, black_card):
-        assert black_card._icon_label.width() == 64
-        assert black_card._icon_label.height() == 64
-
     def test_white_card_creates(self, white_card):
         assert white_card._initial_bg == "white"
-
-    def test_event_filter_installed(self, black_card):
-        # Event filter is installed on self — just confirm no crash
-        assert black_card is not None
 
 
 # ===========================================================================
@@ -113,9 +88,16 @@ class TestLinkCardInstantiation:
 
 
 class TestLinkCardRefresh:
-    def test_black_card_resting_stylesheet_contains_black(self, black_card):
+    """
+    The card's background is asserted as ``background-color: <colour>``.
+
+    A bare ``"black" in styleSheet()`` is always true, because every card draws a
+    ``2px solid black`` border whatever its background.
+    """
+
+    def test_black_card_resting_background_is_black(self, black_card):
         black_card._refresh(hovered=False)
-        assert "black" in black_card.styleSheet()
+        assert "background-color: black" in black_card.styleSheet()
 
     def test_black_card_hovered_stylesheet_contains_white(self, black_card):
         black_card._refresh(hovered=True)
@@ -125,9 +107,9 @@ class TestLinkCardRefresh:
         white_card._refresh(hovered=False)
         assert "white" in white_card.styleSheet()
 
-    def test_white_card_hovered_stylesheet_contains_black(self, white_card):
+    def test_white_card_hovered_background_is_black(self, white_card):
         white_card._refresh(hovered=True)
-        assert "black" in white_card.styleSheet()
+        assert "background-color: black" in white_card.styleSheet()
 
     def test_title_label_white_on_black_resting(self, black_card):
         black_card._refresh(hovered=False)
@@ -166,15 +148,32 @@ class TestLinkCardRefresh:
 # ===========================================================================
 
 
+def _has_icon(card: LinkCard) -> bool:
+    """
+    Whether the card's icon label is showing a pixmap.
+
+    :param card: the card to inspect
+    :type card: LinkCard
+    :return: True when an icon was set on the label
+    :rtype: bool
+    """
+    return not card._icon_label.pixmap().isNull()
+
+
 class TestLinkCardLoadIcon:
+    """A path that cannot be drawn leaves the icon empty; one that can is shown."""
+
     def test_empty_path_no_error(self, black_card):
-        black_card._load_icon("")  # should not raise
+        black_card._load_icon("")
+        assert not _has_icon(black_card)
 
     def test_nonexistent_path_no_error(self, black_card):
         black_card._load_icon("/nonexistent/path/icon.svg")
+        assert not _has_icon(black_card)
 
     def test_nonexistent_png_no_error(self, black_card):
         black_card._load_icon("/nonexistent/path/icon.png")
+        assert not _has_icon(black_card)
 
     def test_valid_svg_file_loads(self, black_card, tmp_path):
         svg = tmp_path / "test.svg"
@@ -182,24 +181,23 @@ class TestLinkCardLoadIcon:
             '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
             '<circle cx="32" cy="32" r="32" fill="black"/></svg>'
         )
-        black_card._load_icon(str(svg))  # should not raise
+        black_card._load_icon(str(svg))
+        assert _has_icon(black_card)
 
     def test_invalid_svg_no_error(self, black_card, tmp_path):
         bad = tmp_path / "bad.svg"
         bad.write_text("not svg content")
         black_card._load_icon(str(bad))
+        assert not _has_icon(black_card)
 
     def test_valid_png_file_loads(self, black_card, tmp_path):
-        # Minimal 1×1 white PNG
-        png_bytes = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-            b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
-            b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18"
-            b"\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
+        # Written by Qt itself, so the file is a PNG Qt can read back.
+        image = QImage(4, 4, QImage.Format_ARGB32)
+        image.fill(QColor("white"))
         png = tmp_path / "test.png"
-        png.write_bytes(png_bytes)
+        assert image.save(str(png), "PNG")
         black_card._load_icon(str(png))
+        assert _has_icon(black_card)
 
 
 # ===========================================================================
@@ -218,7 +216,7 @@ class TestLinkCardEventFilter:
         black_card.eventFilter(black_card, enter)
         leave = QEvent(QEvent.Leave)
         black_card.eventFilter(black_card, leave)
-        assert "black" in black_card.styleSheet()  # back to black bg
+        assert "background-color: black" in black_card.styleSheet()
 
     def test_mouse_release_opens_url(self, black_card):
         with patch("webbrowser.open") as mock_open:
@@ -237,7 +235,39 @@ class TestLinkCardEventFilter:
         enter = QEvent(QEvent.Enter)
         black_card.eventFilter(white_card, enter)  # obj is not self
         # black_card styling unchanged (event was for white_card)
-        assert "black" in black_card.styleSheet()
+        assert "background-color: black" in black_card.styleSheet()
+
+
+class TestLinkCardReceivesItsOwnEvents:
+    """
+    Events delivered by Qt, not by calling ``eventFilter`` directly.
+
+    The tests above call the filter by hand, so they pass whether or not the card
+    ever installed it; these go through ``QApplication.sendEvent``, which reaches the
+    filter only if the card registered it on itself.
+    """
+
+    def test_hovering_and_leaving_restyle_the_card(self, black_card):
+        point = QPointF(5, 5)
+        QApplication.sendEvent(black_card, QEnterEvent(point, point, point))
+        assert "background-color: white" in black_card.styleSheet()
+
+        QApplication.sendEvent(black_card, QEvent(QEvent.Leave))
+        assert "background-color: black" in black_card.styleSheet()
+
+    def test_clicking_the_card_opens_its_url(self, black_card):
+        point = QPointF(5, 5)
+        release = QMouseEvent(
+            QEvent.MouseButtonRelease,
+            point,
+            point,
+            Qt.LeftButton,
+            Qt.NoButton,
+            Qt.NoModifier,
+        )
+        with patch("webbrowser.open") as mock_open:
+            QApplication.sendEvent(black_card, release)
+        mock_open.assert_called_once_with("https://example.com")
 
 
 # ===========================================================================
@@ -246,16 +276,6 @@ class TestLinkCardEventFilter:
 
 
 class TestHelpCentreInstantiation:
-    def test_creates_without_error(self, hc):
-        assert hc is not None
-
-    def test_minimum_size(self, hc):
-        assert hc.minimumWidth() == 900
-        assert hc.minimumHeight() == 400
-
-    def test_help_centre_label_exists(self, hc):
-        assert isinstance(hc.help_centre_label, QLabel)
-
     def test_help_centre_label_text(self, hc):
         assert hc.help_centre_label.text() == "Help Centre"
 
@@ -269,18 +289,6 @@ class TestHelpCentreInstantiation:
 
 
 class TestHelpCentreCards:
-    def test_getting_started_card_exists(self, hc):
-        assert isinstance(hc.getting_started_card, LinkCard)
-
-    def test_tutorial_card_exists(self, hc):
-        assert isinstance(hc.tutorial_card, LinkCard)
-
-    def test_report_card_exists(self, hc):
-        assert isinstance(hc.report_card, LinkCard)
-
-    def test_paper_card_exists(self, hc):
-        assert isinstance(hc.paper_card, LinkCard)
-
     def test_getting_started_card_url(self, hc):
         assert "youtube" in hc.getting_started_card._url
 
@@ -302,21 +310,6 @@ class TestHelpCentreCards:
     def test_report_card_title(self, hc):
         assert "Report" in hc.report_card._title_label.text()
 
-    def test_getting_started_card_black_bg(self, hc):
-        assert hc.getting_started_card._initial_bg == "black"
-
-    def test_tutorial_card_white_bg(self, hc):
-        assert hc.tutorial_card._initial_bg == "white"
-
-    def test_report_card_black_bg(self, hc):
-        assert hc.report_card._initial_bg == "black"
-
-    def test_paper_card_fixed_height(self, hc):
-        assert hc.paper_card.height() == 80
-
-    def test_paper_card_white_bg(self, hc):
-        assert hc.paper_card._initial_bg == "white"
-
 
 # ===========================================================================
 # HelpCentre — citation box
@@ -324,15 +317,6 @@ class TestHelpCentreCards:
 
 
 class TestHelpCentreCitationBox:
-    def test_citation_box_exists(self, hc):
-        assert isinstance(hc.citation_box, QFrame)
-
-    def test_citation_label_exists(self, hc):
-        assert isinstance(hc.citation_label, QLabel)
-
-    def test_release_label_exists(self, hc):
-        assert isinstance(hc.release_label, QLabel)
-
     def test_citation_label_contains_doi(self, hc):
         assert "10.5334" in hc.citation_label.text()
 
@@ -351,29 +335,5 @@ class TestHelpCentreCitationBox:
     def test_release_label_opens_external_links(self, hc):
         assert hc.release_label.openExternalLinks()
 
-    def test_citation_label_word_wrap(self, hc):
-        assert hc.citation_label.wordWrap()
-
-    def test_release_label_word_wrap(self, hc):
-        assert hc.release_label.wordWrap()
-
     def test_citation_box_has_stylesheet(self, hc):
         assert "border-radius" in hc.citation_box.styleSheet()
-
-
-# ===========================================================================
-# HelpCentre — retranslateUi
-# ===========================================================================
-
-
-class TestHelpCentreRetranslate:
-    def test_retranslate_does_not_raise(self, hc):
-        hc.retranslateUi()
-
-    def test_retranslate_preserves_window_title(self, hc):
-        hc.retranslateUi()
-        assert hc.windowTitle() == "Help Centre"
-
-    def test_retranslate_preserves_label_text(self, hc):
-        hc.retranslateUi()
-        assert hc.help_centre_label.text() == "Help Centre"

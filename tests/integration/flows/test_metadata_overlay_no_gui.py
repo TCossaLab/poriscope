@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
-from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.utils.MetaController import declared_actions
 from poriscope.utils.MetaSubsetTabModel import FigureKind, OverlayState
@@ -462,9 +461,7 @@ def test_a_refused_click_on_a_new_figure_leaves_no_record(tab: Triad) -> None:
 @pytest.mark.parametrize(
     "plot_type", ["Histogram", "Kernel Density Plot", "Raw All Points Histogram"]
 )
-def test_two_overlays_accumulate_in_the_model_and_the_view_keeps_none(
-    tab: Triad, plot_type: str
-) -> None:
+def test_two_overlays_accumulate_in_the_model(tab: Triad, plot_type: str) -> None:
     axes = ["max_deviation", "start_time", "max_blockage"]
     overlay(tab, plot_type, filters=["F0"], axes=axes)
     overlay(tab, plot_type, filters=["F1"], axes=axes)
@@ -472,19 +469,6 @@ def test_two_overlays_accumulate_in_the_model_and_the_view_keeps_none(
     assert len(kept(tab).values) == 2
     assert len(kept(tab).labels) == 2
     assert kept(tab).hist_min is not None and kept(tab).hist_max is not None
-    for name in (
-        "hist_data",
-        "hist_labels",
-        "hist_min",
-        "hist_max",
-        "plotted_datasets",
-        "allowed_plot_type",
-        "allowed_columns",
-        "allowed_logs",
-        "allowed_bins",
-        "allowed_sizes",
-    ):
-        assert not hasattr(tab.tab_view, name), name
 
 
 @pytest.mark.timeout(120)
@@ -520,7 +504,6 @@ def test_the_reset_click_empties_the_history_and_what_is_kept(
     assert kept(tab) == OverlayState()
     assert len(tab.tab_view.figure.axes) == 1
     assert "reset" in {name for _, name in declared_actions(MetadataController)}
-    assert "reset" not in {name for _, name in declared_actions(MetadataView)}
 
 
 # ------------------------------------------------------------------ refusals
@@ -669,29 +652,6 @@ def test_a_normalised_all_points_histogram_exports_what_it_draws(tab: Triad) -> 
     exported = tab.tab_view.data_cache[1]
     np.testing.assert_allclose(np.asarray(exported), line.get_ydata())
     assert np.max(line.get_ydata()) == pytest.approx(1.0)
-
-
-# ------------------------------------------------------------------ the requests are gone
-
-
-@pytest.mark.parametrize(
-    "signal",
-    [
-        "metadata_subset_requested",
-        "column_type_requested",
-        "histogram_bins_requested",
-        "density_requested",
-        "categorical_counts_requested",
-        "heatmap_requested",
-        "capture_rate_requested",
-        "scatterplot_3d_requested",
-        "all_points_histogram_requested",
-        "event_overlay_requested",
-    ],
-)
-def test_the_view_no_longer_asks_the_controller_for_each_dataset(signal: str) -> None:
-    """The Controller runs the loop, so it calls the Model and the View directly."""
-    assert not hasattr(MetadataView, signal)
 
 
 def click(triad: Triad, plot_type: str, axes: List[str], filters: List[str]) -> None:

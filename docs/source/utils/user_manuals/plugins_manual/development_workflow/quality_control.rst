@@ -616,7 +616,7 @@ exclusions, and ``mypy.ini`` enforces that:
 Test Suite Configuration
 -------------------------
 
-``pytest.ini`` is the only pytest configuration in the repository. Three settings there are
+``pytest.ini`` is the only pytest configuration in the repository. Four settings there are
 worth knowing about before you add tests:
 
 - ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
@@ -628,6 +628,11 @@ worth knowing about before you add tests:
   the number.**
 - ``--strict-markers`` — an unregistered marker name is a collection error rather than an
   expression that matches nothing. Register any new marker in the ``markers`` list.
+- ``--dist loadfile`` — under ``-n``, each test file runs whole on one worker, in its own
+  order. Splitting a file across workers would reorder its tests, and leaked Qt state has
+  made order matter in this suite before. Every worker must also collect the same tests in
+  the same order, so a parametrization built from a set or a dict of classes has to be
+  sorted.
 - ``pythonpath = .`` — puts the repository root on ``sys.path`` so the shared test helpers
   (``tests/unit/views/_qt_mocks.py``, ``tests/e2e/_helpers.py``, the
   ``tests/synthetic_data/`` generators) are importable as ``tests.<module>``. The editable
@@ -635,6 +640,13 @@ worth knowing about before you add tests:
   when a conftest higher up the tree happens to be collected first — which made running a
   single test file on its own fail with ``No module named 'tests'`` while the same file
   passed in a full run.
+
+Beyond ``pytest.ini``, the root ``tests/conftest.py`` deletes every window a test leaves
+behind once the test ends, and **fails the test if a window survives**. Every test shares
+one ``QApplication``, so a window that is only closed (``close()`` hides it) stays alive and
+makes every later test slower: in November 2026 leaked windows more than tripled the
+suite's run time. If your test fails with "Windows still alive after the cleanup",
+something is keeping one of its windows from being deleted.
 
 .. note::
 
@@ -653,7 +665,7 @@ Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` ext
    pytest --cov=poriscope --cov-report=term-missing
 
 Run it deliberately when you want the number. No CI workflow collects coverage: the plain
-``pytest`` invocation is the gate everywhere, and coverage instrumentation would slow every
+``pytest -n auto`` invocation is the gate everywhere, and coverage instrumentation would slow every
 run for a figure nothing acts on.
 
 .. _plugin_compliance_testing:
@@ -1272,10 +1284,19 @@ and that is still worth having, because it stops anyone adding a duplicate there
 had been moving computation *into* the Models — which no family covered, so anything
 landing there could be duplicated invisibly. One method already had been.
 
+Each family also holds the ``Meta*`` bases its files inherit from (``MetaView``,
+``MetaSubsetTabView`` and the rest for the tabs; ``MetaReader`` for the readers). Without them,
+a base method copied onto a single tab has no identical twin in the family, so it reads as
+one more function rather than as duplication. ``BaseDataPlugin`` is left out, because it
+underlies every data family.
+
 ``scripts/measure_duplication.py`` counts, per family, how many function bodies are
 byte-identical across more than one file and how many lines would be deleted by promoting
-one copy to a shared base. ``.duplication-baseline.json`` records those counts, and
-``tests/unit/scripts/test_duplication_ratchet.py`` fails if the measurement disagrees.
+one copy to a shared base. ``.duplication-baseline.json`` records those counts and names
+each duplicated function, and ``tests/unit/scripts/test_duplication_ratchet.py`` fails if
+the measurement disagrees. A rise lists the functions it newly duplicated: that is usually
+a copy to remove, and ``--update`` is only for duplication you meant to add. The names are
+never compared, so renaming a duplicated function fails nothing.
 
 .. code-block:: bash
 
@@ -1626,13 +1647,18 @@ branch push:
 
 .. code-block:: bash
 
-   pytest
+   pytest -n auto
 
 There is no subset and no marker filter: CI runs the whole suite everywhere, e2e tests
-included. A full run takes about 25 minutes, locally and on CI (2026-11-11).
+included. ``-n auto`` runs it in parallel through ``pytest-xdist``, one test file per
+worker at a time. ``tests/conftest.py`` chooses the number of workers from your machine:
+one per logical core, but no more than your free memory holds at about 2 GB each. Set
+``PYTEST_XDIST_AUTO_NUM_WORKERS`` to choose the number yourself. On a 22-core desktop with
+13 GB free that is six workers and about two minutes (2026-11-12); plain ``pytest`` runs the
+same suite serially in about nine.
 
-For per-marker counts and mean
-durations, run ``pytest --marker-stats``.
+For per-marker counts and mean durations, run ``pytest --marker-stats``, serially: under
+``-n`` the main process collects no tests, so it has nothing to report.
 
 ☐ **5. Check that the documentation still renders.**
 

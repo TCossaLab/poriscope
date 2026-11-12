@@ -10,12 +10,10 @@ list of ``event_id`` values from the same query instead of from the query builde
 these tests pin is those routes, the warnings for a query that does not scope itself,
 and the failures.
 
-The projection comparison at the bottom used to assert that the two tabs' event-plot
-chains authored *different* queries. They do not any more: the chain is one body on
-``MetaSubsetTabModel``, and the test now pins that.
+``_run_raw_filter`` and ``load_event_id_cache`` are the base's, so ``MetadataController``
+alone drives them. ``_fetch_event_subset`` is each tab's own, so its tests run on both.
 """
 
-import inspect
 from typing import Any
 
 import pandas as pd
@@ -23,9 +21,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
-from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
-from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.utils.MetaSubsetTabController import (
     aggregates_without_grouping,
     bind_scope,
@@ -39,7 +35,6 @@ from poriscope.utils.MetaSubsetTabController import (
     with_event_id,
     writing_keyword,
 )
-from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from tests.unit.controllers._recording_model import RecordingModel
 
 pytestmark = pytest.mark.characterization
@@ -285,7 +280,7 @@ def test_a_keyword_that_would_write_is_found_in_code_only(sql: str, found: str) 
 # ------------------------------------------------------------------ scoping and warnings
 
 
-@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize("cls", [MetadataController])
 class TestRawFilterScopesItself:
     """
     The selection is bound into the query, and a query that does not use it is said so.
@@ -496,7 +491,7 @@ class TestRawFilterScopesItself:
         assert _said(controller) == ""
 
 
-@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize("cls", [MetadataController])
 @pytest.mark.parametrize(
     ("sql", "runs"),
     [
@@ -830,7 +825,7 @@ class TestRawFilterLoadsItsOwnEvents:
         assert "labels 'level_id' as event_id" in _said(controller)
 
 
-@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize("cls", [MetadataController])
 class TestRawFilterFillsTheEventNavigation:
     """
     Plot Events and the arrows read a list of ``event_id`` values; a raw query supplies it.
@@ -924,65 +919,6 @@ class TestRawFilterFillsTheEventNavigation:
         assert controller.model.calls_to("query_database_directly") == []
         assert len(controller.model.calls_to("load_metadata")) == 1
         controller.view.set_event_id_rows.assert_called_once()
-
-
-def test_the_two_tabs_share_one_projection() -> None:
-    """
-    The near-twin event-plot queries are one body now, and it projects ``id`` alone.
-
-    The protein copy used to project ``id, event_id``, recorded in three places as
-    being needed because its caller re-sorts the rows into the order it asked for
-    them in. It is not: ``ProteinController._events_to_plot`` sorts on the ``event_id``
-    the loader reports with each event, against the ids it requested, so nothing
-    ever read the extra column. Narrowing the projection and running the whole suite
-    failed only assertions on the query text itself.
-
-    That difference was the open question blocking the promotion, so this test
-    inverts rather than disappearing: what is worth pinning now is that neither tab
-    has grown a copy back.
-
-    :return: None
-    :rtype: None
-    """
-    shared = inspect.getsource(MetaSubsetTabModel.resolve_event_ids)
-
-    assert "SELECT id FROM events WHERE" in shared
-    assert "id, event_id" not in shared
-    assert "resolve_event_ids" not in ProteinModel.__dict__
-    assert "resolve_event_ids" not in MetadataModel.__dict__
-
-
-def test_the_distribution_chain_still_loads_an_assisted_subset(
-    mocker: MockerFixture,
-) -> None:
-    """
-    Removing the branch must not have taken the ordinary path with it.
-
-    :param mocker: pytest-mock's fixture
-    :type mocker: MockerFixture
-    :return: None
-    :rtype: None
-    """
-    controller = ProteinController.__new__(ProteinController)  # type: ignore[type-abstract]
-    controller.view = mocker.Mock()
-    controller.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
-    controller.add_text_to_display = mocker.Mock()  # type: ignore[assignment,method-assign]
-    generator = iter([])
-    controller.model = RecordingModel(
-        {
-            "construct_event_data_query": ("SELECT * FROM data", ""),
-            "load_event_data": generator,
-        }
-    )
-
-    fetched = controller._fetch_event_subset(
-        "ldr", "duration < 300", {"exp1": [2]}, "short events"
-    )
-
-    assert controller.model.calls_to("load_event_data") == [
-        ("duration < 300", {"exp1": [2]})
-    ]
-    assert fetched == ("SELECT * FROM data", generator)
 
 
 @pytest.mark.parametrize(

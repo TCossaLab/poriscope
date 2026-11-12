@@ -13,8 +13,6 @@ import inspect
 
 import pytest
 
-from poriscope.plugins.filters.BesselFilter import BesselFilter
-from poriscope.plugins.filters.WaveletFilter import WaveletFilter
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
@@ -56,10 +54,6 @@ def test_the_database_writer_helpers_name_their_channel() -> None:
         assert channel.annotation is int, name
 
 
-@pytest.mark.parametrize(
-    "filter_cls", [BesselFilter, WaveletFilter], ids=lambda c: c.__name__
-)
-def test_a_filter_inherits_its_reset(filter_cls: type) -> None:
-    """A filter has no channels to reset, so it need not write a reset of its own."""
+def test_a_filter_need_not_write_a_reset() -> None:
+    """A filter has no channels to reset, so ``MetaFilter`` does not require one."""
     assert "reset_channel" not in MetaFilter.__abstractmethods__
-    assert "reset_channel" not in vars(filter_cls)

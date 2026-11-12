@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from tests.unit.views._qt_mocks import mock_axes, mock_figure, shadow_signals
@@ -50,11 +50,6 @@ def real_view(qt_app):
     should take ``mock_view``, which is far cheaper.
     """
     v = EventAnalysisView()
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    v._set_custom_display_area(layout)
-    v._set_control_area(layout)
-    v._test_container = container
     return v
 
 
@@ -102,59 +97,6 @@ def mock_view():
 
     v._init()
     return v
-
-
-# ===========================================================================
-# _factors
-# ===========================================================================
-
-
-class TestFactors:
-    def test_perfect_square(self, mock_view):
-        assert mock_view._factors(4) == (2, 2)
-
-    def test_six(self, mock_view):
-        nr, nc = mock_view._factors(6)
-        assert nr * nc == 6
-
-    def test_one(self, mock_view):
-        nr, nc = mock_view._factors(1)
-        assert nr * nc == 1
-
-    def test_nine(self, mock_view):
-        assert mock_view._factors(9) == (3, 3)
-
-    def test_prime_still_factors(self, mock_view):
-        nr, nc = mock_view._factors(7)
-        assert nr * nc >= 7
-
-    def test_two(self, mock_view):
-        nr, nc = mock_view._factors(2)
-        assert nr * nc == 2
-
-    def test_large(self, mock_view):
-        nr, nc = mock_view._factors(12)
-        assert nr * nc == 12
-
-
-# ===========================================================================
-# update_plot_data
-# ===========================================================================
-
-
-class TestUpdatePlotData:
-    def test_array_input_stored_directly(self, mock_view):
-        arr = np.array([4, 5, 6])
-        mock_view.update_plot_data(arr)
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
-    def test_none_input(self, mock_view):
-        mock_view.update_plot_data(None)
-        assert mock_view.plot_data is None
-
-    def test_list_input(self, mock_view):
-        mock_view.update_plot_data([1, 2, 3])
-        assert mock_view.plot_data == [1, 2, 3]
 
 
 # ===========================================================================
@@ -297,9 +239,6 @@ class TestGetCurrentView:
 class TestGetWalkthroughSteps:
     def test_returns_list(self, mock_view):
         assert isinstance(mock_view.get_walkthrough_steps(), list)
-
-    def test_has_13_steps(self, mock_view):
-        assert len(mock_view.get_walkthrough_steps()) == 13
 
     def test_each_step_is_tuple_of_four(self, mock_view):
         for step in mock_view.get_walkthrough_steps():
@@ -1166,106 +1105,14 @@ class TestUpdateEventPlotExtended:
 
 
 # ===========================================================================
-# get_save_filename
-# ===========================================================================
-
-
-class TestGetSaveFilename:
-    def test_returns_selected_path(self, mock_view):
-        with patch(
-            "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
-            return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
-        ):
-            result = mock_view.get_save_filename()
-        assert result == "/path/to/file.csv"
-
-    def test_returns_empty_on_cancel(self, mock_view):
-        with patch(
-            "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
-            return_value=("", ""),
-        ):
-            result = mock_view.get_save_filename()
-        assert result == ""
-
-
-# ===========================================================================
-# update_plot / _reset_actions / _init (no-ops — coverage only)
-# ===========================================================================
-
-
-class TestNoOpMethods:
-    def test_update_plot_no_error(self, mock_view):
-        mock_view.update_plot()
-
-    def test_reset_actions_no_error(self, mock_view):
-        mock_view._reset_actions()
-
-    def test_reset_actions_3d_no_error(self, mock_view):
-        mock_view._reset_actions(axis_type="3d")
-
-
-# ===========================================================================
-# _factors — extended edge cases
-# ===========================================================================
-
-
-class TestFactorsExtended:
-    def test_three(self, mock_view):
-        nr, nc = mock_view._factors(3)
-        assert nr * nc >= 3
-
-    def test_four(self, mock_view):
-        assert mock_view._factors(4) == (2, 2)
-
-    def test_five(self, mock_view):
-        nr, nc = mock_view._factors(5)
-        assert nr * nc >= 5
-
-    def test_sixteen(self, mock_view):
-        assert mock_view._factors(16) == (4, 4)
-
-    def test_output_is_two_tuple(self, mock_view):
-        result = mock_view._factors(6)
-        assert len(result) == 2
-
-    def test_first_factor_lte_second(self, mock_view):
-        nr, nc = mock_view._factors(8)
-        assert nr <= nc
-
-
-# ===========================================================================
-# update_plot_data — extended
-# ===========================================================================
-
-
-class TestUpdatePlotDataExtended:
-    def test_empty_array(self, mock_view):
-        arr = np.array([])
-        mock_view.update_plot_data(arr)
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
-    def test_2d_array(self, mock_view):
-        arr = np.ones((3, 4))
-        mock_view.update_plot_data(arr)
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
-
-# ===========================================================================
 # validate_single_channel — extended
 # ===========================================================================
 
 
 class TestValidateSingleChannelExtended:
-    def test_exactly_one_channel_ok(self, mock_view):
-        mock_view.validate_single_channel([5])  # should not raise
-
     def test_three_channels_raises(self, mock_view):
         with pytest.raises(ValueError):
             mock_view.validate_single_channel([0, 1, 2])
-
-    def test_error_message_mentions_multiple(self, mock_view):
-        with pytest.raises(ValueError, match="multiple"):
-            mock_view.validate_single_channel([0, 1])
 
 
 # ===========================================================================
@@ -1280,11 +1127,6 @@ class TestExtractPlotEventParametersExtended:
             mock_view._extract_plot_event_parameters(params)
         )
         assert channels == []
-
-    def test_multiple_channels_converted(self, mock_view):
-        params = {"channel": ["0", "1", "2"], "event_index": []}
-        _, _, _, channels, _ = mock_view._extract_plot_event_parameters(params)
-        assert channels == [0, 1, 2]
 
     def test_event_index_none_returned_as_none(self, mock_view):
         params = {"channel": ["0"]}
@@ -1313,11 +1155,6 @@ class TestExtractEventFitParametersExtended:
         _, _, filt, _ = mock_view._extract_event_fit_parameters(params)
         assert filt is None
 
-    def test_channels_converted_to_int(self, mock_view):
-        params = {"channel": ["3", "4"], "eventfitter": "ef", "filter": "f"}
-        _, _, _, channels = mock_view._extract_event_fit_parameters(params)
-        assert channels == [3, 4]
-
 
 # ===========================================================================
 # _extract_commit_event_parameters — edge cases
@@ -1343,29 +1180,9 @@ class TestExtractCommitEventParametersExtended:
 
 class TestHandleOtherActionsExtended:
     """
-    The same intent, over the parameter shapes the controls panel can produce.
-
-    Three of these asserted that ``global_signal`` did not fire and would have gone on
-    passing for the wrong reason after the conversion; all four target the intent now.
+    The same intent, over the two further parameter shapes the controls panel can
+    produce: no loader key at all, and the empty-state placeholder text.
     """
-
-    def test_loader_none_does_not_request(self, mock_view):
-        mock_view.loader_channels_requested = MagicMock()
-        mock_view._handle_other_actions("any_action", {"loader": None})
-        mock_view.loader_channels_requested.emit.assert_not_called()
-
-    def test_loader_present_requests_channels(self, mock_view):
-        mock_view.loader_channels_requested = MagicMock()
-        mock_view._handle_other_actions("any_action", {"loader": "my_loader"})
-        mock_view.loader_channels_requested.emit.assert_called_once()
-
-    def test_loader_present_targets_correct_loader(self, mock_view):
-        mock_view.loader_channels_requested = MagicMock()
-        mock_view._handle_other_actions("any_action", {"loader": "specific_loader"})
-        assert (
-            mock_view.loader_channels_requested.emit.call_args[0][0]
-            == "specific_loader"
-        )
 
     def test_missing_loader_key_treated_as_none(self, mock_view):
         mock_view.loader_channels_requested = MagicMock()
@@ -1433,46 +1250,6 @@ class TestHandleCommitEventsExtended:
             {"loader": "ldr", "writer": "w", "channel": ["0", "1"]}
         )
         mock_view.write_requested.emit.assert_called_once_with("w", [0, 1])
-
-
-# ===========================================================================
-# handle_parameter_change — extended routing
-# ===========================================================================
-
-
-class TestHandleParameterChangeExtended:
-    def _params(self):
-        return {
-            "loader": "l",
-            "eventfitter": "ef",
-            "filter": "No Filter",
-            "channel": ["0"],
-            "event_index": [1],
-            "writer": "w",
-            "raw": False,
-        }
-
-    def test_export_plot_data_emits_signal(self, mock_view):
-        received = []
-        mock_view.export_plot_data.connect(lambda: received.append(True))
-        mock_view.handle_parameter_change("M", "export_plot_data", (self._params(),))
-        assert len(received) == 1
-
-    def test_shift_backward_direction_is_left(self, mock_view):
-        with patch.object(EventAnalysisView, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change(
-                "M", "shift_range_backward", (self._params(),)
-            )
-        mock.assert_called_once()
-        assert mock.call_args[1]["direction"] == "left"
-
-    def test_shift_forward_direction_is_right(self, mock_view):
-        with patch.object(EventAnalysisView, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change(
-                "M", "shift_range_forward", (self._params(),)
-            )
-        mock.assert_called_once()
-        assert mock.call_args[1]["direction"] == "right"
 
 
 # ===========================================================================

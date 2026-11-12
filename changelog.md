@@ -32,6 +32,8 @@
 
 * An Assisted filter that starts with `SELECT` is now refused, saying to use Raw SQL mode; it used to be put inside the `WHERE` as a subquery, where a one-column query was accepted and selected events by an unrelated test
 
+* **The Protein tab no longer reports a two-population fit whose second component is narrower than half a bin:** on a clean single peak, or one peak dominating another, the fit could place a zero-width component on the first; it now counts as finding one population, as a noisy single peak always did
+
 #### Data plugin API:
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
@@ -66,6 +68,10 @@
 * **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
 
 #### Analysis-tab API:
+
+* **Breaking:** `MetaView.update_plot_data` and `MetaView.plot_data` are removed: nothing read what they stored, so a tab calling it drew nothing; draw through the tab's own View methods
+
+* **Breaking:** a `BaseLineEdit` is no longer installed as an application event filter: one `MessageBoxValidationGuard` per application sets `suspend_validation` and `app_closing`, so a subclass overriding `eventFilter` no longer receives every application event
 
 * **Breaking:** `RawDataView.psd_data_requested` and `RawDataView.calculate_psd` carry the PSD options as a dict, and `RawDataController.calculate_psd` takes it; `load_psd_data` takes them as keyword parameters, defaulting to the PSD Update PSD always drew
 
@@ -160,11 +166,25 @@
 
 * The Raw Data PSD tests no longer fail on scipy 1.18, which computes the same spectrum a few ULPs differently
 
+* The test suite deletes every window a test leaves behind and fails a test whose window survives, which cuts a serial run from about 27 minutes to 8
+
+* `pytest -n auto` runs the suite in parallel, one file per worker, with the workers sized from the machine's cores and free memory; CI runs it this way, in about 2 minutes on the dev machine
+
+* Tests that repeated the same replay, fit, event search, recording or database now share one per module or session, each test keeping its own assertions
+
+* About 440 tests that added no protection are removed and about 30 that passed when broken are fixed, each on mutation evidence, and new tests cover gaps the audit found
+
+* `scripts/new_plugin.py` parses each base module once per run instead of once per generated method
+
+* The duplication ratchet also measures the `Meta*` bases, so a base method copied onto one tab counts as duplication, and a rise names the functions it newly duplicated
+
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on
 
 ### Data Plugin API:
+
+* `MetaEventFitter.reset_channel` no longer forces a full garbage collection, which took seconds in a large session
 
 * `SingleBinaryDecoder` reads its format settings through `_binary_setting`, so a subclass fixes one by deleting its key and overriding `SETTING_DEFAULTS`
 
@@ -185,6 +205,10 @@
 ### Analysis Tabs:
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
+
+* Code that could never change a result is removed: `_parse_event_indices`'s `allow_floats` (every caller parsed integers), `MetaDatabaseLoader`'s longest-first column sort, and `SQLiteDBLoader`'s object-dtype check
+
+* `ProteinModel._compute_theoretical_blockages` raises for a negative form factor, as its docstring says, instead of returning NaN
 
 * `MetaView.noise_shade` colours a noise value green, orange or red against two thresholds, for every tab that shades a PSD by its 1 Hz noise
 
@@ -219,6 +243,8 @@
 * `MetaController.kept_actions`, `hold_session_actions`, `session_actions`, `holds_session_actions` and `replay_available` are new, `start_replay()` with nothing to continue replays the loaded actions, and `ReplaySequence.start` takes `from_session`
 
 * `MetaController.rewrite_plugin_entries` drops or renames the entries naming a plugin in every copy a tab holds, and `ReplaySequence.rewrite_entries` in a replay's
+
+* The Metadata panel's deferred width matching is cancelled when the panel is deleted first, instead of running on deleted widgets
 
 ### User-Facing Behaviour:
 
@@ -311,6 +337,8 @@
 * A CUSUM-family fitter now rejects an event it has no baseline sigma for, instead of reporting "Too Few Levels"
 
 * Metadata databases are now indexed, making filtered metadata plots and clearing a channel much faster; existing databases are indexed when first opened
+
+* Event finding no longer scans the rest of the chunk for each event, so a chunk with many events is found much faster (12 million samples with 100 events: 15.8 s to 0.05 s), with identical events
 
 * A metadata database containing tables Poriscope does not know (for example after running `ANALYZE` on it) now opens instead of being refused
 

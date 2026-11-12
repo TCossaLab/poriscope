@@ -1,26 +1,18 @@
 """
-The three things the global signal bus is still used for, pinned by their outcome.
-
-These were the net for removing the bus, and they are written
-deliberately against **what the application does**, not against which signal
-carries it:
+Three tab-to-application paths, pinned by their outcome rather than their wiring.
 
 - a tab asking a plugin for its channel status puts that status on the display
 - a tab's edit request reaches ``DataPluginController.edit_plugin_settings``
 - a tab's delete request reaches ``DataPluginController.delete_plugin``
 
-Every one of those sentences stays true after the bus is gone, so these tests
-passed **unchanged** while ``generate_report`` moved onto ``self.call``, the
-string-dispatched ``data_plugin_controller_signal`` became typed
-``Signal(str, str)`` signals, and the machinery was deleted. Passing them with the
-bus deleted is the evidence that the removal preserved behaviour.
+The status report goes through ``MetaModel.generate_report``, which asks the plugin
+with ``self.call``; edit and delete leave the tab View on its typed ``edit_plugin``
+and ``delete_plugin`` signals, which its Controller relays on signals of the same
+names that ``MainController.instantiate_analysis_tab`` connects to the
+``DataPluginController``. The tests assert only the far end of each path, so
+they hold whatever carries the request.
 
-Unit tests of the three call sites were considered and rejected for this job:
-they would assert which signal fired with what payload, the removal changed both,
-and a test rewritten alongside the code it guards proves nothing about the change.
-
-``handle_edit_triggered`` and ``handle_delete_triggered`` sit at 25% line
-coverage and no test named either before this file.
+They are the only tests of the edit and delete wiring.
 """
 
 from __future__ import annotations
@@ -131,17 +123,14 @@ def test_a_channel_status_request_reaches_the_display(triad, monkeypatch):
     """
     The report a tab asks a plugin for ends up on the main window's display panel.
 
-    This is the whole of what ``MetaModel.generate_report`` achieves. It moved off
-    the bus and onto ``self.call``, and the sentence above stayed true.
+    This is the whole of what ``MetaModel.generate_report`` achieves.
     """
     seen = display_calls(triad, monkeypatch)
     reader = _StubReader()
-    # Registered through the triad rather than pushed into a registry by hand.
-    # There are two of them: the bus resolves against DataPluginModel.plugins,
-    # while MetaModel.call resolves against the tab's own _plugin_instances,
-    # which MainController fills only when a registration is announced. Reaching
-    # into one of them directly would pin this test to whichever mechanism is
-    # current, which is exactly what it exists not to do.
+    # Registered through the triad rather than pushed into a registry by hand:
+    # MetaModel.call resolves against the tab's own _plugin_instances, which
+    # MainController fills only when a registration is announced, so writing to it
+    # directly would skip the announcement this path depends on.
     triad.register(reader, "MetaReader", READER)
     triad.tab_controller.model.reporter_metaclasses[READER] = "MetaReader"
 
@@ -157,9 +146,8 @@ def test_an_edit_request_reaches_the_data_plugin_controller(triad, monkeypatch):
     """
     A tab's edit request arrives at ``DataPluginController.edit_plugin_settings``.
 
-    The string-dispatched signal behind this was replaced with a typed
-    ``Signal(str, str)`` connected to the same method, so the assertion was
-    unaffected.
+    The tab View emits its typed ``edit_plugin`` signal, and the tab Controller relays
+    it to that method.
     """
     called: List[Tuple] = []
     monkeypatch.setattr(
@@ -177,7 +165,7 @@ def test_a_delete_request_reaches_the_data_plugin_controller(triad, monkeypatch)
     """
     A tab's delete request arrives at ``DataPluginController.delete_plugin``.
 
-    The other half of the typed-signal replacement, and the same reasoning.
+    The same route as an edit, through the View's ``delete_plugin`` signal.
     """
     called: List[Tuple] = []
     monkeypatch.setattr(

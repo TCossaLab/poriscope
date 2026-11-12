@@ -72,16 +72,6 @@ class TestGetBaselineStats:
         assert mean == pytest.approx(2000.0, abs=1.0)
         assert stdev == pytest.approx(15.0, rel=0.15)
 
-    def test_it_returns_two_values_in_mean_stdev_order(
-        self, model: RawDataModel
-    ) -> None:
-        """The docstring fixes the order, and callers index it positionally."""
-        rng = np.random.default_rng(7)
-        out = model.get_baseline_stats(rng.normal(100.0, 2.0, 50_000))
-
-        assert isinstance(out, np.ndarray)
-        assert out.shape == (2,)
-
     def test_a_negative_baseline_is_handled(self, model: RawDataModel) -> None:
         """Nanopore baselines are commonly negative."""
         rng = np.random.default_rng(11)

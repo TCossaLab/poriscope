@@ -23,7 +23,6 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
-from poriscope.utils.MetaModel import MetaModel
 
 
 @pytest.fixture
@@ -35,22 +34,6 @@ def model():
     :rtype: MetadataModel
     """
     return MetadataModel()
-
-
-# ===========================================================================
-# Construction / inheritance
-# ===========================================================================
-
-
-class TestConstruction:
-    def test_instantiates_without_error(self, model):
-        assert model is not None
-
-    def test_is_instance_of_meta_model(self, model):
-        assert isinstance(model, MetaModel)
-
-    def test_init_returns_none(self, model):
-        assert model._init() is None
 
 
 # ===========================================================================
@@ -632,9 +615,9 @@ class TestResolveEventIds:
 
     def test_projects_id_only(self, model, mocker):
         """
-        Metadata asks for ``id`` alone; the protein tab asks for ``id, event_id``
-        because its caller re-sorts the rows. The difference is load-bearing and a
-        promotion that merged the two would have to keep it.
+        ``id`` alone, for both subset tabs: the caller loads the rows by these ids,
+        and the protein tab orders what comes back by the ``event_id`` each loaded
+        event carries, so nothing reads a second column.
         """
         query = self._query(model, mocker, [7], None, None)
 

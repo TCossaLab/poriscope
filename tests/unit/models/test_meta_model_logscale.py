@@ -8,10 +8,6 @@ pass a value column and its error column and still have them line up.
 
 It is not a pure transform: it reports on the status panel how many points the NaN
 mask and the log filter removed, which is why it cannot be a module-level function.
-
-An identical copy sat on ``MetaView`` while the plot paths were converted one at a
-time, with a test comparing the two bodies so neither could be edited alone. The
-last caller converted and that copy is gone, so the test is too.
 """
 
 from typing import override
@@ -42,12 +38,7 @@ def model():
 
 
 class TestLogscaleAndFilterColumns:
-    """
-    The behaviour, asserted against the Model copy directly.
-
-    These overlap ``test_meta_view_characterization.py`` on purpose: that file pins the
-    copy the unconverted callers still use, and this one pins the copy that survives.
-    """
+    """The behaviour, asserted against the base method directly."""
 
     def test_no_arrays_returns_an_empty_tuple(self, model):
         assert model.logscale_and_filter_columns() == ()

@@ -198,8 +198,8 @@ class TestReferencesColumn:
         """
         ``duration`` must not match inside ``sublevel_duration``.
 
-        This is what forces the longest-first ordering in the qualifier, and
-        getting it wrong would join a table the query does not need.
+        ``_`` is a word character, so ``\b`` finds no boundary inside the longer
+        name; getting it wrong would join a table the query does not need.
         """
         assert not loader._references_column("sublevel_duration < 100", "duration")
 
@@ -317,10 +317,9 @@ class TestQualifyConditions:
         self, loader: ConcreteDatabaseLoader, joined: Dict[str, str]
     ) -> None:
         """
-        Columns are substituted longest-first, so ``sublevel_amplitude`` survives.
-
-        Shortest-first would rewrite the ``amplitude`` inside it and produce
-        ``sublevel_e.amplitude``.
+        ``\b`` finds no boundary inside ``sublevel_amplitude``, so the ``amplitude``
+        inside it is left alone whatever order the columns are substituted in;
+        rewriting it would produce ``sublevel_e.amplitude``.
         """
         out = loader._qualify_conditions("sublevel_amplitude > 1", joined)
 

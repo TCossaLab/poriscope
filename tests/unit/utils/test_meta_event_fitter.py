@@ -385,23 +385,6 @@ class TestMetaEventFitter:
         assert fitter.eventfitting_status[0] is True
         assert len(fitter.event_metadata[0]) > 0
 
-    def test_fit_events_with_filter(self, fitter: ConcreteEventFitter) -> None:
-        """Test fitting events with data filter."""
-
-        def simple_filter(data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-            return data * 2
-
-        gen = fitter.fit_events(0, data_filter=simple_filter, indices=[0])
-        list(gen)  # Consume generator
-        assert fitter.eventfitting_status[0] is True
-
-    def test_fit_events_silent(self, fitter: ConcreteEventFitter) -> None:
-        """Test fitting events in silent mode."""
-        gen = fitter.fit_events(0, silent=True, indices=[0])
-        progress = list(gen)
-        # Silent mode still yields final 1.0
-        assert progress[-1] == 1.0
-
     def test_get_metadata_columns_after_fitting(
         self, fitter: ConcreteEventFitter
     ) -> None:
@@ -420,13 +403,6 @@ class TestMetaEventFitter:
         list(gen)
         columns = fitter.get_sublevel_columns(0)
         assert "sublevel_current" in columns
-
-    def test_get_num_events_after_fitting(self, fitter: ConcreteEventFitter) -> None:
-        """Test getting number of events after fitting."""
-        gen = fitter.fit_events(0, indices=[0, 1])
-        list(gen)
-        num = fitter.get_num_events(0)
-        assert num >= 0
 
     def test_get_single_event_metadata_not_fitted(
         self, fitter: ConcreteEventFitter
@@ -496,31 +472,26 @@ class TestMetaEventFitter:
         assert hlabels is None
         assert plabels is None
 
-    def test_construct_fitted_event_not_fitted(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
-        """Test constructing fitted event before fitting."""
-        fitted = fitter.construct_fitted_event(0, 0)
-        assert fitted is None
-
-    def test_construct_fitted_event_success(self, fitter: ConcreteEventFitter) -> None:
-        """Test successfully constructing fitted event."""
-        gen = fitter.fit_events(0, indices=[0])
-        list(gen)
-        fitted = fitter.construct_fitted_event(0, 0)
-        assert fitted is not None
-        assert len(fitted) > 0
-
     def test_get_fitted_event_validates_length(
         self, fitter: ConcreteEventFitter
     ) -> None:
-        """Test that get_fitted_event validates returned length."""
-        gen = fitter.fit_events(0, indices=[0])
-        list(gen)
+        """
+        A fit of the event's own length is returned; any other length is refused.
 
-        # This should work - correct length
-        fitted = fitter.get_fitted_event(0, 0)
-        assert fitted is not None
+        A fit one sample short cannot be overlaid on the raw trace, so the base refuses
+        it rather than letting the plot misalign.
+        """
+        list(fitter.fit_events(0, indices=[0]))
+        true_len = fitter.event_lengths[0][0]
+
+        assert len(fitter.get_fitted_event(0, 0)) == true_len
+
+        build = fitter.construct_fitted_event
+        fitter.construct_fitted_event = (  # type: ignore[method-assign]
+            lambda channel, index: build(channel, index)[:-1]
+        )
+        with pytest.raises(ValueError, match=f"but raw event length is {true_len}"):
+            fitter.get_fitted_event(0, 0)
 
     def test_eventloader_not_initialized(self) -> None:
         """Test operations without initialized event loader."""

@@ -1014,16 +1014,27 @@ class MetaEventFinder(BaseDataPlugin):
         :rtype: int
         """
         run = self.EDGE_RUN_SAMPLES
-        within = np.abs(data[: crossing + 1]) <= self.EDGE_BAND_SIGMA
-        if within.size < run:
-            return max(lower_bound, 0)
-        # window i covers [i, i + run); the start follows the last quiet window that ends
-        # at or before the crossing and begins at or after the lower bound
-        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
-        candidates = np.flatnonzero(quiet[max(lower_bound, 0) :])
-        if candidates.size == 0:
-            return max(lower_bound, 0)
-        return int(max(lower_bound, 0) + candidates[-1] + run)
+        first = max(lower_bound, 0)
+        # the start follows the last quiet window that ends at or before the crossing and
+        # begins at or after the lower bound; search back from the crossing in growing
+        # slices, each ending run - 1 samples past the previous one's beginning so no
+        # window straddling a seam is missed
+        stop = crossing + 1
+        span = 1024
+        while True:
+            begin = max(first, stop - span)
+            within = np.abs(data[begin:stop]) <= self.EDGE_BAND_SIGMA
+            if within.size >= run:
+                quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(
+                    axis=1
+                )
+                candidates = np.flatnonzero(quiet)
+                if candidates.size > 0:
+                    return int(begin + candidates[-1] + run)
+            if begin <= first:
+                return first
+            stop = begin + run - 1
+            span *= 2
 
     @log(logger=logger)
     def _event_end_from_the_baseline(
@@ -1047,14 +1058,65 @@ class MetaEventFinder(BaseDataPlugin):
         :rtype: Optional[int]
         """
         run = self.EDGE_RUN_SAMPLES
-        within = np.abs(data[crossing:]) <= self.EDGE_BAND_SIGMA
-        if within.size < run:
-            return None
-        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
-        candidates = np.flatnonzero(quiet)
-        if candidates.size == 0:
-            return None
-        return int(crossing + candidates[0])
+        # search forward in growing slices rather than over the whole rest of the chunk,
+        # which made every event cost a pass over everything after it; each slice after
+        # the first starts run - 1 samples early so no window straddling a seam is missed
+        start = crossing
+        span = 1024
+        length = len(data)
+        while True:
+            stop = min(length, start + span)
+            within = np.abs(data[start:stop]) <= self.EDGE_BAND_SIGMA
+            if within.size >= run:
+                quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(
+                    axis=1
+                )
+                candidates = np.flatnonzero(quiet)
+                if candidates.size > 0:
+                    return int(start + candidates[0])
+            if stop >= length:
+                return None
+            start = stop - run + 1
+            span *= 2
+
+    @log(logger=logger)
+    def _next_threshold_crossing(
+        self,
+        data: npt.NDArray[np.float64],
+        index: int,
+        threshold: float,
+        below: bool,
+    ) -> Optional[int]:
+        """
+        Find the first sample at or after ``index`` that is past the threshold.
+
+        Searches forward in slices that double in size: comparing the whole rest of the
+        chunk instead made every event cost a pass over everything after it. A crossing
+        is one sample, so the slices need not overlap.
+
+        :param data: the normalised chunk
+        :type data: npt.NDArray[np.float64]
+        :param index: where to start looking
+        :type index: int
+        :param threshold: the threshold, in the chunk's units
+        :type threshold: float
+        :param below: True for the first sample below the threshold, False for above
+        :type below: bool
+        :return: the crossing's index in the chunk, or None if the chunk ends first
+        :rtype: Optional[int]
+        """
+        start = index
+        span = 1024
+        length = len(data)
+        while start < length:
+            stop = min(length, start + span)
+            window = data[start:stop]
+            crossed = window < threshold if below else window > threshold
+            if crossed.any():
+                return start + int(np.argmax(crossed))
+            start = stop
+            span *= 2
+        return None
 
     # Shared implementation offered to subclasses, not part of the API a plugin author
     # must supply. ``_get_baseline_stats`` above stays abstract so every finder still

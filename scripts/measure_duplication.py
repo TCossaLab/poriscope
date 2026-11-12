@@ -75,6 +75,12 @@ Exits 1 under ``--check`` if the measurement disagrees with
 Going down is a win that has to be recorded in the same commit that earned it -
 otherwise the baseline overstates the duplication left and the slack accrues
 silently.
+
+**A rise names the functions newly duplicated.** Beside its counts the baseline
+records every function that is in a duplicate group, as ``file.py:Class.method``, and a
+rise reports the ones that are not among them, because a rise usually means a copy to delete and
+``--update`` would record it instead. The names are never compared, so renaming a
+duplicated method does not fail the check.
 """
 
 import argparse
@@ -84,7 +90,7 @@ import sys
 import textwrap
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple, Union
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -122,6 +128,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: copies must not quietly add a duplicate somewhere else while doing it, and now it
 #: cannot.
 #:
+#: Each family also holds the ``Meta*`` bases its files inherit from (added 2026-11-12).
+#: Without them, a base method copied onto a single subclass had no identical twin in the
+#: family, so it read as one more function rather than as duplication. Entering, they
+#: brought base-to-base copies already present: abstract declarations repeated with the
+#: same docstring in sibling bases (``validate_inputs``, several ``_init``), a floor like
+#: ``MetaModel._init`` above, and two loader bases' shared ``get_empty_settings`` and
+#: ``force_serial_channel_operations``, queued in ``future_fixes.md``. ``BaseDataPlugin``
+#: is left out: it underlies every data family, so it would sit in all of them.
+#:
 #: ``ThresholdBlockageFinder`` is in the family although it shares nothing today,
 #: because a family is a set of files that *may* copy from each other, not a set that
 #: currently does.
@@ -133,6 +148,9 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataView.py",
         "poriscope/plugins/analysistabs/ProteinView.py",
         "poriscope/plugins/analysistabs/RawDataView.py",
+        "poriscope/utils/MetaView.py",
+        "poriscope/utils/MetaEventTabView.py",
+        "poriscope/utils/MetaSubsetTabView.py",
     ),
     "*Controller.py": (
         "poriscope/plugins/analysistabs/ClusteringController.py",
@@ -141,6 +159,9 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataController.py",
         "poriscope/plugins/analysistabs/ProteinController.py",
         "poriscope/plugins/analysistabs/RawDataController.py",
+        "poriscope/utils/MetaController.py",
+        "poriscope/utils/MetaEventTabController.py",
+        "poriscope/utils/MetaSubsetTabController.py",
     ),
     "*Model.py": (
         "poriscope/plugins/analysistabs/ClusteringModel.py",
@@ -149,6 +170,8 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataModel.py",
         "poriscope/plugins/analysistabs/ProteinModel.py",
         "poriscope/plugins/analysistabs/RawDataModel.py",
+        "poriscope/utils/MetaModel.py",
+        "poriscope/utils/MetaSubsetTabModel.py",
     ),
     "*controls.py": (
         "poriscope/plugins/analysistabs/utils/clusteringcontrols.py",
@@ -157,17 +180,22 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/utils/metadatacontrols.py",
         "poriscope/plugins/analysistabs/utils/proteincontrols.py",
         "poriscope/plugins/analysistabs/utils/rawdatacontrols.py",
+        "poriscope/utils/MetaControls.py",
+        "poriscope/utils/MetaEventTabControls.py",
+        "poriscope/utils/MetaSubsetTabControls.py",
     ),
     "eventfitters": (
         "poriscope/plugins/eventfitters/ClassicCUSUM.py",
         "poriscope/plugins/eventfitters/CUSUM.py",
         "poriscope/plugins/eventfitters/IntraCUSUM.py",
         "poriscope/plugins/eventfitters/NoFitter.py",
+        "poriscope/utils/MetaEventFitter.py",
     ),
     "eventfinders": (
         "poriscope/plugins/eventfinders/BoundedBlockageFinder.py",
         "poriscope/plugins/eventfinders/ClassicBlockageFinder.py",
         "poriscope/plugins/eventfinders/ThresholdBlockageFinder.py",
+        "poriscope/utils/MetaEventFinder.py",
     ),
     "datareaders": (
         "poriscope/plugins/datareaders/ABFReader.py",
@@ -179,6 +207,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/datareaders/NIBinaryReader.py",
         "poriscope/plugins/datareaders/SingleBinaryDecoder.py",
         "poriscope/plugins/datareaders/TCossaLabABFReader.py",
+        "poriscope/utils/MetaReader.py",
     ),
     "views/widgets": (
         "poriscope/views/widgets/add_subset_filter_dialog.py",
@@ -204,10 +233,12 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     # Added with its first plugin, so nothing can be duplicated yet.
     "conditioningloaders": (
         "poriscope/plugins/conditioningloaders/NIConditioningLoader.py",
+        "poriscope/utils/MetaConditioningLoader.py",
     ),
     "filters": (
         "poriscope/plugins/filters/BesselFilter.py",
         "poriscope/plugins/filters/WaveletFilter.py",
+        "poriscope/utils/MetaFilter.py",
     ),
     # One family across five directories: each holds a single SQLite plugin, and
     # these are the files likely to copy from each other. 0 removable on entry.
@@ -217,6 +248,10 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/db_loaders/SQLitePeakDBLoader.py",
         "poriscope/plugins/dbwriters/SQLiteDBWriter.py",
         "poriscope/plugins/eventloaders/SQLiteEventLoader.py",
+        "poriscope/utils/MetaDatabaseLoader.py",
+        "poriscope/utils/MetaDatabaseWriter.py",
+        "poriscope/utils/MetaEventLoader.py",
+        "poriscope/utils/MetaWriter.py",
     ),
 }
 
@@ -232,6 +267,15 @@ EXCLUDED: Dict[str, str] = {
 }
 
 BASELINE_PATH = REPO_ROOT / ".duplication-baseline.json"
+
+#: The baseline key listing, per family, every function in a duplicate group as
+#: ``file.py:Class.method`` - the file too, since a module-level function or a class
+#: name can repeat across files. It is read only to name what a rise added, never
+#: compared.
+DUPLICATED_KEY = "duplicated_functions"
+
+#: One family's baseline entry: its counts, plus the names under ``DUPLICATED_KEY``.
+BaselineEntry = Dict[str, Union[int, List[str]]]
 
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
@@ -342,6 +386,11 @@ def measure_family(files: List[Path]) -> Dict[str, object]:
         groups.append(
             {
                 "names": sorted({n for names in per_file.values() for n in names}),
+                "locations": sorted(
+                    f"{Path(file).name}:{n}"
+                    for file, names in per_file.items()
+                    for n in names
+                ),
                 "files": len(per_file),
                 "lines": lines,
                 "removable": (len(per_file) - 1) * lines,
@@ -379,57 +428,90 @@ def measure() -> Dict[str, Dict[str, object]]:
     return results
 
 
-def to_baseline(results: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, int]]:
+def to_baseline(results: Dict[str, Dict[str, object]]) -> Dict[str, BaselineEntry]:
     """
-    Reduce a measurement to the counts the baseline file records.
+    Reduce a measurement to the counts and names the baseline file records.
 
-    The per-group detail is deliberately left out: it is useful to read and
-    useless to diff, and it would churn the baseline on every rename.
+    Each group's line counts are left out: they are useful to read and useless to
+    diff. The names of the duplicated functions are kept so that a rise can say which
+    functions were newly copied; they are never compared, so a rename churns nothing.
 
     :param results: a full measurement
     :type results: Dict[str, Dict[str, object]]
-    :return: per-family counts only
-    :rtype: Dict[str, Dict[str, int]]
+    :return: per-family counts, plus the names of the family's duplicated functions
+    :rtype: Dict[str, BaselineEntry]
     """
-    return {
-        family: {
+    baseline: Dict[str, BaselineEntry] = {}
+    for family, data in results.items():
+        groups: List[Dict[str, object]] = data["groups"]  # type: ignore[assignment]
+        baseline[family] = {
             "files": int(data["files"]),
             "functions": int(data["functions"]),
             "identical_bodies": int(data["identical_bodies"]),
             "removable_lines": int(data["removable_lines"]),
+            DUPLICATED_KEY: sorted(
+                {str(at) for group in groups for at in group["locations"]}  # type: ignore[attr-defined]
+            ),
         }
-        for family, data in results.items()
-    }
+    return baseline
 
 
-def load_baseline() -> Dict[str, Dict[str, int]]:
+def load_baseline() -> Dict[str, BaselineEntry]:
     """
     Read the checked-in baseline.
 
-    :return: the recorded per-family counts
-    :rtype: Dict[str, Dict[str, int]]
+    :return: the recorded per-family counts and duplicated-function names
+    :rtype: Dict[str, BaselineEntry]
     :raises FileNotFoundError: if the baseline has not been written yet
     """
     if not BASELINE_PATH.is_file():
         raise FileNotFoundError(
             f"{display(BASELINE_PATH)} does not exist; run this script with --update"
         )
-    loaded: Dict[str, Dict[str, int]] = json.loads(
+    loaded: Dict[str, BaselineEntry] = json.loads(
         BASELINE_PATH.read_text(encoding="utf-8")
     )
     return loaded
 
 
+def counts(entry: BaselineEntry) -> Dict[str, int]:
+    """
+    The counts in one family's baseline entry, without the duplicated-function names.
+
+    :param entry: one family's entry, measured or recorded
+    :type entry: BaselineEntry
+    :return: the entry's integer counts
+    :rtype: Dict[str, int]
+    """
+    return {key: value for key, value in entry.items() if isinstance(value, int)}
+
+
+def duplicated_names(entry: BaselineEntry) -> Set[str]:
+    """
+    The names of the duplicated functions one family's entry records.
+
+    :param entry: one family's entry, measured or recorded
+    :type entry: BaselineEntry
+    :return: the names, empty if the entry records none
+    :rtype: Set[str]
+    """
+    names = entry.get(DUPLICATED_KEY)
+    return set(names) if isinstance(names, list) else set()
+
+
 def compare(
-    current: Dict[str, Dict[str, int]], baseline: Dict[str, Dict[str, int]]
+    current: Dict[str, BaselineEntry], baseline: Dict[str, BaselineEntry]
 ) -> List[str]:
     """
     Report every way the current measurement disagrees with the baseline.
 
+    Only the counts are compared. The duplicated-function names serve to name what a
+    rise added (see ``_newly_duplicated``).
+
     :param current: the measurement just taken
-    :type current: Dict[str, Dict[str, int]]
-    :param baseline: the checked-in counts
-    :type baseline: Dict[str, Dict[str, int]]
+    :type current: Dict[str, BaselineEntry]
+    :param baseline: the checked-in counts and names
+    :type baseline: Dict[str, BaselineEntry]
     :return: one human-readable message per disagreement, empty if they match
     :rtype: List[str]
     """
@@ -441,9 +523,11 @@ def compare(
         if family not in current:
             problems.append(f"{family}: in the baseline but no longer measured")
             continue
-        for key in sorted(set(current[family]) | set(baseline[family])):
-            was = baseline[family].get(key)
-            now = current[family].get(key)
+        now_counts = counts(current[family])
+        was_counts = counts(baseline[family])
+        for key in sorted(set(now_counts) | set(was_counts)):
+            was = was_counts.get(key)
+            now = now_counts.get(key)
             if was == now:
                 continue
             if was is None or now is None:
@@ -470,14 +554,20 @@ def compare(
                     f"rerunning with --update in the same commit"
                 )
 
-        problems.extend(_divergence_warning(family, current, baseline))
+        problems.extend(_divergence_warning(family, now_counts, was_counts))
+        problems.extend(
+            _newly_duplicated(
+                family,
+                now_counts,
+                was_counts,
+                duplicated_names(current[family]) - duplicated_names(baseline[family]),
+            )
+        )
     return problems
 
 
 def _divergence_warning(
-    family: str,
-    current: Dict[str, Dict[str, int]],
-    baseline: Dict[str, Dict[str, int]],
+    family: str, now: Dict[str, int], was: Dict[str, int]
 ) -> List[str]:
     """
     Warn when removable lines fell but no function was actually deleted.
@@ -496,22 +586,15 @@ def _divergence_warning(
 
     :param family: the family being reported on
     :type family: str
-    :param current: the measurement just taken
-    :type current: Dict[str, Dict[str, int]]
-    :param baseline: the checked-in counts
-    :type baseline: Dict[str, Dict[str, int]]
+    :param now: the family's counts just measured
+    :type now: Dict[str, int]
+    :param was: the family's checked-in counts
+    :type was: Dict[str, int]
     :return: at most one warning, empty if the shape does not match
     :rtype: List[str]
     """
-    if family not in current or family not in baseline:
-        return []
-
-    removable_fell = current[family].get("removable_lines", 0) < baseline[family].get(
-        "removable_lines", 0
-    )
-    functions_fell = current[family].get("functions", 0) < baseline[family].get(
-        "functions", 0
-    )
+    removable_fell = now.get("removable_lines", 0) < was.get("removable_lines", 0)
+    functions_fell = now.get("functions", 0) < was.get("functions", 0)
     if removable_fell and not functions_fell:
         return [
             f"{family}: removable lines fell but no function was deleted. A real "
@@ -520,6 +603,49 @@ def _divergence_warning(
             f"that reads as progress here while making the duplication worse."
         ]
     return []
+
+
+def _newly_duplicated(
+    family: str, now: Dict[str, int], was: Dict[str, int], new_names: Set[str]
+) -> List[str]:
+    """
+    Name the functions a rise in duplication added, and say what to do about them.
+
+    A rise usually means a method was copied rather than shared, and ``--update``
+    would record the copy as the new baseline - the one outcome the ratchet exists to
+    prevent. The new names are the duplicated functions the baseline does not list.
+    None are found when the copy coincides with a rename of an existing duplicate, so
+    the message then points at ``--verbose``.
+
+    :param family: the family being reported on
+    :type family: str
+    :param now: the family's counts just measured
+    :type now: Dict[str, int]
+    :param was: the family's checked-in counts
+    :type was: Dict[str, int]
+    :param new_names: the duplicated functions measured but not in the baseline
+    :type new_names: Set[str]
+    :return: at most one message, empty unless duplication rose
+    :rtype: List[str]
+    """
+    rose = any(
+        now.get(key, 0) > was.get(key, 0)
+        for key in ("identical_bodies", "removable_lines")
+    )
+    if not rose:
+        return []
+    if new_names:
+        named = f"newly duplicated: {', '.join(sorted(new_names))}"
+    else:
+        named = (
+            "run `python scripts/measure_duplication.py --verbose` to list its "
+            "duplicate groups"
+        )
+    return [
+        f"{family}: {named}. A rise usually means a copy to remove - promote it to a "
+        f"shared base or delete it. Rerun --update only if the duplication is "
+        f"intentional."
+    ]
 
 
 def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:

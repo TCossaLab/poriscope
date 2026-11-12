@@ -241,8 +241,10 @@ class MetadataControls(MetaSubsetTabControls):
             self.selection_tree_button.setFixedWidth(button_width)
             self.plot_type_comboBox.setFixedWidth(right_width)
 
-        # Defer this until after the window is visible
-        QTimer.singleShot(0, match_widths)
+        # Defer this until after the window is visible. The panel is the timer's
+        # context, so a panel deleted before the event loop turns cancels the call
+        # instead of running it against deleted widgets.
+        QTimer.singleShot(0, self, match_widths)
 
         # 2-3 QH EVENT ID + # EVENTS TO PLOT + BINS + SIZES
 

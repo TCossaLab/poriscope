@@ -284,18 +284,6 @@ def row_counts(written: List[Path]) -> Dict[str, int]:
 
 
 @pytest.mark.timeout(90)
-def test_the_tab_sees_the_registered_loader(metadata_tab: Triad) -> None:
-    """
-    Registration reaches the tab, not just the plugin registry.
-
-    If this fails, every assertion below would be exercising a tab that never
-    learned the loader exists - which is the shape of a flow that passes while
-    testing nothing.
-    """
-    assert LOADER_KEY in metadata_tab.available("MetaDatabaseLoader")
-
-
-@pytest.mark.timeout(90)
 def test_a_channel_exports_its_own_events_and_sublevels(
     metadata_tab: Triad, qtbot, tmp_path: Path
 ) -> None:

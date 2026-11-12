@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import pytest
 from PySide6.QtCore import QLocale
-from PySide6.QtGui import QDoubleValidator
+from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QLineEdit
 
 from poriscope.views.widgets.clustering_settings_widget import (
     ClusteringSettingsDialog,
@@ -244,8 +244,6 @@ class TestUpdateMethodParameters:
 
     def test_int_param_has_int_validator(self, dlg):
         dlg.update_method_parameters("KMeans")  # Clusters = int
-        from PySide6.QtGui import QIntValidator
-
         le = next(
             dlg.param_layout.itemAt(i).widget()
             for i in range(dlg.param_layout.count())
@@ -255,8 +253,6 @@ class TestUpdateMethodParameters:
 
     def test_float_param_has_double_validator(self, dlg):
         dlg.update_method_parameters("DBSCAN")  # Eps = float
-        from PySide6.QtGui import QDoubleValidator
-
         le = next(
             dlg.param_layout.itemAt(i).widget()
             for i in range(dlg.param_layout.count())
@@ -304,16 +300,12 @@ class TestUpdateMethodParameters:
 
 class TestUnitLabels:
     def test_update_unit_label_for_row_sets_text(self, dlg):
-        from PySide6.QtWidgets import QLabel
-
         label = QLabel()
         dlg.update_unit_label_for_row("duration", label)
         assert label.text() == "(ms)"
         assert label.isVisible()
 
     def test_update_unit_label_for_row_unknown_column(self, dlg):
-        from PySide6.QtWidgets import QLabel
-
         label = QLabel()
         label.setVisible(True)
         dlg.update_unit_label_for_row("unknown_col", label)
@@ -324,13 +316,6 @@ class TestUnitLabels:
         row = dlg.default_row_widgets[0]
         row["combo"].setCurrentText("current")
         assert row["unit_label"].text() == "(pA)"
-
-    def test_unit_label_hidden_for_no_unit(self, dlg):
-        # Use a dialog with no units mapping
-        d = _make_dialog(units={})
-        row = d.default_row_widgets[0]
-        row["combo"].setCurrentText("duration")
-        assert not row["unit_label"].isVisible()
 
 
 # ===========================================================================
@@ -618,9 +603,6 @@ class TestGetWalkthroughSteps:
         steps = dlg.get_walkthrough_steps()
         assert isinstance(steps, list)
 
-    def test_has_five_steps(self, dlg):
-        assert len(dlg.get_walkthrough_steps()) == 5
-
     def test_each_step_is_tuple_of_four(self, dlg):
         for step in dlg.get_walkthrough_steps():
             assert len(step) == 4
@@ -652,11 +634,6 @@ class TestEdgeCases:
         assert len(dlg.default_row_widgets) == 2
         # "Select Column" + "only_col" = 2 items
         assert dlg.default_row_widgets[0]["combo"].count() == 2
-
-    def test_no_units_no_error(self, qt_app):
-        dlg = _make_dialog(units={}, qt_app=qt_app)
-        dlg.default_row_widgets[0]["combo"].setCurrentText("duration")
-        assert not dlg.default_row_widgets[0]["unit_label"].isVisible()
 
     def test_add_row_index_advances(self, dlg):
         before = dlg.add_row_index

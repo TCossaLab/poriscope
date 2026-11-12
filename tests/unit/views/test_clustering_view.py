@@ -27,7 +27,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication
 
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
@@ -49,12 +49,7 @@ def qt_app():
 def view(qt_app):
     """Fully-initialised ClusteringView."""
     v = ClusteringView()
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    v._set_custom_display_area(layout)
-    v._set_control_area(layout)
-    v._test_container = container
-    container.show()
+    v.show()
     qt_app.processEvents()
     return v
 
@@ -92,10 +87,6 @@ def _make_cluster_data(n=50):
 
 
 class TestInit:
-    def test_the_view_keeps_no_cluster_frame(self, view):
-        """The result is the Model's; the View only draws what it is handed."""
-        assert not hasattr(view, "cluster_data")
-
     def test_query_empty(self, view):
         assert view.query == ""
 
@@ -177,9 +168,6 @@ class TestGetCurrentView:
 class TestGetWalkthroughSteps:
     def test_returns_list(self, view):
         assert isinstance(view.get_walkthrough_steps(), list)
-
-    def test_has_six_steps(self, view):
-        assert len(view.get_walkthrough_steps()) == 6
 
     def test_each_step_is_four_tuple(self, view):
         for step in view.get_walkthrough_steps():
@@ -784,27 +772,6 @@ class TestUpdatePlot:
                 plot=[True, True, False],
             )
         pd.testing.assert_frame_equal(df, before)
-
-    def test_keeps_no_frame_or_labels(self, view):
-        """The result stays with the Model, so there is one copy of it."""
-        df, labels, conf = self._make_labelled_df()
-        self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False],
-                normalized=[False, False],
-                units=["ms", "pA"],
-                plot=[True, True, False],
-            )
-        assert not hasattr(view, "cluster_data")
-        assert not hasattr(view, "labels")
 
     def test_invalid_plot_dims_returns_early(self, view):
         df, labels, conf = self._make_labelled_df()

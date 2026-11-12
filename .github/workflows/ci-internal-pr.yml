@@ -130,6 +130,7 @@ jobs:
       # ------------------------------------------------------------
       # 4. Run full test suite (unit + integration + e2e)
       # ------------------------------------------------------------
+      # -n auto: workers sized by tests/conftest.py from the runner's cores and memory.
       - name: Run full test suite (headless with GUI support)
         run: |
-          xvfb-run -a pytest -q
+          xvfb-run -a pytest -q -n auto

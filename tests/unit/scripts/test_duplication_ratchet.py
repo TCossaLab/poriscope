@@ -67,8 +67,10 @@ def test_duplication_matches_the_baseline(mod: types.ModuleType) -> None:
             "Analysis-tab duplication no longer matches .duplication-baseline.json:",
             *(f"  - {problem}" for problem in problems),
             "",
-            "If a refactor commit legitimately removed duplication, rerun",
-            "`python scripts/measure_duplication.py --update` and commit the new",
-            "baseline alongside the change that earned it.",
+            "A rise usually means a copy to remove, named above: promote it to a",
+            "shared base or delete it rather than recording it. Rerun",
+            "`python scripts/measure_duplication.py --update` only for an intentional",
+            "change - a refactor that legitimately removed duplication, or a duplicate",
+            "that has to stay - and commit the new baseline alongside it.",
         ]
     )

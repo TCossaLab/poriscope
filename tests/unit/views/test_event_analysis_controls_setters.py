@@ -14,8 +14,6 @@ import pytest
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
 )
-from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
-from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 
 
 @pytest.fixture
@@ -111,11 +109,3 @@ def test_the_buttons_follow_what_was_written(controls: Any) -> None:
 
     assert controls.fit_events_pushButton.isEnabled() is True
     assert controls.actions == []
-
-
-def test_set_filter_and_set_channels_are_shared_with_raw_data() -> None:
-    """One copy on the event-tab base, so a second tab's write-back does not add a duplicate."""
-    for name in ("set_filter", "set_channels"):
-        assert name in MetaEventTabControls.__dict__
-        assert name not in RawDataControls.__dict__
-        assert name not in EventAnalysisControls.__dict__

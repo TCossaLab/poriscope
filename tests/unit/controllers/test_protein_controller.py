@@ -19,8 +19,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
-from poriscope.plugins.analysistabs.ProteinModel import EnsembleFit, ProteinModel
-from poriscope.plugins.analysistabs.ProteinView import ProteinView
+from poriscope.plugins.analysistabs.ProteinModel import EnsembleFit
 
 # ===========================================================================
 # Fixtures
@@ -44,19 +43,6 @@ def controller(qt_app):
     """
     c = ProteinController()
     return c
-
-
-# ===========================================================================
-# Construction
-# ===========================================================================
-
-
-class TestInit:
-    def test_creates_real_view(self, controller):
-        assert isinstance(controller.view, ProteinView)
-
-    def test_creates_real_model(self, controller):
-        assert isinstance(controller.model, ProteinModel)
 
 
 # ===========================================================================
