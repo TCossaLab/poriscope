@@ -9,7 +9,7 @@ WalkthroughMixin methods by calling them directly.
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import QPoint, QRect, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Signal
 from PySide6.QtWidgets import QWidget
 
 from poriscope.views.widgets.walkthrough import Overlay, StepDialog
@@ -303,6 +303,66 @@ class TestRepositionDialogFallbacks:
                 parent._reposition_dialog(event)
 
         assert len(move_calls) == 1  # last resort always moves
+
+
+def _placement_host(window_size, dialog_size, target_pos, target_size):
+    """
+    A stand-in for the mixin's host with every geometry read pinned.
+
+    ``_reposition_dialog`` reads only the host's global origin and size, the dialog's
+    step list and size, and the target widget's global origin and size, then calls
+    ``dialog.move``. Answering those calls directly makes the placement independent of
+    where a window manager actually puts real windows.
+
+    :param window_size: the host window's (width, height), with its origin at (0, 0)
+    :type window_size: tuple
+    :param dialog_size: the walkthrough dialog's (width, height)
+    :type dialog_size: tuple
+    :param target_pos: the highlighted widget's global (x, y)
+    :type target_pos: tuple
+    :param target_size: the highlighted widget's (width, height)
+    :type target_size: tuple
+    :return: the host, whose ``walkthrough_dialog.move`` records the placement
+    :rtype: MagicMock
+    """
+    target = MagicMock()
+    target.mapToGlobal.return_value = QPoint(*target_pos)
+    target.size.return_value = QSize(*target_size)
+
+    host = MagicMock()
+    host.mapToGlobal.return_value = QPoint(0, 0)
+    host.size.return_value = QSize(*window_size)
+    host.walkthrough_dialog.steps = [("Title", "Msg", target)]
+    host.walkthrough_dialog.current = 0
+    host.walkthrough_dialog.size.return_value = QSize(*dialog_size)
+    return host
+
+
+class TestRepositionDialogPlacement:
+    """
+    The two placements the QRect-patching tests above cannot reach, over pinned geometry.
+
+    Each layout is chosen so the branch under test is the first one that fits, and the
+    branch after it would put the dialog somewhere else.
+    """
+
+    def test_a_dialog_that_fits_to_the_right_goes_there(self):
+        # Target spans x 100..149, y 100..149; the right-hand spot starts 20px past it.
+        host = _placement_host((1000, 800), (200, 100), (100, 100), (50, 50))
+
+        WalkthroughMixin._reposition_dialog(host, MagicMock())
+
+        host.walkthrough_dialog.move.assert_called_once_with(QPoint(169, 100))
+
+    def test_no_candidate_fitting_falls_back_to_below_clamped_into_the_window(self):
+        # A 400px-wide window and a 300px dialog, the target at x 200..239 near the top:
+        # right and below overflow the right edge, left the left edge, above the top.
+        # Clamped to the window's right edge, below fits at x 399 - 300 = 99.
+        host = _placement_host((400, 600), (300, 100), (200, 10), (40, 30))
+
+        WalkthroughMixin._reposition_dialog(host, MagicMock())
+
+        host.walkthrough_dialog.move.assert_called_once_with(QPoint(99, 59))
 
 
 # ---------------------------------------------------------------------------
