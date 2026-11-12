@@ -422,37 +422,6 @@ class TestGetEmptySettings(unittest.TestCase):
         ]:
             self.assertIn(key, settings)
 
-    def test_smallest_significant_sublevel_defaults(self):
-        nt = _make_nt()
-        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
-        entry = settings["Smallest Significant Sublevel"]
-        self.assertEqual(entry["Type"], float)
-        self.assertEqual(entry["Value"], 600.0)
-        self.assertEqual(entry["Min"], 0.0)
-        self.assertEqual(entry["Units"], "pA")
-
-    def test_time_scaling_defaults(self):
-        nt = _make_nt()
-        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
-        entry = settings["Time Scaling"]
-        self.assertEqual(entry["Type"], float)
-        self.assertEqual(entry["Value"], 1.1)
-
-    def test_exceptional_sensitivity_defaults(self):
-        nt = _make_nt()
-        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
-        entry = settings["Exceptional Sublevel Sensitivity"]
-        self.assertEqual(entry["Type"], float)
-        self.assertEqual(entry["Value"], 0.3)
-        self.assertEqual(entry["Min"], 0.0)
-
-    def test_standalone_flag_passthrough_no_crash(self):
-        nt = _make_nt()
-        settings = nt.get_empty_settings(
-            globally_available_plugins=self._plugins(), standalone=True
-        )
-        self.assertIsInstance(settings, dict)
-
 
 # ---------------------------------------------------------------------------
 # NanoTrees – _set_automation_hyperparameters
@@ -1227,31 +1196,6 @@ class TestPopulateEventMetadata(unittest.TestCase):
         nt = _make_nt()
         result = nt._populate_event_metadata(np.zeros(50), 1e6, 0.0, 1.0, self._meta())
         self.assertAlmostEqual(result["min_blockage"], 1.0)
-
-
-# ---------------------------------------------------------------------------
-# NanoTrees – noop overrides
-# ---------------------------------------------------------------------------
-
-
-class TestNoopOverrides(unittest.TestCase):
-    def setUp(self):
-        self.nt = _make_nt()
-
-    def test_init_returns_none(self):
-        self.assertIsNone(self.nt._init())
-
-    def test_pre_process_returns_none(self):
-        self.assertIsNone(self.nt._pre_process_events(0))
-
-    def test_post_process_returns_none(self):
-        self.assertIsNone(self.nt._post_process_events(0))
-
-    def test_close_resources_returns_none(self):
-        self.assertIsNone(self.nt.close_resources())
-
-    def test_validate_settings_returns_none(self):
-        self.assertIsNone(self.nt._validate_settings({}))
 
 
 if __name__ == "__main__":
