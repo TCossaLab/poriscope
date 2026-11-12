@@ -51,7 +51,8 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
     figure is kept. ``depends_on`` names the parameters whose values are the key of the result
     it draws from, its plugin then its channel, ``depends_on=("eventfinder", "channel")``; any
     other number of names fails at import. A view drawn from a result that was
-    run again later is dropped
+    run again later is dropped. A view may compute in the background before it draws, as
+    Conditioning's plot does; a replay waits for it (below)
   - ``additive``: a drawing added to its figure, such as an overlay; kept until a later reset or
     view on that figure
   - ``reset``: clears its figure, and drops everything earlier on it
@@ -87,8 +88,13 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   (``poriscope.utils.replay_sequence``). Each step first shows its recorded values in the panel
   through the View's ``write_back``, which a tab overrides to write its own widgets;
   a ``result`` entry waits for its run to end and carries on only if the run finished with
-  results, and the replay stops at the first entry that raises or, for a ``skip_on_false``
-  action, returns ``False``. The user is then asked to go back or keep (``MetaView.ask_after_replay_failure``);
+  results. Any other entry that starts background runs waits until each of them has ended,
+  then a turn of the event loop more, so the tab has drawn before the next entry or "replay
+  done"; it fails if ``background_step_failure()`` then names a reason. The base names none:
+  override it when your action's background work can end without its result, and say what is
+  missing (``ConditioningController`` returns its "did not finish" line). The replay stops at
+  the first entry that fails, raises or, for a ``skip_on_false`` action, returns ``False``.
+  The user is then asked to go back or keep (``MetaView.ask_after_replay_failure``);
   going back calls ``clear_for_replay`` and replays the history from before. Its default clears
   the View's figure (``MetaView.clear_figure``); override it if your tab keeps more, such as a
   result on its Model, and record nothing in it. While a tab replays, its status-panel lines
@@ -104,6 +110,11 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   as ``MetaSubsetTabView._record_selection`` does. A replay refuses a read of a controls panel
   (``ReplayWidgetReadError``), and a static test fails a declared action that reads a widget or
   takes plotted data; see :ref:`recorded_actions_read_no_widgets`
+- Each tab Poriscope ships with has a replay scenario for every declared action in
+  ``tests/integration/flows/test_replay_guard_no_gui.py``: the click as the panel sends it, and a
+  change to everything the panel holds; the suite fails, naming the action, for one without. A
+  tab of your own is not checked there, but a scenario of the same shape is how to test that its
+  actions replay
 
 **Session state**
 

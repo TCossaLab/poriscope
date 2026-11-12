@@ -61,7 +61,8 @@ RESET_ACTION = "reset"
 #: - ``result``: a background run of one plugin on one channel (Find, Fit), recorded only
 #:   once the run finished. The newest entry per ``key`` replaces older ones.
 #: - ``view``: a drawing that replaces what its figure showed. The newest per figure is
-#:   kept, and a view drawn from a result that was run again later is dropped.
+#:   kept, and a view drawn from a result that was run again later is dropped. One that
+#:   computes in the background before it draws is waited for by a replay.
 #: - ``additive``: a drawing added to what its figure shows (an overlay, a merge). Kept
 #:   until a later reset or view on its figure.
 #: - ``reset``: clears its figure. Drops everything earlier on that figure.
