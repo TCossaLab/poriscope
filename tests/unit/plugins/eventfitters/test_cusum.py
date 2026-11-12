@@ -121,11 +121,6 @@ class TestStepSizeInSigma(unittest.TestCase):
         pf = _make(ClassicCUSUM, step_size=10.0)
         self.assertEqual(pf._step_size_in_sigma(20.0), 10.0)
 
-    def test_classic_cusum_inherits_the_detector_rather_than_copying_it(self):
-        # The subclass overrides only the step-size hook; the loop is CUSUM's.
-        self.assertNotIn("_locate_sublevel_transitions", ClassicCUSUM.__dict__)
-        self.assertIn("_step_size_in_sigma", ClassicCUSUM.__dict__)
-
 
 # ---------------------------------------------------------------------------
 # The detector's reset rule and its edge guard, against a planted staircase

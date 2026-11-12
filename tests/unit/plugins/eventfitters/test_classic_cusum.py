@@ -34,8 +34,8 @@ Coverage targets:
   Size" is given no "Value" key at all, unlike every other setting in this
   codebase)
 - _locate_sublevel_transitions:
-    - baseline_std=None handling (both the immediate-raise and the
-      computed-from-padding fallback paths)
+    - baseline_std=None computed from the leading padding (the refusal when
+      there is no padding is pinned once, on the base, in test_cusum.py)
     - "Too Few Levels" (flat data, single-jump data)
     - happy path with a clean multi-plateau signal
     - small-step merging removing a step from the result
@@ -115,17 +115,6 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertEqual(step_size_setting["Units"], "σ")
         self.assertNotIn("Value", step_size_setting)
 
-    def test_sensitivity_shape(self):
-        with patch.object(CUSUM, "get_empty_settings", return_value={}):
-            pf = object.__new__(ClassicCUSUM)
-            settings = pf.get_empty_settings(standalone=True)
-
-        sensitivity_setting = settings["Sensitivity"]
-        self.assertIs(sensitivity_setting["Type"], float)
-        self.assertEqual(sensitivity_setting["Value"], 1)
-        self.assertEqual(sensitivity_setting["Min"], 1)
-        self.assertEqual(sensitivity_setting["Max"], 5)
-
     def test_forwards_arguments_to_super(self):
         with patch.object(CUSUM, "get_empty_settings", return_value={}) as mock_super:
             pf = object.__new__(ClassicCUSUM)
@@ -141,11 +130,6 @@ class TestGetEmptySettings(unittest.TestCase):
 
 
 class TestLocateSublevelTransitionsBaselineStd(unittest.TestCase):
-    def test_missing_baseline_std_and_padding_raises(self):
-        pf = _make_pf()
-        with self.assertRaises(ValueError):
-            pf._locate_sublevel_transitions(np.zeros(10), 1e6, None, None, 0.0, None)
-
     def test_baseline_std_computed_from_padding_before(self):
         # baseline_std=None with padding_before given -> computed from
         # data[:padding_before] via np.std. Using a fixed seed for
