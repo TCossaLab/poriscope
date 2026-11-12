@@ -74,6 +74,7 @@ class BaseDataPlugin(ABC):
        6. :ref:`Build_MetaEventFitter`
        7. :ref:`Build_MetaDatabaseWriter`
        8. :ref:`Build_MetaDatabaseLoader`
+       9. :ref:`Build_MetaConditioningLoader`
 
        If you are planning to build an entirely new type of Data Plugin not in the list above, we strongly suggest contacting the poriscope developers first.
 

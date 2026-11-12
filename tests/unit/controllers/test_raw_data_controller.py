@@ -194,11 +194,14 @@ def test_calculate_psd_calls_model_and_updates_view(
         kept_indices,
     )
 
-    controller.calculate_psd(psd_data, samplerate)
+    controller.calculate_psd(psd_data, samplerate, {})
 
-    controller.model.calculate_psd.assert_called_once_with(psd_data, samplerate)
+    # No options: Update PSD's own segments, and no fit.
+    controller.model.calculate_psd.assert_called_once_with(
+        psd_data, samplerate, 0, 50.0
+    )
     mock_view.set_psd.assert_called_once_with(
-        Pxx_list, rms_list, frequency, kept_indices
+        Pxx_list, rms_list, frequency, kept_indices, None, None
     )
 
 
@@ -968,7 +971,19 @@ def test_load_psd_data_hands_the_result_back_for_the_psd(
 
     controller.load_psd_data("R", [0], 3.0, 9.0, "F1")
 
-    mock_view.set_trace_for_psd.assert_called_once_with(["d0"], [0])
+    mock_view.set_trace_for_psd.assert_called_once_with(
+        ["d0"],
+        [0],
+        {
+            "segment_length": 0,
+            "overlap": 50.0,
+            "fit": False,
+            "fit_start": 1.0,
+            "fit_end": 30.0,
+            "good_noise": 10.0,
+            "decent_noise": 100.0,
+        },
+    )
 
 
 # --------------- event plotting --------------------------------------
@@ -1580,7 +1595,7 @@ class TestRecordedActions:
             }
         ]
 
-    def test_a_psd_is_recorded_with_its_intent_and_nothing_else(
+    def test_a_psd_is_recorded_with_its_intent_and_its_options(
         self, controller: RawDataController, mocker: MockerFixture
     ) -> None:
         controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 1e6))
@@ -1599,6 +1614,14 @@ class TestRecordedActions:
                     "start": 3.0,
                     "length": 9.0,
                     "data_filter": "",
+                    # The PSD options are saved too, at their defaults here.
+                    "segment_length": 0,
+                    "overlap": 50.0,
+                    "fit": False,
+                    "fit_start": 1.0,
+                    "fit_end": 30.0,
+                    "good_noise": 10.0,
+                    "decent_noise": 100.0,
                 },
             }
         ]

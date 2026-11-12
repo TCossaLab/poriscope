@@ -67,6 +67,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking:** `RawDataView.psd_data_requested` and `RawDataView.calculate_psd` carry the PSD options as a dict, and `RawDataController.calculate_psd` takes it; `load_psd_data` takes them as keyword parameters, defaulting to the PSD Update PSD always drew
+
 * **Breaking:** `RawDataModel.get_baseline_stats` and `RawDataView.update_plot`'s `baseline_stats` now carry `(mean, stdev)` rather than `(amplitude, mean, stdev)`, and `RawDataModel.gaussian_fit` is removed; the amplitude was never read
 
 * **Breaking:** `update_available_columns` has moved from `MetaSubsetTabView` to `MetadataView`, `column_names_requested` with it, and `request_column_names` is no longer on `MetaSubsetTabController`; only the metadata tab reads column names, so a plugin subclassing the shared subset-tab base no longer inherits any of the three
@@ -118,6 +120,12 @@
 
 ### Developer Tooling:
 
+* The MVC boundary check now watches analysis tabs importing database writers, whose folder it had named `db_writers` instead of `dbwriters`, and conditioning loaders
+
+* `scripts/new_plugin.py --list` sizes its columns to the longest name
+
+* `python scripts/new_plugin.py AnalysisTab` writes a tab's controls panel into this repository as `analysistabs/utils/<name>controls.py`, beside the shipped tabs' panels; `--user` and `--output-dir` still write it beside the triad
+
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
 
 * Branch CI runs the suite and the wheel smoke at both ends of the supported range: exactly Python 3.12.0 with the pins in `requirements.txt` (on `ubuntu-24.04`, the only image with that build, and on Windows) and Python 3.14 with the runtime stack resolved from `pyproject.toml`'s ranges (on `ubuntu-latest` and Windows); the pull-request, docs and release jobs test the floor
@@ -156,6 +164,10 @@
 
 ### Data Plugin API:
 
+* `SingleBinaryDecoder` reads its format settings through `_binary_setting`, so a subclass fixes one by deleting its key and overriding `SETTING_DEFAULTS`
+
+* **New data-plugin family: `MetaConditioningLoader`**, in `poriscope/plugins/conditioningloaders/`, reads a pore conditioning experiment: each channel's pore size per cycle and the PSD recordings taken along the way; it is in `poriscope.exposed` and `scripts/new_plugin.py`
+
 * `MetaEventFitter._post_process_events` is now a concrete no-op, so a fitter with no post-processing need not override it; it still takes one channel and runs when that channel's last event is fitted
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
@@ -169,6 +181,10 @@
 * `PeakFinder.redefine_padding` now finds edges by the CUSUM family's rules, so it sees the steps after a large edge
 
 ### Analysis Tabs:
+
+* `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
+
+* `MetaView.noise_shade` colours a noise value green, orange or red against two thresholds, for every tab that shades a PSD by its 1 Hz noise
 
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
 
@@ -249,6 +265,14 @@
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
+
+* **New Data Plugin: `NIBinaryReader`** reads one binary file from the lab's NI DAQ setups (16 channels in mV), taking the sample rate from the file name and converting to pA with the amplifier's sensitivity
+
+* **New Data Plugin: `NIConditioningLoader`** reads a conditioning experiment folder from the lab's LabVIEW and NI DAQ setups, under **Data** → **Load Conditioning Experiment**; several CSVs are read as one, in the order of the time stamps in their names
+
+* **New analysis tab: Conditioning** (Analysis → New Analysis Tab → `ConditioningController`) plots each channel's pore size against cycle with the 1 Hz noise of its PSD recordings at positive and negative bias, computed in the background and kept, so a replot with the same experiment and fit range is immediate; ported from the lab's conditioning analysis script
+
+* **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 

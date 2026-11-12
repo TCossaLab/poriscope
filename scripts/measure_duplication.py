@@ -128,6 +128,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FAMILIES: Dict[str, Tuple[str, ...]] = {
     "*View.py": (
         "poriscope/plugins/analysistabs/ClusteringView.py",
+        "poriscope/plugins/analysistabs/ConditioningView.py",
         "poriscope/plugins/analysistabs/EventAnalysisView.py",
         "poriscope/plugins/analysistabs/MetadataView.py",
         "poriscope/plugins/analysistabs/ProteinView.py",
@@ -135,6 +136,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "*Controller.py": (
         "poriscope/plugins/analysistabs/ClusteringController.py",
+        "poriscope/plugins/analysistabs/ConditioningController.py",
         "poriscope/plugins/analysistabs/EventAnalysisController.py",
         "poriscope/plugins/analysistabs/MetadataController.py",
         "poriscope/plugins/analysistabs/ProteinController.py",
@@ -142,6 +144,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "*Model.py": (
         "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "poriscope/plugins/analysistabs/ConditioningModel.py",
         "poriscope/plugins/analysistabs/EventAnalysisModel.py",
         "poriscope/plugins/analysistabs/MetadataModel.py",
         "poriscope/plugins/analysistabs/ProteinModel.py",
@@ -149,6 +152,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "*controls.py": (
         "poriscope/plugins/analysistabs/utils/clusteringcontrols.py",
+        "poriscope/plugins/analysistabs/utils/conditioningcontrols.py",
         "poriscope/plugins/analysistabs/utils/eventAnalysisControls.py",
         "poriscope/plugins/analysistabs/utils/metadatacontrols.py",
         "poriscope/plugins/analysistabs/utils/proteincontrols.py",
@@ -172,6 +176,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/datareaders/ChimeraReader20240501.py",
         "poriscope/plugins/datareaders/ChimeraReaderVC100.py",
         "poriscope/plugins/datareaders/LegacyElementsReader.py",
+        "poriscope/plugins/datareaders/NIBinaryReader.py",
         "poriscope/plugins/datareaders/SingleBinaryDecoder.py",
         "poriscope/plugins/datareaders/TCossaLabABFReader.py",
     ),
@@ -196,6 +201,10 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     # Added 2026-09-27 with the completeness check. The two filters share
     # close_resources and reset_channel byte for byte, 16 removable lines on entry;
     # 0 since both moved onto the bases in 2.1.
+    # Added with its first plugin, so nothing can be duplicated yet.
+    "conditioningloaders": (
+        "poriscope/plugins/conditioningloaders/NIConditioningLoader.py",
+    ),
     "filters": (
         "poriscope/plugins/filters/BesselFilter.py",
         "poriscope/plugins/filters/WaveletFilter.py",

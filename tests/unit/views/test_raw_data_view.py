@@ -474,7 +474,8 @@ def test_handle_load_data_psd_emits_a_typed_intent(view, mocker):
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 1.0, 9.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._handle_load_data_and_update_psd({"channel": ["0"], "filter": "No Filter"})
-    view.psd_data_requested.emit.assert_called_once_with("R", [0], 1.0, 9.0, "")
+    # The panel's PSD options travel with the request; none were collected here.
+    view.psd_data_requested.emit.assert_called_once_with("R", [0], 1.0, 9.0, "", {})
 
 
 def test_set_trace_for_psd_reports_when_nothing_loaded(view, mocker):
@@ -497,9 +498,11 @@ def test_set_trace_for_psd_computes_and_draws(view, mocker):
     view.Pxx_list = ["pxx"]
     view.rms_list = ["rms"]
     view.psd_frequency = "freq"
+    view.psd_fits = None
+    view.psd_fit_options = {}
     view.set_trace_for_psd(data, [7])
-    view.calculate_psd.emit.assert_called_once_with(data, 100.0)
-    view.update_psd.assert_called_once_with(["pxx"], ["rms"], "freq", [7])
+    view.calculate_psd.emit.assert_called_once_with(data, 100.0, {})
+    view.update_psd.assert_called_once_with(["pxx"], ["rms"], "freq", [7], None, {})
 
 
 # ---------------------------------------------------------------------------

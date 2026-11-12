@@ -29,7 +29,6 @@ from typing import Optional, override
 
 import numpy as np
 import numpy.typing as npt
-from scipy.signal import welch
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -75,7 +74,11 @@ class RawDataModel(MetaModel):
 
     @log(logger=logger)
     def calculate_psd(
-        self, psd_data: list, samplerate: float
+        self,
+        psd_data: list,
+        samplerate: float,
+        segment_length: int = 0,
+        overlap: float = 50.0,
     ) -> tuple[list, list, Optional[np.ndarray], list[int]]:
         """
         Calculate a psd for each dataset in the list, assuming a common samplerate
@@ -84,6 +87,10 @@ class RawDataModel(MetaModel):
         :type psd_data: list
         :param samplerate: Sampling rate of the signal in Hz.
         :type samplerate: float
+        :param segment_length: samples per Welch segment, or 0 for a tenth of each dataset
+        :type segment_length: int
+        :param overlap: how much consecutive segments overlap, in percent of a segment
+        :type overlap: float
         :return: Pxx_list, rms_list, the frequency axis, and the indices into
             ``psd_data`` that were successfully processed. A channel is
             skipped (and its index omitted) if it has too few samples, if
@@ -96,14 +103,16 @@ class RawDataModel(MetaModel):
         kept_indices = []
         f = None
         for index, data in enumerate(psd_data):
-            length = int(len(data) / 10)
+            length = segment_length if segment_length > 0 else int(len(data) / 10)
             if length < 1:
                 self.logger.warning(
                     f"Skipping PSD calculation for a channel with insufficient data ({len(data)} samples)"
                 )
                 continue
             try:
-                f, Pxx = welch(data, samplerate, nperseg=length)
+                f, Pxx = self.power_spectral_density(
+                    data, samplerate, length, overlap / 100.0
+                )
                 rms = self.integrate_noise(f, Pxx)
             except Exception as e:
                 self.logger.warning(f"Unable to calculate PSD for a channel: {e}")

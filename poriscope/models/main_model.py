@@ -55,6 +55,7 @@ from poriscope.utils.app_config import default_app_config
 from poriscope.utils.json_files import write_json_atomically
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaConditioningLoader import MetaConditioningLoader
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
@@ -142,6 +143,7 @@ class MainModel(QObject):
         "MetaEventFitter": MetaEventFitter,
         "MetaDatabaseWriter": MetaDatabaseWriter,
         "MetaDatabaseLoader": MetaDatabaseLoader,
+        "MetaConditioningLoader": MetaConditioningLoader,
         "MetaController": MetaController,
         "MetaView": MetaView,
         "MetaModel": MetaModel,

@@ -18,6 +18,36 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-11 - The conditioning app is ported as a data-plugin family, an NI reader, a Raw Data option and a tab
+
+**Context.** The lab's tkinter conditioning script (Michelle Stephen) read a folder - pore-size CSV, PSD `.bin`
+files per bias - computed each file's 1 Hz noise and plotted it beside the pore size; a second script did one file's
+PSD with the fit. No tab reads input files, no family fits the CSV, and `MetaReader` joins a folder's files into one
+timeline, while one of the 142 sample files is short (67,000 of 100,000 frames), so file boundaries cannot be found
+by length.
+
+**Decision** (Kyle, 2026-11-11: inputs and outputs kept, paths through native machinery). A ninth family,
+`MetaConditioningLoader`, serves cycles, pore sizes and per-recording samples, sample rate and points per average;
+the tab does the spectral analysis. `NIConditioningLoader` decodes each file through an `NIBinaryReader` it owns, so
+the format is implemented once. The single-file view is Raw Data's Update PSD with PSD Options, every option
+defaulting to the old PSD so saved entries replay. Welch and the power-law fit live once on `MetaModel`, the shading
+once on `MetaView` (two tabs, stateless). The plot is a recorded `view` that starts one worker per channel and draws
+when the last ends: the replay contract's only background kind, `result`, is keyed on one plugin and one channel.
+Channels are 0-based, as in every other tab.
+
+**Fixed against the original,** each pinned by a test a mutation probe killed: results cached by folder alone (stale
+after a settings change), noise bands placed by cycle index (wrong when a PSD is not taken every cycle), the short
+file analysed silently, several CSVs picked arbitrarily (now joined in file-name time order).
+
+**Evidence.** On a synthetic experiment the tab's 1 Hz values match the script's to 1e-9 relative for two settings
+(`tests/synthetic_data/conditioning_original_app_goldens.json`). The script took 17 s on AL_TS (8.9 s PSD+, 8.0 s
+PSD-), hence the workers.
+
+**Revisit** if a second conditioning format arrives that does not fit the family's API, or if the replay contract
+gains a keyed background kind, which the plot should then use.
+
+---
+
 ## 2026-11-10 - A plot configuration names its format, and the tab's Model reads and writes it
 
 **Context.** Save Plot Configuration wrote the live history, keyed by position, with no version, through the main

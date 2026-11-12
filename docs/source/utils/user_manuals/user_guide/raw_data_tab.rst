@@ -17,7 +17,7 @@ Step 1: Loading Your Data
 2. A dropdown menu will appear listing supported reader types. These correspond to different file formats and decoding standards. Supported readers include:
 
    - ``ABFReader`` (for any `.abf` file; its settings choose the ADC channel that records current and the sweep to read, -1 for every sweep back to back), and ``TCossaLabABFReader`` and ``LegacyElementsReader`` (for `.abf` recordings from the lab's own setups, with those settings fixed)
-   - ``BinaryReader1X`` and ``SingleBinaryDecoder`` (for `.bin`-like formats)
+   - ``BinaryReader1X`` and ``SingleBinaryDecoder`` (for `.bin`-like formats), and ``NIBinaryReader`` (for the `.bin` files of the lab's NI DAQ setups: 16 channels in mV, with the sample rate read from the file name and the amplifier's **Sensitivity** in pA/V converting to pA)
    - ``ChimeraReader20240101``, ``ChimeraReader20240501``, ``ChimeraReaderVC100`` (for Chimera system `.log` files or variations; ``ChimeraReader20240101`` is deprecated and will be removed in a future release)
 
 .. note::
@@ -44,6 +44,13 @@ Step 1: Loading Your Data
 6. **Click** the **Update Trace** button to visualize the raw signal.
 
 7. *(Optional)* To analyze noise across frequencies, **click** the **Update PSD** button.
+
+   **PSD Options** beside it sets how the PSD is computed and what is drawn over it:
+
+   - **Points per Average** - the samples in each Welch segment; one frequency bin is the sample rate divided by this. 0 uses a tenth of the range.
+   - **Overlap** - how much consecutive segments overlap, in percent; 0 averages separate segments, as the NI DAQ acquisition software does.
+   - **Fit 1/f**, **Fit Start** and **Fit End** - fit a straight line to log PSD against log frequency over that range (Hz), draw it, and read it off at 1 Hz. The 1 Hz value appears in each channel's legend and, for every channel, on the status panel. The range needs at least two frequency bins.
+   - **Good Noise** and **Decent Noise** (pA²/Hz) - with the fit on, a channel whose 1 Hz value is below Good is shaded green, below Decent orange, and above Decent red.
 
 Step 2: Applying a Filter
 -------------------------

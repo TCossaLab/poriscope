@@ -102,7 +102,7 @@ pairs" could not be reproduced because it was never written down precisely enoug
   not scanned, since re-exports there would be noise rather than dependencies.
 - A plugin-reach violation is one of three things in an analysis-tab module: a call to
   ``get_plugin_instance``, an attribute access named ``data_plugin_controller``, or an
-  import of a module under ``poriscope.plugins.<family>`` for one of the eight data
+  import of a module under ``poriscope.plugins.<family>`` for one of the nine data
   plugin families. The signal named ``data_plugin_controller_signal`` is a different
   identifier and does not count. ``_plugin_instances`` is not counted either: that is
   the sanctioned mechanism ``call()`` reads, pushed in by ``MainController``.
@@ -186,13 +186,14 @@ SHELL_ROOTS: Tuple[str, ...] = (
 #: The package the shell must not depend on.
 PLUGIN_PACKAGE = "poriscope.plugins"
 
-#: The eight data plugin families. An analysis tab must not import a concrete plugin
+#: The nine data plugin families. An analysis tab must not import a concrete plugin
 #: from any of them - it reaches them by key through ``call()``.
 PLUGIN_FAMILIES: Set[str] = {
+    "conditioningloaders",
     "datareaders",
     "datawriters",
     "db_loaders",
-    "db_writers",
+    "dbwriters",
     "eventfinders",
     "eventfitters",
     "eventloaders",
@@ -569,7 +570,7 @@ def _is_plugin_family_import(module: str) -> bool:
 
     :param module: the dotted module path as written
     :type module: str
-    :return: True if it lies under one of the eight families
+    :return: True if it lies under one of the nine families
     :rtype: bool
     """
     parts = module.split(".")

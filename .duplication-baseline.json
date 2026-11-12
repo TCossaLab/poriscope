@@ -1,25 +1,25 @@
 {
   "*Controller.py": {
-    "files": 5,
-    "functions": 104,
+    "files": 6,
+    "functions": 113,
     "identical_bodies": 0,
     "removable_lines": 0
   },
   "*Model.py": {
-    "files": 5,
-    "functions": 56,
+    "files": 6,
+    "functions": 64,
     "identical_bodies": 1,
     "removable_lines": 4
   },
   "*View.py": {
-    "files": 5,
-    "functions": 161,
+    "files": 6,
+    "functions": 176,
     "identical_bodies": 0,
     "removable_lines": 0
   },
   "*controls.py": {
-    "files": 5,
-    "functions": 68,
+    "files": 6,
+    "functions": 80,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -29,9 +29,15 @@
     "identical_bodies": 0,
     "removable_lines": 0
   },
+  "conditioningloaders": {
+    "files": 1,
+    "functions": 19,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
   "datareaders": {
-    "files": 8,
-    "functions": 85,
+    "files": 9,
+    "functions": 92,
     "identical_bodies": 13,
     "removable_lines": 348
   },

@@ -55,6 +55,19 @@ class RawDataControls(MetaEventTabControls):
         "No Eventfinder",
     )
 
+    #: The PSD options before the user sets any: what Update PSD always drew, with the
+    #: fit off. Named as ``RawDataController.load_psd_data``'s parameters, whose defaults
+    #: these are.
+    PSD_OPTION_DEFAULTS: Dict[str, Any] = {
+        "segment_length": 0,
+        "overlap": 50.0,
+        "fit": False,
+        "fit_start": 1.0,
+        "fit_end": 30.0,
+        "good_noise": 10.0,
+        "decent_noise": 100.0,
+    }
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.logger.info("Initializing RawDataControls")
@@ -176,7 +189,12 @@ class RawDataControls(MetaEventTabControls):
         self.update_psd_pushButton = self.createButton(
             self.groupBox, "Update PSD", bold=True
         )
-        group_layout.addWidget(self.update_psd_pushButton, 4, 1)
+        self.psd_options_pushButton = self.createButton(self.groupBox, "PSD Options")
+        self.psd_options: Dict[str, Any] = dict(self.PSD_OPTION_DEFAULTS)
+        psd_layout = QHBoxLayout()
+        psd_layout.addWidget(self.update_psd_pushButton)
+        psd_layout.addWidget(self.psd_options_pushButton)
+        group_layout.addLayout(psd_layout, 4, 1)
 
         # Third Column: Eventfinders
         eventfinders_layout = QHBoxLayout()
@@ -375,6 +393,9 @@ class RawDataControls(MetaEventTabControls):
         self.calculate_baseline_button.clicked.connect(
             lambda: self.on_button_clicked("calculate_baseline")
         )
+        self.psd_options_pushButton.clicked.connect(
+            lambda: self.on_button_clicked("psd_options")
+        )
         self.update_psd_pushButton.clicked.connect(
             lambda: self.on_button_clicked("update_psd")
         )
@@ -431,6 +452,7 @@ class RawDataControls(MetaEventTabControls):
             "length": None,
             "event_index": [],
             "channel": [item for item in self.channel_comboBox.getSelectedItems()],
+            "psd_options": dict(self.psd_options),
         }
 
         # Collect start time and length if valid
@@ -467,6 +489,8 @@ class RawDataControls(MetaEventTabControls):
             self.actionTriggered.emit(
                 "RawDataModel", "get_baseline_stats", (parameters,)
             )
+        elif button_type == "psd_options":
+            self.actionTriggered.emit("RawDataModel", "psd_options", (parameters,))
         elif button_type == "update_psd":
             self.actionTriggered.emit(
                 "RawDataModel", "load_data_and_update_psd", (parameters,)
@@ -587,6 +611,18 @@ class RawDataControls(MetaEventTabControls):
         shown = self.set_combo_text(self.eventfinders_comboBox, eventfinder)
         self.validate_inputs()
         return shown
+
+    def set_psd_options(self, options: Dict[str, Any]) -> None:
+        """
+        Keep the PSD options a dialog or a recorded entry gives, filling any it lacks with its default.
+
+        :param options: option values by parameter name; other keys are ignored
+        :type options: Dict[str, Any]
+        """
+        self.psd_options = {
+            name: options.get(name, default)
+            for name, default in self.PSD_OPTION_DEFAULTS.items()
+        }
 
     def set_range_inputs(self, start: float, length: float) -> None:
         self.start_time_lineEdit.blockSignals(True)

@@ -33,10 +33,11 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   import another tab's modules.
 
 - **Data plugins** (`poriscope/plugins/{datareaders,datawriters,eventfinders,
-  eventfitters,eventloaders,filters,db_loaders,dbwriters}/`): algorithmic/IO plugins,
-  each inheriting one of the `Meta*` ABCs in `poriscope/utils/` (`MetaReader`,
-  `MetaFilter`, `MetaEventFinder`, `MetaEventFitter`, `MetaEventLoader`, `MetaWriter`,
-  `MetaDatabaseLoader`, `MetaDatabaseWriter`), which all ultimately inherit
+  eventfitters,eventloaders,filters,db_loaders,dbwriters,conditioningloaders}/`):
+  algorithmic/IO plugins, each inheriting one of the `Meta*` ABCs in `poriscope/utils/`
+  (`MetaReader`, `MetaFilter`, `MetaEventFinder`, `MetaEventFitter`, `MetaEventLoader`,
+  `MetaWriter`, `MetaDatabaseLoader`, `MetaDatabaseWriter`, `MetaConditioningLoader`),
+  which all ultimately inherit
   `BaseDataPlugin`. These are managed generically by `DataPluginController`/
   `DataPluginModel` (not per-plugin controllers) — instantiation, settings validation,
   renaming, and deletion of any data plugin goes through that one shared controller.
@@ -71,7 +72,7 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
 - New data plugin: **generate it, don't hand-write it.**
   `python scripts/new_plugin.py MetaEventFinder MyFinder` (or with no arguments, to be
   asked) writes a stub in the right folder that already passes ruff, mypy, pydoclint,
-  the compliance suite and the schema check. `--list` shows the eight families, the
+  the compliance suite and the schema check. `--list` shows the nine families, the
   `AnalysisTab` keyword and every shipped plugin, since the same command also produces a *variant* of an existing plugin
   (`--override <methods>`, bodies delegating to `super()`). Signatures and docstrings are
   copied verbatim from the base, which is what the compliance test's exact-equality

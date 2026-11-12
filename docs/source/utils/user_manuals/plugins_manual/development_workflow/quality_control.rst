@@ -86,7 +86,7 @@ run automatically:
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
 ``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/``,
-``plugin-module-level`` more narrowly still to the eight data-plugin families,
+``plugin-module-level`` more narrowly still to the nine data-plugin families,
 ``settings-schema`` to ``poriscope/plugins/**`` — it only needs to run when a
 plugin's settings could have changed — and ``text-encoding`` to the requirements
 files, which are the ones a shell redirection regenerates. Everything else runs
@@ -779,7 +779,7 @@ handed. Nothing above this point would notice either.
 ``tests/unit/plugins/conformance/`` closes that gap. It builds your plugin the way the
 application does — real settings, a real parent plugin, a real file — drives it over
 synthetic data from ``tests/synthetic_data/``, and checks it behaves like a
-well-formed member of its family. All eight families are covered, each with checks
+well-formed member of its family. All nine families are covered, each with checks
 written for what that family's output is actually used for:
 
 .. list-table::
@@ -788,6 +788,10 @@ written for what that family's output is actually used for:
 
    * - Family
      - What conformance asks of it
+   * - ``MetaConditioningLoader``
+     - One pore size per cycle on every channel, cycles counted from 1; every PSD
+       recording has a cycle, a sample rate and points per average, and its samples are
+       finite floats in pA; the status report covers the experiment and each channel.
    * - ``MetaReader``
      - Agrees with the recording about channels, sample rate and length; ``load_data``
        recovers the planted baseline and event depth in picoamps, not just a plausible
@@ -1139,7 +1143,7 @@ carry the class name, so ``-k`` matches it:
 
 .. code-block:: bash
 
-   pytest -m conformance                    # every plugin, all eight families
+   pytest -m conformance                    # every plugin, all nine families
    pytest -m conformance -k YourPlugin      # only yours, while you work
 
 .. tip::
@@ -1237,8 +1241,8 @@ Duplication Ratchet
 --------------------
 
 This one affects you if you edit any plugin or widget file: the ratchet measures ten
-**families**. They are the five ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
-``poriscope/plugins/analysistabs/``, the five ``*controls.py`` under its ``utils/``, the data
+**families**. They are the six ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
+``poriscope/plugins/analysistabs/``, the six ``*controls.py`` under its ``utils/``, the data
 readers, event fitters, event finders, filters, shared widgets, and the five SQLite plugins
 (the event writer, the two database loaders, the database writer and the event loader). Those families carry a
 large amount of byte-identical duplication, and the 2.0.0 refactor removed most of it. The
@@ -1482,8 +1486,8 @@ intent, never data already on the plot. Two checks hold the rule:
 
 ``poriscope.utils.ReplayGuard``
    is a tripwire. Each step of a replay (``poriscope.utils.replay_sequence``) and Undo's
-   ``MetaController.replay`` run inside ``replaying()``, and the seven helpers
-   that read a controls panel (``get_selected_filters``, ``_get_event_index_text`` and the five
+   ``MetaController.replay`` run inside ``replaying()``, and the eight helpers
+   that read a controls panel (``get_selected_filters``, ``_get_event_index_text`` and the six
    ``collect_parameters``) start with ``forbid_while_replaying(...)``, so a recorded action that
    reaches one raises ``ReplayWidgetReadError`` during a replay and nowhere else. It cannot see
    a direct ``.text()`` call; the static test covers those.
@@ -1551,7 +1555,7 @@ Pre-Pull-Request Compliance Checklist
    scaffold honest as the ``Meta*`` bases change.
 
    **What a freshly generated skeleton does and does not pass**, measured against one
-   generated plugin in each of the eight families: steps 1 and 2 pass cleanly — it is
+   generated plugin in each of the nine families: steps 1 and 2 pass cleanly — it is
    already ``black``/``ruff`` clean and satisfies ``mypy``, ``pydoclint``, the security
    and module-level checks, and the settings schema. Step 3 does **not** pass, and is
    not meant to: the skeleton's methods still raise ``NotImplementedError``, and the
@@ -1624,8 +1628,8 @@ branch push:
 
    pytest
 
-There is no subset and no marker filter, at under 10 minutes, e2e tests are worth their cost. CI runs the whole suite everywhere, e2e
-tests included. 
+There is no subset and no marker filter: CI runs the whole suite everywhere, e2e tests
+included. A full run takes about 25 minutes, locally and on CI (2026-11-11).
 
 For per-marker counts and mean
 durations, run ``pytest --marker-stats``.

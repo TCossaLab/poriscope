@@ -28,12 +28,17 @@
 # ----------------------
 
 # --- Data Readers ---
+# --- Conditioning Loaders ---
+from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
+    NIConditioningLoader,
+)
 from poriscope.plugins.datareaders.ABFReader import ABFReader
 from poriscope.plugins.datareaders.BinaryReader1X import BinaryReader1X
 from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader20240101
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.datareaders.ChimeraReaderVC100 import ChimeraReaderVC100
 from poriscope.plugins.datareaders.LegacyElementsReader import LegacyElementsReader
+from poriscope.plugins.datareaders.NIBinaryReader import NIBinaryReader
 from poriscope.plugins.datareaders.SingleBinaryDecoder import SingleBinaryDecoder
 from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 
@@ -72,6 +77,7 @@ from poriscope.utils.BaseValidator import BaseValidator
 from poriscope.utils.EventWorker import Worker
 
 # --- Meta Interfaces ---
+from poriscope.utils.MetaConditioningLoader import MetaConditioningLoader
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -114,6 +120,7 @@ __all__ = [
     "ChimeraReader20240501",
     "ChimeraReaderVC100",
     "SingleBinaryDecoder",
+    "NIBinaryReader",
     "LegacyElementsReader",
     # --- Data Writers ---
     "SQLiteEventWriter",
@@ -131,10 +138,13 @@ __all__ = [
     "PeakFinder",
     # --- Event Loaders ---
     "SQLiteEventLoader",
+    # --- Conditioning Loaders ---
+    "NIConditioningLoader",
     # --- Filters ---
     "BesselFilter",
     "WaveletFilter",
     # --- Meta Interfaces ---
+    "MetaConditioningLoader",
     "MetaController",
     "MetaControls",
     "MetaDatabaseLoader",

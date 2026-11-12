@@ -154,6 +154,43 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
             n += 1
         return min_diff_pair
 
+    #: The shades of a noise value against two thresholds: green, orange and red, light
+    #: enough to draw under data.
+    NOISE_SHADES: Tuple[
+        Tuple[float, float, float, float],
+        Tuple[float, float, float, float],
+        Tuple[float, float, float, float],
+    ] = (
+        (0.0, 0.8, 0.0, 0.15),
+        (1.0, 0.6, 0.0, 0.15),
+        (1.0, 0.0, 0.0, 0.15),
+    )
+
+    @classmethod
+    def noise_shade(
+        cls, value: float, good: float, decent: float
+    ) -> Tuple[float, float, float, float]:
+        """
+        The shade for a noise value: green below ``good``, orange below ``decent``, red above.
+
+        Shared by the tabs that colour a PSD by its 1 Hz noise, so the same value has the
+        same colour in each.
+
+        :param value: the noise
+        :type value: float
+        :param good: below this the noise is good
+        :type good: float
+        :param decent: below this the noise is decent
+        :type decent: float
+        :return: an RGBA colour
+        :rtype: Tuple[float, float, float, float]
+        """
+        if value < good:
+            return cls.NOISE_SHADES[0]
+        if value < decent:
+            return cls.NOISE_SHADES[1]
+        return cls.NOISE_SHADES[2]
+
     @staticmethod
     def format_axis_label(label: str, unit: Optional[str]) -> str:
         """

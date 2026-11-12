@@ -41,9 +41,25 @@ from poriscope.utils.MetaReader import MetaReader
 class SingleBinaryDecoder(MetaReader):
     """
     Subclass of MetaReader for reading a single, user-configured raw binary file, with sampling rate, header size, array count, byte order, and data type all specified via settings rather than inferred from a vendor-specific header.
+
+    A subclass for one file format fixes its format settings by deleting their keys in
+    :py:meth:`get_empty_settings`: each is then read from :py:attr:`SETTING_DEFAULTS`, which
+    the subclass can override, as ``NIBinaryReader`` does for its big-endian files.
     """
 
     logger = logging.getLogger(__name__)
+
+    #: The value each format setting takes when a subclass removes it from its settings,
+    #: which is how a subclass for one file format fixes it. Also the dialog's defaults.
+    SETTING_DEFAULTS: Dict[str, Any] = {
+        "Header Bytes": 0,
+        "Byte Order": "<",
+        "Data Type": "Floating Point",
+        "Data Bytes": 8,
+        "Bitmask": 0,
+        "Scale": 1.0,
+        "Offset": 0.0,
+    }
 
     # private API, MUST be implemented by subclasses
     @log(logger=logger)
@@ -86,32 +102,24 @@ class SingleBinaryDecoder(MetaReader):
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """
-        if (
-            settings["Bitmask"]["Value"] != 0
-            and settings["Data Type"]["Value"] == "Floating Point"
-        ):
+        bitmask = self._binary_setting("Bitmask", settings)
+        data_type = self._binary_setting("Data Type", settings)
+        data_bytes = self._binary_setting("Data Bytes", settings)
+        if bitmask != 0 and data_type == "Floating Point":
             raise ValueError("Bitmasks are not supported for floating point data.")
         if (
-            settings["Data Type"]["Value"] == "Unsigned Integer"
-            or settings["Data Type"]["Value"] == "Signed Integer"
-        ) and settings["Data Bytes"]["Value"] == 8:
+            data_type == "Unsigned Integer" or data_type == "Signed Integer"
+        ) and data_bytes == 8:
             raise ValueError("64-bit integers not supported as a base data type.")
-        if (
-            settings["Data Type"]["Value"] == "Floating Point"
-            and settings["Data Bytes"]["Value"] == 2
-        ):
+        if data_type == "Floating Point" and data_bytes == 2:
             raise ValueError(
                 "16-bit floats not supported as a base data type, use 32 or 64 bit only."
             )
-        if settings["Data Bytes"]["Value"] == 2 and settings["Bitmask"]["Value"] >= (
-            1 << 16
-        ):
+        if data_bytes == 2 and bitmask >= (1 << 16):
             raise ValueError(f"16-bit bitmasks must be at most {(1<<16)-1}.")
-        if settings["Data Bytes"]["Value"] == 4 and settings["Bitmask"]["Value"] >= (
-            1 << 32
-        ):
+        if data_bytes == 4 and bitmask >= (1 << 32):
             raise ValueError(f"32-bit bitmasks must be at most {(1<<32)-1}.")
-        if settings["Data Bytes"]["Value"] == 8 and settings["Bitmask"]["Value"] > 0:
+        if data_bytes == 8 and bitmask > 0:
             raise ValueError("64-bit bitmasks are not supported.")
 
     @log(logger=logger)
@@ -143,7 +151,7 @@ class SingleBinaryDecoder(MetaReader):
         # get formats and offsets for all files
         datamaps = []
         fmt = []
-        offset = self.settings["Header Bytes"]["Value"]
+        offset = self._binary_setting("Header Bytes")
         sample_dtype = self._sample_dtype()
         for channel, (_filename, _config) in enumerate(zip(datafiles, configs)):
             fmt.append((f"data_{channel}", sample_dtype))
@@ -256,9 +264,9 @@ class SingleBinaryDecoder(MetaReader):
         :return: The data, rescaled to pA.
         :rtype: npt.NDArray[np.float64]
         """
-        scale = self.settings["Scale"]["Value"]
-        offset = self.settings["Offset"]["Value"]
-        bitmask = self.settings["Bitmask"]["Value"]
+        scale = self._binary_setting("Scale")
+        offset = self._binary_setting("Offset")
+        bitmask = self._binary_setting("Bitmask")
         return self._scale_data(
             data,
             bitmask=bitmask,
@@ -293,9 +301,9 @@ class SingleBinaryDecoder(MetaReader):
 
         :raises ValueError: If the byte order symbol, data type, or data size settings are invalid.
         """
-        endianness = base_type = self.settings["Byte Order"]["Value"]
-        base_type = self.settings["Data Type"]["Value"]
-        data_size = self.settings["Data Bytes"]["Value"]
+        endianness = self._binary_setting("Byte Order")
+        base_type = self._binary_setting("Data Type")
+        data_size = self._binary_setting("Data Bytes")
 
         type_string = ""
         if endianness in ["<", ">"]:
@@ -325,6 +333,23 @@ class SingleBinaryDecoder(MetaReader):
             )
 
         return np.dtype(type_string)
+
+    @log(logger=logger)
+    def _binary_setting(self, key: str, settings: Optional[dict] = None) -> Any:
+        """
+        The value of one of this reader's format settings, or its default where a subclass has removed the setting.
+
+        :param key: one of the keys of :py:attr:`SETTING_DEFAULTS`
+        :type key: str
+        :param settings: the settings to read, or None for the ones applied
+        :type settings: Optional[dict]
+        :return: the setting's value
+        :rtype: Any
+        """
+        source = self.settings if settings is None else settings
+        if key in source:
+            return source[key]["Value"]
+        return self.SETTING_DEFAULTS[key]
 
     # public API
     @log(logger=logger)
@@ -371,16 +396,29 @@ class SingleBinaryDecoder(MetaReader):
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Input File"]["Options"] = ["Binary Files (*.*)"]
         settings["Sampling Rate"] = {"Type": float, "Min": 0.0, "Units": "Hz"}
-        settings["Header Bytes"] = {"Type": int, "Value": 0, "Min": 0}
+        defaults = self.SETTING_DEFAULTS
+        settings["Header Bytes"] = {
+            "Type": int,
+            "Value": defaults["Header Bytes"],
+            "Min": 0,
+        }
         settings["Number of Arrays"] = {"Type": int, "Value": 1, "Min": 1}
-        settings["Byte Order"] = {"Type": str, "Value": "<", "Options": ["<", ">"]}
+        settings["Byte Order"] = {
+            "Type": str,
+            "Value": defaults["Byte Order"],
+            "Options": ["<", ">"],
+        }
         settings["Data Type"] = {
             "Type": str,
-            "Value": "Floating Point",
+            "Value": defaults["Data Type"],
             "Options": ["Floating Point", "Signed Integer", "Unsigned Integer"],
         }
-        settings["Data Bytes"] = {"Type": int, "Value": 8, "Options": [8, 4, 2]}
-        settings["Bitmask"] = {"Type": int, "Value": 0}
-        settings["Scale"] = {"Type": float, "Value": 1.0}
-        settings["Offset"] = {"Type": float, "Value": 0.0}
+        settings["Data Bytes"] = {
+            "Type": int,
+            "Value": defaults["Data Bytes"],
+            "Options": [8, 4, 2],
+        }
+        settings["Bitmask"] = {"Type": int, "Value": defaults["Bitmask"]}
+        settings["Scale"] = {"Type": float, "Value": defaults["Scale"]}
+        settings["Offset"] = {"Type": float, "Value": defaults["Offset"]}
         return settings

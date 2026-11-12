@@ -28,8 +28,10 @@ docstrings copied verbatim out of those bases:
    python scripts/new_plugin.py AnalysisTab MyTab --user    # into your user plugin folder
    python scripts/new_plugin.py --list AnalysisTab          # what the triad's files will hold
 
-That writes four files: ``MyTabController.py``, ``MyTabModel.py``, ``MyTabView.py`` and
-``MyTabControls.py``. The result **starts as a working tab**: restart Poriscope and
+That writes four files: ``MyTabController.py``, ``MyTabModel.py``, ``MyTabView.py`` and the
+controls panel. Into this repository the panel goes to ``analysistabs/utils/mytabcontrols.py``,
+where every shipped tab keeps its own; anywhere else it is ``MyTabControls.py`` beside the
+other three. The result **starts as a working tab**: restart Poriscope and
 ``MyTabController`` appears in the Analysis menu, opening a tab with a plot canvas above a
 control panel holding one button. Pressing it travels the whole path a real control takes
 and **acknowledges itself on the status panel**: the panel emits ``actionTriggered``, the
