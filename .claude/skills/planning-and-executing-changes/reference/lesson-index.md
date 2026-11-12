@@ -51,6 +51,7 @@ IDs are unique across the two skills.
 - **N14** Assert the net is armed
 - **N15** Never reshape production code to keep a test passing
 - **N16** Pin the invariant, not the census
+- **N17** Clean up a process-wide resource at process scope, and arm a guard on it
 
 ## Measurement (I) - [measurement.md](measurement.md)
 

@@ -19,6 +19,7 @@ it exercise the program the way the program really runs?*
 - N14 Assert the net is armed
 - N15 Never reshape production code to keep a test passing
 - N16 Pin the invariant, not the census
+- N17 Clean up a process-wide resource at process scope, and arm a guard on it
 
 ## N3 · Enter, set up and tear down through the application's own doors
 
@@ -190,3 +191,43 @@ exist; where a special case must stay exercised, assert that at least one member
 also asserted that every panel had no docstring. A new panel, written with one, failed it. The rewritten
 test asserts that every panel has its page, with or without a docstring, and that at least one panel
 without one remains; it was shown to fail when a panel's page was removed.
+
+## N17 · Clean up a process-wide resource at process scope, and arm a guard on it
+
+A test that touches something shared by the whole process - a GUI application's windows, a global
+event filter or hook, a registry, a thread pool, the heap itself - leaves its leftovers to every test
+that runs after it, and the cost lands far from the cause: as setup or teardown time in unrelated
+files, or as a crash in whichever test next spins the event loop. Four rules follow.
+
+- **Put the cleanup at the scope of the resource.** A process-wide resource gets a root-level, autouse
+  teardown, not a fix in the directory where the symptom first showed. A directory-level fix protects
+  only the tests that existed there; the next harness, written elsewhere, leaks again.
+- **Count, don't trust the call.** Closing or hiding is not destroying, and a scheduled deletion is not
+  a deletion until its event is delivered. Verify cleanup by a count taken after it (live windows, live
+  objects), never by the call you made.
+- **Arm a guard on the count** (N14): a check that fails when the count after cleanup is not back to
+  where it started, so a new helper or directory that leaks fails at once instead of slowing the suite
+  for months.
+- **Read cost that is not local as a leak elsewhere.** A file much slower in the full run than alone, or
+  time concentrated in setup and teardown rather than in the test body, is a symptom of what ran before
+  it. Compare each slow file's full-run time with its time alone before explaining it by its own work.
+  Two amplifiers turn a small leak into minutes: an explicit full garbage collection, whose cost scales
+  with everything still alive, and production code that registers each instance with a global object
+  (an application-wide event filter, a global signal), so every later event pays once per leaked
+  instance.
+
+When adding tests, apply it as a check: does a new helper or directory build anything process-wide, is
+it covered by a root-level cleanup, and is the count back to zero after its teardown? Run the new file
+both alone and in its full-run position, and compare.
+
+*Case:* the same leak cost a GUI test suite twice. In August 2026 per-test teardown in the view tests
+grew from 0.09 s to 9-13 s, about 90% of the suite's wall-clock, because closed widgets were never
+destroyed; a destroy-and-flush teardown fixed it, but only in that directory's fixtures, and no lesson
+was recorded. In November 2026 an integration harness added later in another directory closed its
+windows without destroying them. By the time the view tests ran, about 9,300 top-level windows and 2.47
+million objects were alive. Each leaked line edit was an application-wide event filter, so every later
+event made one call per leaked widget: building one controller took 52 ms with none live and 11.6 s
+with 1,000. A full collection took 2.5 s against 0.1 s alone. The worst symptom was a 127 s teardown in
+the first view-test file, which was the victim, not the cause. The suite took 1,650 s. One root-level
+teardown that destroys every top-level window after every test, with no assertion changed, brought it
+to 493 s.

@@ -190,6 +190,8 @@ Also standing, with evidence in the reference files:
 | A targeted, per-commit or clean-copy run is green | Read the skipped count against a known-good run; were the generated artefacts built in that copy? | V18 |
 | You are gating or comparing from a second worktree | Run with `python -m` from its root, and print the imported module's path | V19 |
 | A test asserts a property of every current member of a set | Assert the invariant; keep a special case with "at least one" | N16 |
+| A test file is much slower in the full run than alone, or its time is in setup or teardown | A leak from earlier tests: compare full-run and alone, count what is still alive | N17 |
+| You fix a leak or add a cleanup in one directory's fixtures, or add a test harness that builds windows | Is the resource process-wide? Clean up at root scope and guard the count | N17 |
 | You are writing a manual-pass step or an expected message | Is the control enabled in that state, and did you see the message in a run of the app? Read its enable condition or try it | V4 |
 | You are about to say what a function does, or what a change would cause, from a grep hit or a diff hunk | Open the whole function and read it top to bottom, or say the claim is unverified | E30 |
 | Every gate is green after changing app code | Launch the app | V3 |
