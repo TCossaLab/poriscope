@@ -14,7 +14,8 @@ It was distilled from a three-week, nine-step refactor of a desktop application 
 system (about 2,900 tests growing to 4,200), whose plan was re-verified ten times and moved claims
 every time. Most of what that work taught applies to any change, so it lives here; what is specific
 to refactoring lives in the `refactoring-codebases` skill, which builds on this one, and what is
-specific to porting an existing application lives in `porting-applications`. Every lesson
+specific to porting an existing application lives in `porting-applications`, and to auditing a test
+suite's speed and value in `auditing-test-suites`. Every lesson
 carries the case that produced it. The cases are illustrations; the rules are language- and
 framework-neutral.
 

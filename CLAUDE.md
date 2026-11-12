@@ -206,8 +206,9 @@ of every session, so it should stay a short list of standing rules.
 **Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
 any fix, feature, design discussion, review, investigation or release step beyond a typo,
 from the first message about it, even when no plan or code is wanted yet. It holds the general
-method and its lessons; `refactoring-codebases` builds on it for refactors, and
-`porting-applications` for porting an existing app or script into Poriscope. All three live in
+method and its lessons; `refactoring-codebases` builds on it for refactors,
+`porting-applications` for porting an existing app or script into Poriscope, and
+`auditing-test-suites` for auditing the test suite's speed and value. All four live in
 `.claude/skills/` beside `plugin-architecture` and are tracked in git: edit the repo copy, and
 do not keep a same-named copy in `~/.claude/skills/`, because a personal skill shadows the
 project one for the bare name. Five of its rules hold in every session:
@@ -267,6 +268,8 @@ creating, moving, syncing or checking one.
   triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
   to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
   so a fresh checkout needs that script run before cutting a release.
+- **Before a major release, run the `auditing-test-suites` skill** (speed and value), and land
+  what it finds before `release start`.
 - **`git flow release finish` is run by a human, interactively — hand it off, do not automate
   it.** Everything up to it is ordinary work: `release start`, the version bumps in
   `poriscope/constants.py` and `CITATION.cff`, dating the `changelog.md` header, a full green

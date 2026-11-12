@@ -2,8 +2,8 @@
 
 An Agent Skill holding the general method for planning, executing and verifying software changes,
 with over a hundred field-tested lessons about how plans, handoffs, tests, gates and green CI mislead.
-It is the default skill for most planning and execution work; `refactoring-codebases` and
-`porting-applications` build on it.
+It is the default skill for most planning and execution work; `refactoring-codebases`,
+`porting-applications` and `auditing-test-suites` build on it.
 
 ## Install
 
@@ -37,8 +37,8 @@ refactor (September 2026) and are generalised; the rules do not depend on refact
 ## Maintaining it
 
 Add a general lesson to the reference file for its activity, in the same shape (rule, why, case), under
-the next free ID in its letter series - IDs are unique across this skill, `refactoring-codebases` and
-`porting-applications`, so check every index. Then update this skill's index and the copy of it in
+the next free ID in its letter series - IDs are unique across this skill, `refactoring-codebases`,
+`porting-applications` and `auditing-test-suites`, so check every index. Then update this skill's index and the copy of it in
 `refactoring-codebases`' index, by hand; `check_skill.py --siblings` confirms they agree.
 If a lesson must hold in every session, add it to the standing rules' first five and copy it into the
 repository instructions that need it. Keep `SKILL.md` under 500 lines, and the description within the

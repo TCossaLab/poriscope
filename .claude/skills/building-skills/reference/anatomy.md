@@ -95,7 +95,7 @@ IDs are a letter series per activity plus a number (`P1`, `V12`, `S3`), unique a
 links to another. An ID never changes once assigned - SKILL.md, red-flag tables, other skills, handoffs
 and memory all cite it (S16). New lessons take the next free number in their series, so numbers within a
 file need not be in order; series letters in use today are C, D, E, I, N, P, V, X (the two method skills),
-A (porting-applications) and S (this one).
+A (porting-applications), T, Q and O (auditing-test-suites) and S (this one).
 
 `reference/lesson-index.md` lists every lesson as `- **<ID>** <title>` under a heading per file, linked
 to the file. It exists to be grepped by symptom, so titles are the rule's words. `check_skill.py` checks
