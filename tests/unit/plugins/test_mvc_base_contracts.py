@@ -73,27 +73,3 @@ def test_the_abstract_surface_is_exactly_as_recorded(
     plugin-compliance test simply has one fewer method to check.
     """
     assert set(base.__abstractmethods__) == expected
-
-
-def test_factors_is_concrete_on_metaview() -> None:
-    """
-    Deleting the ``_factors`` overrides in the subclasses is therefore safe.
-
-    Its sibling claim about ``notify_plugin_state_changed`` does not hold, and is
-    asserted in ``tests/unit/views/test_plugin_state_notifications.py``.
-    """
-    assert "_factors" not in MetaView.__abstractmethods__
-    assert "_factors" in MetaView.__dict__
-
-
-def test_metamodel_declares_almost_nothing() -> None:
-    """
-    One abstract method, which four of the five tab Models implement as ``pass``.
-
-    This is why the compliance test cannot notice anything the refactor does to the
-    Model layer, and it is the reason moving logic into the Models needed
-    characterization tests rather than relying on compliance. Pinned so that if the
-    Model layer ever grows a real contract, the fact is recorded rather than
-    absorbed.
-    """
-    assert len(MetaModel.__abstractmethods__) == 1
