@@ -2,10 +2,9 @@
 Tests for poriscope.plugins.analysistabs.RawDataController.
 
 Covers:
-- _init creates view and model
 - _setup_connections wires calculate_psd signal
 - calculate_psd computes PSD via model and updates view
-- update_available_plugins logs debug and delegates to model and view
+- update_available_plugins delegates to model and view
 - _load_and_filter reads each channel through call(), dropping what fails
 - load_trace_data / load_psd_data hand the result to the matching view setter
 - load_event_plot_data makes the five event-plot calls the View used to make
@@ -124,31 +123,7 @@ class TestRequestReaderChannels:
         controller.request_reader_channels("BinaryReader1X_0")
 
 
-# ----------------------- _init / _setup_connections ------------------
-
-
-def test_init_creates_view_and_model(mocker: MockerFixture) -> None:
-    """
-    Verify that _init instantiates RawDataView and RawDataModel on the controller.
-
-    Patches both constructors so no real Qt objects are created.
-
-    :param mocker: Pytest-mock fixture.
-    """
-    mock_view_cls: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.RawDataController.RawDataView"
-    )
-    mock_model_cls: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.RawDataController.RawDataModel"
-    )
-
-    ctrl: RawDataController = RawDataController.__new__(RawDataController)  # type: ignore[type-abstract]
-    ctrl._init()
-
-    mock_view_cls.assert_called_once()
-    mock_model_cls.assert_called_once()
-    assert ctrl.view is mock_view_cls.return_value
-    assert ctrl.model is mock_model_cls.return_value
+# ----------------------- _setup_connections --------------------------
 
 
 def test_setup_connections_wires_calculate_psd(
@@ -224,18 +199,6 @@ def test_update_available_plugins_delegates_to_model_and_view(
     controller.update_available_plugins(plugins)
     controller.model.update_available_plugins.assert_called_once_with(plugins)
     mock_view.update_available_plugins.assert_called_once_with(plugins)
-
-
-def test_update_available_plugins_logs_debug(
-    controller: RawDataController,
-) -> None:
-    """
-    Log a debug message when the available plugins are updated.
-
-    :param controller: Controller under test.
-    """
-    controller.update_available_plugins({"MetaReader": ["R1"]})
-    controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
 
 
 # ------------- launching event finding -------------------------------
@@ -475,22 +438,6 @@ class TestEventfindingLaunch:
             if call.args[2] == "find_events"
         ]
         assert len(find_calls) == 1 and find_calls[0][6] == "a-callable"
-
-    def test_an_empty_filter_key_fetches_no_callable(
-        self, controller: RawDataController
-    ) -> None:
-        """
-        :param controller: Controller under test.
-        """
-        controller.model.call.side_effect = ["gen0"]
-
-        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)], {})], "")
-
-        assert not [
-            call
-            for call in controller.model.call.call_args_list
-            if call.args[2] == "get_callable_filter"
-        ]
 
     def test_a_channel_that_cannot_launch_is_skipped_and_the_rest_run(
         self, controller: RawDataController

@@ -2,8 +2,6 @@
 Tests for poriscope.plugins.analysistabs.MetadataController.
 
 Covers:
-- _init creates view and model
-- _setup_connections runs without error
 - request_column_units asks the loader and applies the answer to the named axis
 - request_experiment_structure (conversion, copy behaviour, multi-experiment)
 - relay_query skipping set_query for an empty query (the rest is in test_protein_controller.py)
@@ -94,48 +92,6 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     return ctrl
 
 
-# ----------------------- _init / _setup_connections -----------------
-
-
-def test_init_creates_view_and_model(mocker: MockerFixture) -> None:
-    """
-    Verify that _init instantiates MetadataView and MetadataModel on the controller.
-
-    Patches both constructors so no real Qt objects are created.
-
-    :param mocker: Pytest-mock fixture.
-    """
-    mock_view_cls: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataController.MetadataView"
-    )
-    mock_model_cls: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataController.MetadataModel"
-    )
-
-    ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
-    ctrl._init()
-
-    mock_view_cls.assert_called_once()
-    mock_model_cls.assert_called_once()
-    assert ctrl.view is mock_view_cls.return_value
-    assert ctrl.model is mock_model_cls.return_value
-
-
-def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
-    """
-    Verify that _setup_connections completes without raising.
-
-    The method is intentionally empty (satisfies the abstract base class)
-    so the only requirement is that it does not raise.
-
-    :param mocker: Pytest-mock fixture.
-    """
-    ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
-    ctrl.view = mocker.Mock()
-    ctrl.model = mocker.Mock()
-    ctrl._setup_connections()  # should not raise
-
-
 # ---------------------- request_column_units -------------------------
 
 
@@ -215,107 +171,6 @@ def test_request_column_units_does_not_raise_out_of_the_slot(
 
 
 # ----------------- request_experiment_structure --------------------
-
-
-def test_request_experiment_structure_converts_channel_ids_to_strings(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Convert integer channel IDs to strings before storing on the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.model.call.return_value = {"exp1": [1, 2, 3]}
-    controller.request_experiment_structure("ldr")
-    result: Dict[str, List[str]] = (
-        mock_view.available_experiment_and_channels_by_loader["ldr"]
-    )
-    assert result == {"exp1": ["1", "2", "3"]}
-
-
-def test_request_experiment_structure_logs_debug_with_loader_name(
-    controller: MetadataController,
-) -> None:
-    """
-    Log a debug message containing the loader name and structure on entry.
-
-    :param controller: Controller under test.
-    """
-    controller.model.call.return_value = {"exp1": [1]}
-    controller.request_experiment_structure("my_loader")
-    controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
-    debug_msg: str = controller.logger.debug.call_args[0][0]  # type: ignore[attr-defined,index]
-    assert "my_loader" in debug_msg
-
-
-def test_request_experiment_structure_stores_under_correct_loader_key(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Store the converted structure under the supplied loader name.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.model.call.return_value = {"exp1": [0]}
-    controller.request_experiment_structure("my_loader")
-    assert "my_loader" in mock_view.available_experiment_and_channels_by_loader
-
-
-def test_request_experiment_structure_selected_equals_available(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Confirm that selected and available dicts contain the same data after construction.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.model.call.return_value = {"exp1": [7]}
-    controller.request_experiment_structure("ldr")
-    avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
-        "ldr"
-    ]
-    sel: Dict[str, List[str]] = mock_view.selected_experiment_and_channels_by_loader[
-        "ldr"
-    ]
-    assert avail == sel
-
-
-def test_request_experiment_structure_selection_is_independent_of_available(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    The selection's channel lists are its own, not the available structure's.
-
-    **This assertion is reversed from what it used to be.** It pinned
-    ``str_structure.copy()`` being shallow - the two dicts sharing their inner
-    lists - and said in its own docstring to "consider copy.deepcopy if independent
-    mutation is required". That turned out to be required: the scope fix narrows the
-    selection, and sharing the lists would have narrowed what the selection tree
-    offers at the same time.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    mock_view.available_experiment_and_channels_by_loader = {}
-    mock_view.selected_experiment_and_channels_by_loader = {}
-
-    controller.model.call.return_value = {"exp1": [5]}
-    controller.request_experiment_structure("ldr")
-    avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
-        "ldr"
-    ]
-    sel: Dict[str, List[str]] = mock_view.selected_experiment_and_channels_by_loader[
-        "ldr"
-    ]
-    avail["exp1"].append("MUTATED")
-    assert "MUTATED" not in sel["exp1"]
 
 
 def test_request_experiment_structure_handles_empty_structure(

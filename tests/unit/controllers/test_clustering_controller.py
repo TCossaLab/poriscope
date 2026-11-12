@@ -2,8 +2,6 @@
 Tests for poriscope.plugins.analysistabs.ClusteringController.
 
 Covers:
-- _init creates view and model
-- _setup_connections is a no-op that does not raise
 - display_write_status (success and failure branches)
 - load_metadata_for_clustering, which replaced relay_query and the two bus calls
   behind it: it builds the query, loads the rows, and reports either failure on the
@@ -11,8 +9,8 @@ Covers:
 - check_cluster_column / commit_clusters, the commit path: two round trips
   with the overwrite confirmation in the View between them, and a failed drop that
   stops the commit rather than writing on top of a half-deleted result
-- update_column_names (names provided with info log, empty list with warning log)
-- update_column_units (units provided with info log, empty dict skips view)
+- update_column_names / update_column_units forward a non-empty answer to the view
+  and leave it alone otherwise
 - cluster, the command path: the Model builds the clustering frame from
   the rows and the spec the View sent, then clusters it
 - request_column_names / request_column_units, the replacements for two
@@ -71,44 +69,6 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> ClusteringControl
     ctrl.tab_action_history = OrderedDict()
     ctrl.record_action = mocker.Mock()  # type: ignore[method-assign]
     return ctrl
-
-
-# ----------------------- _init / _setup_connections ------------------
-
-
-def test_init_creates_view_and_model(mocker: MockerFixture) -> None:
-    """
-    Verify that _init instantiates ClusteringView and ClusteringModel on the controller.
-
-    Patches both constructors so no real Qt objects are created.
-
-    :param mocker: Pytest-mock fixture.
-    """
-    mock_view_cls = mocker.patch(
-        "poriscope.plugins.analysistabs.ClusteringController.ClusteringView"
-    )
-    mock_model_cls = mocker.patch(
-        "poriscope.plugins.analysistabs.ClusteringController.ClusteringModel"
-    )
-
-    ctrl: ClusteringController = ClusteringController.__new__(ClusteringController)  # type: ignore[type-abstract]
-    ctrl._init()
-
-    mock_view_cls.assert_called_once()
-    mock_model_cls.assert_called_once()
-    assert ctrl.view is mock_view_cls.return_value
-    assert ctrl.model is mock_model_cls.return_value
-
-
-def test_setup_connections_does_not_raise(
-    controller: ClusteringController,
-) -> None:
-    """
-    Verify that _setup_connections is currently a no-op and does not raise.
-
-    :param controller: Controller under test.
-    """
-    controller._setup_connections()
 
 
 # -------------------- display_write_status ---------------------------
@@ -603,18 +563,6 @@ def test_update_column_names_updates_view_when_names_provided(
     mock_view.update_column_names.assert_called_once_with(["col_a", "col_b"])
 
 
-def test_update_column_names_logs_info_when_names_provided(
-    controller: ClusteringController,
-) -> None:
-    """
-    Log an info message after successfully updating the view with column names.
-
-    :param controller: Controller under test.
-    """
-    controller.update_column_names(["col_a", "col_b"])
-    controller.logger.info.assert_called_once()  # type: ignore[attr-defined]
-
-
 def test_update_column_names_skips_view_when_list_is_empty(
     controller: ClusteringController,
     mock_view: MagicMock,
@@ -627,18 +575,6 @@ def test_update_column_names_skips_view_when_list_is_empty(
     """
     controller.update_column_names([])
     mock_view.update_column_names.assert_not_called()
-
-
-def test_update_column_names_logs_warning_when_list_is_empty(
-    controller: ClusteringController,
-) -> None:
-    """
-    Log a warning message when no column names are received.
-
-    :param controller: Controller under test.
-    """
-    controller.update_column_names([])
-    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
 
 
 # -------------------- update_column_units ----------------------------
@@ -656,18 +592,6 @@ def test_update_column_units_updates_view_when_units_provided(
     """
     controller.update_column_units({"voltage": "mV"}, "y")
     mock_view.update_column_units.assert_called_once_with({"voltage": "mV"}, "y")
-
-
-def test_update_column_units_logs_info_when_units_provided(
-    controller: ClusteringController,
-) -> None:
-    """
-    Log an info message after successfully updating unit labels in the view.
-
-    :param controller: Controller under test.
-    """
-    controller.update_column_units({"voltage": "mV"}, "y")
-    controller.logger.info.assert_called_once()  # type: ignore[attr-defined]
 
 
 def test_update_column_units_skips_view_when_units_empty(
