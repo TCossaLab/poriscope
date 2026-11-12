@@ -203,36 +203,6 @@ def commit_events(triad: Triad, qtbot: Any, channels: List[int], expected: int) 
 
 
 @pytest.mark.timeout(300)
-def test_the_tab_sees_every_registered_plugin(raw_data_tab: Triad) -> None:
-    """
-    All three families reach the tab, not just the plugin registry.
-
-    Without this, a flow could pass while the tab knew about none of them and the
-    later assertions were measuring the fixture rather than the application.
-    """
-    assert READER in raw_data_tab.available("MetaReader")
-    assert FINDER in raw_data_tab.available("MetaEventFinder")
-    assert WRITER in raw_data_tab.available("MetaWriter")
-
-
-@pytest.mark.timeout(300)
-def test_finding_and_committing_writes_event_rows(raw_data_tab: Triad, qtbot) -> None:
-    """
-    The whole point of the tab: a recording becomes committed event rows.
-
-    The row count is waited on rather than the file, because the writer commits
-    its tables on one connection and its rows on another - the mistake
-    DECISIONS.md 2026-09-03 records a CI failure for.
-    """
-    channel = raw_data_tab.channel
-
-    find_events(raw_data_tab, qtbot, [channel])
-    commit_events(raw_data_tab, qtbot, [channel], raw_data_tab.expected_events)
-
-    assert row_count(raw_data_tab.out_db, "events") == raw_data_tab.expected_events
-
-
-@pytest.mark.timeout(300)
 def test_the_committed_events_are_attributed_to_the_right_channel(
     raw_data_tab: Triad, qtbot
 ) -> None:

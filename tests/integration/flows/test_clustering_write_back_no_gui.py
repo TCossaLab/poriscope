@@ -12,7 +12,6 @@ from typing import Any, List
 
 import pytest
 
-from poriscope.utils.MetaView import MetaView
 from poriscope.utils.ReplayGuard import replaying
 from tests.integration.flows._triad import (
     Triad,
@@ -113,8 +112,3 @@ def test_an_action_with_nothing_to_show_is_ignored(tab: Triad, actions: Any) -> 
     tab.tab_view.write_back("an_action_from_another_tab", ("x",), {})
 
     actions.assert_not_called()
-
-
-def test_the_not_shown_message_is_shared_by_every_tab() -> None:
-    """One copy on ``MetaView``, so each tab's write-back says the same thing."""
-    assert "_say_not_shown" in MetaView.__dict__

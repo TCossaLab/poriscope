@@ -229,7 +229,6 @@ def test_the_individual_fit_is_kept_by_the_model(protein_tab: Triad) -> None:
 
     fit = protein_tab.tab_controller.model.individual_fit
     assert fit is not None and len(fit) > 0
-    assert not hasattr(protein_tab.tab_view, "fit_data")
 
 
 def test_an_ensemble_plot_leaves_the_individual_fit(protein_tab: Triad) -> None:

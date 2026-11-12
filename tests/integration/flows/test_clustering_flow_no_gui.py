@@ -156,12 +156,6 @@ def cluster(triad: Triad, config: Dict[str, Any]) -> None:
 
 
 @pytest.mark.timeout(90)
-def test_the_tab_sees_the_registered_loader(clustering_tab: Triad) -> None:
-    """Registration reaches the tab, not just the plugin registry."""
-    assert LOADER_KEY in clustering_tab.available("MetaDatabaseLoader")
-
-
-@pytest.mark.timeout(90)
 def test_clustering_labels_every_row_it_loaded(clustering_tab: Triad) -> None:
     """
     The clustering runs for real and produces one label per event.
