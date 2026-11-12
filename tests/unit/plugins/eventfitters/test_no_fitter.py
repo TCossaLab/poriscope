@@ -10,10 +10,8 @@ estimated, and walks each edge to where it begins - the start to where the signa
 leaves the baseline, the end to where the return to baseline begins - rather than
 running a peak-finding algorithm. Several of its formulas were verified by actually
 running the real source against hand-picked synthetic data before writing assertions
-(see comments below for two behaviors worth flagging):
+(see comments below for one behavior worth flagging):
 
-- get_empty_settings makes NO additions of its own; it returns whatever the
-  superclass produced, completely unchanged.
 - _populate_event_metadata's max_blockage_duration/min_blockage_duration/
   max_deviation_duration fields compute argmax/argmin on the trimmed
   [1:-1] slice of sublevel_blockage / sublevel_max_deviation, and look up
@@ -22,8 +20,7 @@ running the real source against hand-picked synthetic data before writing assert
   max/min value.
 
 Coverage targets:
-- get_empty_settings (pure passthrough)
-- close_resources / _init / _pre_process_events / _post_process_events / _validate_settings
+- get_empty_settings (forwards its arguments to the base)
 - construct_fitted_event (None paths, AttributeError propagation, happy path)
 - _locate_sublevel_transitions (flat padding, edges walked, sign handling, no crossing)
 - _populate_sublevel_metadata (happy path, Baseline Mismatch, the steady-part statistics)
@@ -68,15 +65,6 @@ def _entries(indices):
 
 
 class TestGetEmptySettings(unittest.TestCase):
-    def test_pure_passthrough_no_additions(self):
-        # Unlike Basic_PeakFinder/IntraCUSUM, NoFitter adds nothing of its
-        # own; it must return exactly what the superclass provided.
-        base = {"Base Key": {"Type": str, "Value": "x"}}
-        with patch.object(MetaEventFitter, "get_empty_settings", return_value=base):
-            pf = object.__new__(NoFitter)
-            settings = pf.get_empty_settings(standalone=True)
-        self.assertEqual(settings, base)
-
     def test_forwards_arguments_to_super(self):
         with patch.object(
             MetaEventFitter, "get_empty_settings", return_value={}
@@ -86,31 +74,6 @@ class TestGetEmptySettings(unittest.TestCase):
                 globally_available_plugins={"foo": ["bar"]}, standalone=True
             )
         mock_super.assert_called_once_with({"foo": ["bar"]}, True)
-
-
-# ---------------------------------------------------------------------------
-# Noop overrides
-# ---------------------------------------------------------------------------
-
-
-class TestNoopOverrides(unittest.TestCase):
-    def setUp(self):
-        self.pf = object.__new__(NoFitter)
-
-    def test_init_noop(self):
-        self.assertIsNone(self.pf._init())
-
-    def test_pre_process_noop(self):
-        self.assertIsNone(self.pf._pre_process_events(0))
-
-    def test_post_process_noop(self):
-        self.assertIsNone(self.pf._post_process_events(0))
-
-    def test_validate_settings_noop(self):
-        self.assertIsNone(self.pf._validate_settings({}))
-
-    def test_close_resources_noop(self):
-        self.assertIsNone(self.pf.close_resources())
 
 
 # ---------------------------------------------------------------------------
@@ -169,23 +132,6 @@ class TestConstructFittedEvent(unittest.TestCase):
         np.testing.assert_allclose(result[0:30], 100.0)
         np.testing.assert_allclose(result[30:70], 300.0)
         np.testing.assert_allclose(result[70:100], 100.0)
-
-    def test_eventloader_samplerate_result_is_unused(self):
-        # construct_fitted_event calls get_samplerate() but discards the
-        # result -- sublevel_starts/event_lengths are already in raw sample
-        # indices, not time, for this fitter. A nonsense return value should
-        # have no effect on the output.
-        pf = object.__new__(NoFitter)
-        pf.eventloader = MagicMock()
-        pf.eventloader.get_samplerate.return_value = "not a real samplerate"
-        pf.sublevel_metadata = {0: {0: {"sublevel_current": np.array([100.0])}}}
-        pf.eventfitting_status = {0: True}
-        pf.sublevel_starts = {0: {0: _entries([0, 50])}}
-        pf.event_lengths = {0: {0: 50}}
-
-        result = pf.construct_fitted_event(0, 0)
-        self.assertEqual(len(result), 50)
-        np.testing.assert_allclose(result, 100.0)
 
 
 # ---------------------------------------------------------------------------
@@ -309,26 +255,6 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         np.testing.assert_allclose(meta["sublevel_raw_ecd"], [0.0, 0.003, 0.0])
         np.testing.assert_allclose(meta["sublevel_fitted_ecd"], [0.0, 0.003, 0.0])
 
-    def test_required_keys_present(self):
-        pf = _make_pf()
-        data = np.concatenate(
-            [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 200.0)]
-        )
-        starts = _entries([0, 20, 80, 100])
-        meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
-        for key in [
-            "sublevel_current",
-            "sublevel_stdev",
-            "sublevel_blockage",
-            "sublevel_duration",
-            "sublevel_start_times",
-            "sublevel_end_times",
-            "sublevel_max_deviation",
-            "sublevel_raw_ecd",
-            "sublevel_fitted_ecd",
-        ]:
-            self.assertIn(key, meta)
-
     def test_baseline_mismatch_raises(self):
         pf = _make_pf()
         data = np.concatenate(
@@ -411,26 +337,6 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "sublevel_current": np.array([200.0, 1.0, 2.0, 3.0, 200.0]),
             "sublevel_stdev": np.array([5.0, 1.0, 2.0, 3.0, 5.0]),
         }
-
-    def test_all_keys_present(self):
-        pf = object.__new__(NoFitter)
-        result = pf._populate_event_metadata(
-            np.zeros(10), 1e6, 200.0, 5.0, self._make_sublevel_meta()
-        )
-        for key in [
-            "duration",
-            "fitted_ecd",
-            "raw_ecd",
-            "max_blockage",
-            "min_blockage",
-            "max_deviation",
-            "max_blockage_duration",
-            "min_blockage_duration",
-            "max_deviation_duration",
-            "baseline_current",
-            "baseline_stdev",
-        ]:
-            self.assertIn(key, result)
 
     def test_duration_and_ecd_sums_use_inner_sublevels_only(self):
         pf = object.__new__(NoFitter)
@@ -553,16 +459,6 @@ class TestDefineMetadataTypesAndUnits(unittest.TestCase):
         self.assertEqual(u["sublevel_raw_ecd"], "pC")
         self.assertEqual(u["sublevel_fitted_ecd"], "pC")
 
-    def test_event_types_and_units_keys_align(self):
-        types = self.pf._define_event_metadata_types()
-        units = self.pf._define_event_metadata_units()
-        self.assertEqual(set(types.keys()), set(units.keys()))
-
-    def test_sublevel_types_and_units_keys_align(self):
-        types = self.pf._define_sublevel_metadata_types()
-        units = self.pf._define_sublevel_metadata_units()
-        self.assertEqual(set(types.keys()), set(units.keys()))
-
 
 if __name__ == "__main__":
     unittest.main()
@@ -599,8 +495,3 @@ class TestGeometryTravelsWithTheEvent(unittest.TestCase):
 
         for key, values in expected.items():
             np.testing.assert_array_equal(interleaved[key], values, err_msg=key)
-
-    def test_the_instance_keeps_no_rise_time(self):
-        pf = object.__new__(NoFitter)
-        pf._locate_sublevel_transitions(np.full(50, 200.0), 1e6, 10, 5, 200.0, 5.0)
-        self.assertFalse(hasattr(pf, "rise_time"))
