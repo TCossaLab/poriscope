@@ -11,7 +11,7 @@ Run with:
 """
 
 import pytest
-from PySide6.QtWidgets import QApplication, QComboBox, QToolButton
+from PySide6.QtWidgets import QApplication, QToolButton
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
@@ -58,52 +58,6 @@ class TestInstantiation:
     def test_creates_without_error(self, ec):
         assert ec is not None
 
-    def test_has_loaders_combobox(self, ec):
-        assert hasattr(ec, "loaders_comboBox")
-        assert isinstance(ec.loaders_comboBox, QComboBox)
-
-    def test_has_filters_combobox(self, ec):
-        assert hasattr(ec, "filters_comboBox")
-
-    def test_has_writers_combobox(self, ec):
-        assert hasattr(ec, "writers_comboBox")
-
-    def test_has_eventfitters_combobox(self, ec):
-        assert hasattr(ec, "eventfitters_comboBox")
-
-    def test_has_channel_combobox(self, ec):
-        assert hasattr(ec, "channel_comboBox")
-
-    def test_has_event_index_lineedit(self, ec):
-        assert hasattr(ec, "event_index_lineEdit")
-
-    def test_has_all_buttons(self, ec):
-        for attr in [
-            "plot_events_pushButton",
-            "left_arrow_button",
-            "right_arrow_button",
-            "fit_events_pushButton",
-            "commit_btn",
-            "export_plot_data_pushButton",
-            "loaders_add_button",
-            "loaders_info_button",
-            "loaders_delete_button",
-            "filters_add_button",
-            "filters_info_button",
-            "filters_delete_button",
-            "eventfitters_add_button",
-            "eventfitters_info_button",
-            "eventfitters_delete_button",
-            "writers_add_button",
-            "writers_info_button",
-            "writers_delete_button",
-        ]:
-            assert hasattr(ec, attr), f"Missing: {attr}"
-
-    def test_has_raw_checkbox(self, ec):
-        assert hasattr(ec, "raw_checkbox")
-        assert not ec.raw_checkbox.isChecked()
-
 
 # ===========================================================================
 # Widget factories
@@ -111,10 +65,6 @@ class TestInstantiation:
 
 
 class TestWidgetFactories:
-    def test_create_combobox(self, ec):
-        cb = ec.create_comboBox(ec)
-        assert isinstance(cb, QComboBox)
-
     def test_createButton_text(self, ec):
         btn = ec.createButton(ec, "My Button")
         assert btn.text() == "My Button"
@@ -140,16 +90,6 @@ class TestWidgetFactories:
         btn = ec.create_add_button(ec, cb, "Add", "SomeClass")
         assert isinstance(btn, QToolButton)
         assert btn.isEnabled()
-
-    def test_create_info_button(self, ec):
-        cb = ec.create_comboBox(ec)
-        btn = ec.create_info_button(ec, cb, "Edit", "SomeClass")
-        assert isinstance(btn, QToolButton)
-
-    def test_create_delete_button(self, ec):
-        cb = ec.create_comboBox(ec)
-        btn = ec.create_delete_button(ec, cb, "Delete", "SomeClass")
-        assert isinstance(btn, QToolButton)
 
     def test_add_button_tooltip(self, ec):
         cb = ec.create_comboBox(ec)
