@@ -88,6 +88,22 @@ def test_the_experiment_and_its_channels_reach_the_panel(tab: Triad) -> None:
     assert controls.channel_comboBox.getSelectedItems() == [str(c) for c in range(16)]
 
 
+def test_the_edit_and_delete_buttons_follow_the_experiment_list(tab: Triad) -> None:
+    """
+    The panel refills its experiment list with the combobox's signals blocked, which hides
+    the ``currentIndexChanged`` the edit and delete buttons re-check on - so registering
+    the first experiment left both greyed out, and removing the last left both live on
+    "No Experiment". The refill has to refresh them itself.
+    """
+    controls = tab.tab_view.conditioningcontrols
+    buttons = (controls.loader_info_button, controls.loader_delete_button)
+    assert [button.isEnabled() for button in buttons] == [True, True]
+    controls.update_loaders([])
+    assert [button.isEnabled() for button in buttons] == [False, False]
+    controls.update_loaders([LOADER])
+    assert [button.isEnabled() for button in buttons] == [True, True]
+
+
 def test_a_plot_computes_in_the_background_then_draws_every_channel(
     qtbot: Any, tab: Triad, panel: List[str]
 ) -> None:

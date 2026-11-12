@@ -199,6 +199,9 @@ class ConditioningControls(MetaControls):
         if current in options:
             self.loader_comboBox.setCurrentText(current)
         self.loader_comboBox.blockSignals(False)
+        # The blocked signals include the currentIndexChanged these buttons re-check on.
+        self.toggle_info_button(self.loader_info_button, self.loader_comboBox)
+        self.toggle_info_button(self.loader_delete_button, self.loader_comboBox)
         self._on_loader_changed()
 
     def update_channels(self, channels: Sequence[int]) -> None:
