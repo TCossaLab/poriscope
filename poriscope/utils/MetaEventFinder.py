@@ -1079,6 +1079,45 @@ class MetaEventFinder(BaseDataPlugin):
             start = stop - run + 1
             span *= 2
 
+    @log(logger=logger)
+    def _next_threshold_crossing(
+        self,
+        data: npt.NDArray[np.float64],
+        index: int,
+        threshold: float,
+        below: bool,
+    ) -> Optional[int]:
+        """
+        Find the first sample at or after ``index`` that is past the threshold.
+
+        Searches forward in slices that double in size: comparing the whole rest of the
+        chunk instead made every event cost a pass over everything after it. A crossing
+        is one sample, so the slices need not overlap.
+
+        :param data: the normalised chunk
+        :type data: npt.NDArray[np.float64]
+        :param index: where to start looking
+        :type index: int
+        :param threshold: the threshold, in the chunk's units
+        :type threshold: float
+        :param below: True for the first sample below the threshold, False for above
+        :type below: bool
+        :return: the crossing's index in the chunk, or None if the chunk ends first
+        :rtype: Optional[int]
+        """
+        start = index
+        span = 1024
+        length = len(data)
+        while start < length:
+            stop = min(length, start + span)
+            window = data[start:stop]
+            crossed = window < threshold if below else window > threshold
+            if crossed.any():
+                return start + int(np.argmax(crossed))
+            start = stop
+            span *= 2
+        return None
+
     # Shared implementation offered to subclasses, not part of the API a plugin author
     # must supply. ``_get_baseline_stats`` above stays abstract so every finder still
     # decides for itself which part of a chunk counts as baseline; the two methods below

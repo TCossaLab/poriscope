@@ -507,6 +507,66 @@ class TestEventBoundariesFromTheBaseline:
                     )
 
 
+class TestNextThresholdCrossing:
+    """
+    ``_next_threshold_crossing`` finds the first sample past the threshold from an index.
+
+    It searches forward in slices that double in size instead of comparing the whole
+    rest of the chunk for every event; the whole-rest ``argmax`` below is the rule it
+    must still give, at every offset around the first three slice seams.
+    """
+
+    _SEAM_OFFSETS = (
+        list(range(0, 4))
+        + list(range(1020, 1030))
+        + list(range(3068, 3078))
+        + list(range(7164, 7174))
+    )
+
+    @staticmethod
+    def _whole_rest(data, index, threshold, below):
+        crossed = data[index:] < threshold if below else data[index:] > threshold
+        position = int(np.argmax(crossed))
+        if position == 0 and not crossed[0]:
+            return None
+        return index + position
+
+    def test_a_crossing_at_every_offset_around_the_slice_seams(self, bare_finder):
+        for index in (0, 5):
+            for offset in self._SEAM_OFFSETS:
+                below = np.zeros(9000)
+                below[index + offset] = -10.0
+                above = np.full(9000, -10.0)
+                above[index + offset] = 0.0
+                assert bare_finder._next_threshold_crossing(
+                    below, index, -3.0, below=True
+                ) == self._whole_rest(below, index, -3.0, True), (index, offset)
+                assert bare_finder._next_threshold_crossing(
+                    above, index, -3.0, below=False
+                ) == self._whole_rest(above, index, -3.0, False), (index, offset)
+
+    def test_no_crossing_before_the_chunk_ends_is_none(self, bare_finder):
+        data = np.zeros(5000)
+        assert bare_finder._next_threshold_crossing(data, 10, -3.0, below=True) is None
+        assert bare_finder._next_threshold_crossing(data, 10, 3.0, below=False) is None
+
+    def test_it_matches_the_whole_rest_on_noise(self, bare_finder):
+        rng = np.random.default_rng(1)
+        for size in (1, 2, 1023, 1024, 1025, 5000):
+            data = rng.standard_normal(size) * 2.0
+            data[rng.integers(0, size, size // 50 + 1)] = np.nan
+            for _ in range(30):
+                index = int(rng.integers(0, size))
+                for below, threshold in ((True, -3.0), (False, 3.0)):
+                    assert bare_finder._next_threshold_crossing(
+                        data, index, threshold, below=below
+                    ) == self._whole_rest(data, index, threshold, below), (
+                        size,
+                        index,
+                        below,
+                    )
+
+
 class TestShippedFindersPlaceBoundariesAtTheEdges:
     """Each shipped finder's chunk method hands the base's boundary rule its crossings."""
 
