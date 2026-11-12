@@ -85,7 +85,8 @@ jobs:
         run: |
           pre-commit run --all-files
 
-      # Runs the whole suite - no marker filter. ~6 minutes.
+      # Runs the whole suite - no marker filter - in parallel, with workers sized by
+      # tests/conftest.py from the runner's cores and memory.
       - name: Run tests under Xvfb
         run: |
-          xvfb-run -a pytest -q
+          xvfb-run -a pytest -q -n auto

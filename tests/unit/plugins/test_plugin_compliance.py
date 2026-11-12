@@ -321,7 +321,11 @@ def _return_type_compatible(base_t: Any, sub_t: Any) -> bool:
 compliance_test_cases: List[Tuple[str, Type]] = []
 for base_name, base_info in BASE_CLASS_DATA.items():
     base_cls = base_info["class"]
-    for plugin_cls in get_all_subclasses(base_cls):
+    # Sorted, because a set's order differs between interpreters and every pytest-xdist
+    # worker must collect the same tests in the same order.
+    for plugin_cls in sorted(
+        get_all_subclasses(base_cls), key=lambda c: (c.__module__, c.__qualname__)
+    ):
         compliance_test_cases.append((base_name, plugin_cls))
 
 

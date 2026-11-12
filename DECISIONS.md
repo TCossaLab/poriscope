@@ -18,6 +18,26 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - The suite runs in parallel by whole files, workers sized by logical cores and free memory
+
+**Context.** After the window cleanup, a serial run took 493-517 s. With `pytest-xdist` and
+`--dist loadfile`: 128 s at 4 workers, 98 s at 16, all green; one worker peaked at 1.9 GB.
+
+**Decision.** `pytest -n auto` is the gate, locally and on CI; plain `pytest` stays serial.
+`--dist loadfile` is in `addopts`, so a file keeps its order on one worker (leaked Qt state has
+made order matter before). The root conftest's `pytest_xdist_auto_num_workers` returns
+`min(logical cores, free memory // 2 GB)`. Logical, because a 4-vCPU runner reports 2 physical
+cores; memory, because 16 workers do not fit 13 GB free. `psutil` is a dev dependency for the
+memory reading. `test_plugin_compliance` sorts its cases, since workers must collect identically.
+
+**Rejected.** `-n auto` in `addopts`: every single-test run would start a pool of Qt workers.
+`--dist load` (per test): it splits files, reorders them, and runs module fixtures once per worker.
+
+**Revisit if** the longest file stops setting the floor (`test_replay_guard_no_gui.py`, 45 s), or
+a worker's peak memory moves far from 2 GB.
+
+---
+
 ## 2026-11-12 - A release with any breaking change is a major version; the 2.1 work ships as 3.0
 
 **Context.** The 2.1 changelog carries about 36 breaking lines (2.0.0 had 54; the 1.x minors 0-2):

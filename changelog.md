@@ -162,6 +162,8 @@
 
 * The test suite deletes every window a test leaves behind and fails a test whose window survives, which cuts a serial run from about 27 minutes to 8
 
+* `pytest -n auto` runs the suite in parallel, one file per worker, with the workers sized from the machine's cores and free memory; CI runs it this way, in about 2 minutes on the dev machine
+
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on

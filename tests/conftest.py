@@ -18,6 +18,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import psutil
 import pytest
 
 from tests._window_cleanup import destroy_leftover_windows
@@ -77,6 +78,34 @@ def sandbox_user_data_dir(monkeypatch, tmp_path):
             _fake_user_data_dir,
             raising=True,
         )
+
+
+# One worker's peak memory, rounded up: 1.9 GB measured on 2026-11-12 with four workers
+# over tests/integration and tests/unit/views, the heaviest directories.
+_WORKER_MEMORY_BYTES = 2 * 1024**3
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config):
+    """
+    Size ``pytest -n auto`` from this machine: one worker per logical core, but no more
+    workers than the available memory holds.
+
+    Logical rather than physical cores, because a 4-vCPU CI runner reports two physical
+    cores. Every worker loads Qt, matplotlib and the session's synthetic data, so memory
+    is the tighter limit on a many-core desktop. ``PYTEST_XDIST_AUTO_NUM_WORKERS`` still
+    overrides the count: returning ``None`` defers to xdist's own hook, which reads it.
+
+    :param config: the pytest configuration
+    :type config: pytest.Config
+    :return: the number of workers, or None to let xdist decide
+    :rtype: Optional[int]
+    """
+    if os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    cores = os.cpu_count() or 1
+    by_memory = psutil.virtual_memory().available // _WORKER_MEMORY_BYTES
+    return max(1, min(cores, int(by_memory)))
 
 
 @pytest.fixture(autouse=True)

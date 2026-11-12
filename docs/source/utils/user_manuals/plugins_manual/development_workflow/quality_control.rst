@@ -616,7 +616,7 @@ exclusions, and ``mypy.ini`` enforces that:
 Test Suite Configuration
 -------------------------
 
-``pytest.ini`` is the only pytest configuration in the repository. Three settings there are
+``pytest.ini`` is the only pytest configuration in the repository. Four settings there are
 worth knowing about before you add tests:
 
 - ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
@@ -628,6 +628,11 @@ worth knowing about before you add tests:
   the number.**
 - ``--strict-markers`` — an unregistered marker name is a collection error rather than an
   expression that matches nothing. Register any new marker in the ``markers`` list.
+- ``--dist loadfile`` — under ``-n``, each test file runs whole on one worker, in its own
+  order. Splitting a file across workers would reorder its tests, and leaked Qt state has
+  made order matter in this suite before. Every worker must also collect the same tests in
+  the same order, so a parametrization built from a set or a dict of classes has to be
+  sorted.
 - ``pythonpath = .`` — puts the repository root on ``sys.path`` so the shared test helpers
   (``tests/unit/views/_qt_mocks.py``, ``tests/e2e/_helpers.py``, the
   ``tests/synthetic_data/`` generators) are importable as ``tests.<module>``. The editable
@@ -660,7 +665,7 @@ Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` ext
    pytest --cov=poriscope --cov-report=term-missing
 
 Run it deliberately when you want the number. No CI workflow collects coverage: the plain
-``pytest`` invocation is the gate everywhere, and coverage instrumentation would slow every
+``pytest -n auto`` invocation is the gate everywhere, and coverage instrumentation would slow every
 run for a figure nothing acts on.
 
 .. _plugin_compliance_testing:
@@ -1633,13 +1638,18 @@ branch push:
 
 .. code-block:: bash
 
-   pytest
+   pytest -n auto
 
 There is no subset and no marker filter: CI runs the whole suite everywhere, e2e tests
-included. A full run takes about 25 minutes, locally and on CI (2026-11-11).
+included. ``-n auto`` runs it in parallel through ``pytest-xdist``, one test file per
+worker at a time. ``tests/conftest.py`` chooses the number of workers from your machine:
+one per logical core, but no more than your free memory holds at about 2 GB each. Set
+``PYTEST_XDIST_AUTO_NUM_WORKERS`` to choose the number yourself. On a 22-core desktop with
+13 GB free that is six workers and about two minutes (2026-11-12); plain ``pytest`` runs the
+same suite serially in about nine.
 
-For per-marker counts and mean
-durations, run ``pytest --marker-stats``.
+For per-marker counts and mean durations, run ``pytest --marker-stats``, serially: under
+``-n`` the main process collects no tests, so it has nothing to report.
 
 ☐ **5. Check that the documentation still renders.**
 
