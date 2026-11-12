@@ -416,6 +416,96 @@ class TestEventBoundariesFromTheBaseline:
         data[60:] = -20.0
         assert bare_finder._event_end_from_the_baseline(data, 61) is None
 
+    # The helpers search outward from the crossing in slices that double in size, each
+    # overlapping the last by a run less one sample, rather than scanning the whole
+    # chunk per event. The whole-chunk scan below is the rule they must still give; the
+    # quiet runs are placed at every offset around the first three slice seams, which is
+    # where a wrong overlap would lose a window.
+    _SEAM_OFFSETS = (
+        list(range(1, 12))
+        + list(range(1015, 1030))
+        + list(range(3060, 3080))
+        + list(range(7150, 7175))
+    )
+
+    @staticmethod
+    def _whole_chunk_start(finder, data, crossing, lower_bound):
+        run = finder.EDGE_RUN_SAMPLES
+        within = np.abs(data[: crossing + 1]) <= finder.EDGE_BAND_SIGMA
+        if within.size < run:
+            return max(lower_bound, 0)
+        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
+        candidates = np.flatnonzero(quiet[max(lower_bound, 0) :])
+        if candidates.size == 0:
+            return max(lower_bound, 0)
+        return int(max(lower_bound, 0) + candidates[-1] + run)
+
+    @staticmethod
+    def _whole_chunk_end(finder, data, crossing):
+        run = finder.EDGE_RUN_SAMPLES
+        within = np.abs(data[crossing:]) <= finder.EDGE_BAND_SIGMA
+        if within.size < run:
+            return None
+        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
+        candidates = np.flatnonzero(quiet)
+        if candidates.size == 0:
+            return None
+        return int(crossing + candidates[0])
+
+    def test_the_start_matches_a_whole_chunk_scan_at_every_slice_seam(
+        self, bare_finder
+    ):
+        for crossing in (9000, 8990, 12000):
+            for lower_bound in (0, 5):
+                for offset in self._SEAM_OFFSETS:
+                    data = np.full(12001, 10.0)
+                    data[crossing - offset : crossing - offset + 3] = 0.0
+                    assert bare_finder._event_start_from_the_baseline(
+                        data, crossing, lower_bound
+                    ) == self._whole_chunk_start(
+                        bare_finder, data, crossing, lower_bound
+                    ), (
+                        crossing,
+                        lower_bound,
+                        offset,
+                    )
+
+    def test_the_end_matches_a_whole_chunk_scan_at_every_slice_seam(self, bare_finder):
+        for crossing in (0, 7):
+            for offset in self._SEAM_OFFSETS:
+                data = np.full(9000, 10.0)
+                data[crossing + offset : crossing + offset + 3] = 0.0
+                assert bare_finder._event_end_from_the_baseline(
+                    data, crossing
+                ) == self._whole_chunk_end(bare_finder, data, crossing), (
+                    crossing,
+                    offset,
+                )
+
+    def test_both_match_a_whole_chunk_scan_on_noise(self, bare_finder):
+        rng = np.random.default_rng(0)
+        for size in (1, 2, 3, 50, 1023, 1024, 1025, 5000):
+            for scale in (0.5, 3.0):
+                data = rng.standard_normal(size) * scale
+                for _ in range(20):
+                    crossing = int(rng.integers(0, size + 2))
+                    lower_bound = int(rng.integers(-3, size + 2))
+                    assert bare_finder._event_start_from_the_baseline(
+                        data, crossing, lower_bound
+                    ) == self._whole_chunk_start(
+                        bare_finder, data, crossing, lower_bound
+                    ), (
+                        size,
+                        crossing,
+                        lower_bound,
+                    )
+                    assert bare_finder._event_end_from_the_baseline(
+                        data, crossing
+                    ) == self._whole_chunk_end(bare_finder, data, crossing), (
+                        size,
+                        crossing,
+                    )
+
 
 class TestShippedFindersPlaceBoundariesAtTheEdges:
     """Each shipped finder's chunk method hands the base's boundary rule its crossings."""

@@ -206,6 +206,10 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Fitter performance and logging
 
+- **Finders' crossing searches scan the whole rest of the chunk per event** (2026-11-12):
+  `np.argmax(data[index:] < threshold)` at `ClassicBlockageFinder.py:191,207` and
+  `ThresholdBlockageFinder.py:162,171`, so a chunk costs O(N x E). 12M samples, 1000 events: 8.9 s, 7.5 s
+  of it these scans. Search forward in growing slices, as `MetaEventFinder`'s edge helpers now do.
 - **CUSUM costs 6.3 µs per sample, flat from 2k to 200k** (1.3 s for a 200k-sample
   event), holding the GIL, so per-channel threads give no multi-channel speedup;
   `IntraCUSUM.py:151` adds a second per-sample loop. JIT or C-port behind a golden ratchet.

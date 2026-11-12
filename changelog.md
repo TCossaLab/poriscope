@@ -320,6 +320,8 @@
 
 * Metadata databases are now indexed, making filtered metadata plots and clearing a channel much faster; existing databases are indexed when first opened
 
+* Event finding places each event's edges without scanning the whole chunk, so a chunk with many events is found much faster (12 million samples with 100 events: 15.8 s to 0.9 s), with identical events
+
 * A metadata database containing tables Poriscope does not know (for example after running `ANALYZE` on it) now opens instead of being refused
 
 * Metadata databases now record their schema version, and one created by a newer Poriscope is refused with a message instead of being misread
