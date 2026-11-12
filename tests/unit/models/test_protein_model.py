@@ -15,8 +15,6 @@ Run with:
     pytest test_protein_model.py --cov=poriscope --cov-report=html
 """
 
-import warnings
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -206,14 +204,6 @@ class TestFitDoubleGaussian:
         popt, pcov = model._fit_double_gaussian(x, y)
         assert popt is not None and len(popt) == 6
 
-    def test_single_peak_fallback_degenerate_bug(self, model):
-        # BUG: fallback produces a degenerate two-component fit at the same position
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        popt, _ = model._fit_double_gaussian(x, y)
-        assert popt is not None and len(popt) == 6
-        assert abs(popt[1] - popt[4]) < 0.05
-
     def test_flat_returns_none(self, model):
         x = np.linspace(0, 1, 100)
         popt, _ = model._fit_double_gaussian(x, np.zeros_like(x))
@@ -280,24 +270,21 @@ class TestFitAndSanityCheckDoubleGaussian:
         x = np.linspace(0, 1, 100)
         assert model._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
 
-    def test_single_peak_behaviour_documented(self, model):
-        # Documents that single-peak input may pass or fail the sanity check
+    @pytest.mark.parametrize("width", [0.03, 0.05, 0.1])
+    def test_a_single_peak_is_not_two_populations(self, model, width):
+        # On a clean single peak the fallback can return a second component of zero
+        # width on top of the first. A component narrower than half a bin cannot be
+        # resolved from the histogram, so the fit counts as finding one population.
         x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        result = model._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or (
-            len(result) == 6 and abs(result[1] - result[4]) < 0.05
-        )
+        y = np.exp(-((x - 0.5) ** 2) / (2 * width**2))
+        assert model._fit_and_sanity_check_double_gaussian(x, y) is None
 
-    def test_dominated_peak_behaviour_documented(self, model):
-        # BUG: dominated-peak guard is unreliable when fallback co-locates both
-        # components. This is the same observation as the amplitude-ratio guard
-        # never firing in TestFitAndSanityCheckDoubleGaussian above - the repo had
-        # already recorded it here, which is why it is not filed as a new finding.
+    def test_a_dominated_peak_is_not_two_populations(self, model):
+        # A second peak a thousandth of the first: the fit collapses onto the first
+        # with a zero-width component, which is not a second population either.
         x = np.linspace(0, 1, 300)
         y = model._double_gaussian(x, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02)
-        result = model._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or len(result) == 6
+        assert model._fit_and_sanity_check_double_gaussian(x, y) is None
 
     def test_roundtrip_residuals(self, model):
         x, y = _make_double_gaussian_histogram()
@@ -949,13 +936,11 @@ class TestComputeTheoreticalBlockages:
         with pytest.raises(ValueError, match="Cannot mix"):
             model._compute_theoretical_blockages(V, m, self.D, self.L)
 
-    def test_negative_m_silent_nan_bug(self, model):
-        # BUG: negative m satisfies all(m<=1) so the ValueError guard is never reached
+    def test_a_negative_form_factor_is_refused(self, model):
+        # A negative m also satisfies all(m <= 1), so the check has to come first.
         V, m = np.array([500.0]), np.array([-1.0])
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.any(np.isnan(dmax)) or np.any(np.isinf(dmax))
+        with pytest.raises(ValueError, match="negative form factors"):
+            model._compute_theoretical_blockages(V, m, self.D, self.L)
 
     def test_single_element(self, model):
         V, m = np.array([500.0]), np.array([3.0])

@@ -18,6 +18,23 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - A Protein double-Gaussian component narrower than half a bin is no second population
+
+**Context.** `ProteinModel._fit_and_sanity_check_double_gaussian` accepted, on a clean single peak
+(sigma 0.05 or 0.1 over 200 bins) and on a peak 1000x a second, a fit whose second component had
+sigma 0 on top of the first: the degenerate covariance passed the t-test on the means. A noisy single
+peak was rejected. `test_single_peak_fallback_degenerate_bug` pinned the raw helper's output.
+
+**Decision** (Kyle, 2026-11-12: "a zero-width component fit should be treated like failure to find two
+populations"). The sanity check rejects a fit whose narrower component has sigma under half a bin
+(FWHM under about 1.2 bins), the resolution limit of the histogram it was fitted to. The raw
+`_fit_double_gaussian` is unchanged; every acceptance rule stays in the sanity check.
+
+**Revisit if** a real dataset has a population genuinely narrower than one bin: then the binning, not
+this rule, is what should change.
+
+---
+
 ## 2026-11-12 - The suite runs in parallel by whole files, workers sized by logical cores and free memory
 
 **Context.** After the window cleanup, a serial run took 493-517 s. With `pytest-xdist` and

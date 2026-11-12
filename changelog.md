@@ -32,6 +32,8 @@
 
 * An Assisted filter that starts with `SELECT` is now refused, saying to use Raw SQL mode; it used to be put inside the `WHERE` as a subquery, where a one-column query was accepted and selected events by an unrelated test
 
+* **The Protein tab no longer reports a two-population fit whose second component is narrower than half a bin:** on a clean single peak, or one peak dominating another, the fit could place a zero-width component on the first; it now counts as finding one population, as a noisy single peak always did
+
 #### Data plugin API:
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
@@ -197,6 +199,8 @@
 ### Analysis Tabs:
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
+
+* `ProteinModel._compute_theoretical_blockages` raises for a negative form factor, as its docstring says, instead of returning NaN
 
 * `MetaView.noise_shade` colours a noise value green, orange or red against two thresholds, for every tab that shades a PSD by its 1 Hz noise
 
