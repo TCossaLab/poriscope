@@ -174,6 +174,8 @@
 
 ### Data Plugin API:
 
+* `MetaEventFitter.reset_channel` no longer forces a full garbage collection, which took seconds in a large session
+
 * `SingleBinaryDecoder` reads its format settings through `_binary_setting`, so a subclass fixes one by deleting its key and overriding `SETTING_DEFAULTS`
 
 * **New data-plugin family: `MetaConditioningLoader`**, in `poriscope/plugins/conditioningloaders/`, reads a pore conditioning experiment: each channel's pore size per cycle and the PSD recordings taken along the way; it is in `poriscope.exposed` and `scripts/new_plugin.py`

@@ -24,7 +24,6 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
-import gc
 import logging
 from abc import abstractmethod
 from collections.abc import Sized
@@ -351,7 +350,6 @@ class MetaEventFitter(BaseDataPlugin):
             self.eventfitting_status[channel] = False
         except KeyError:
             pass
-        gc.collect()
 
     @log(logger=logger)
     def get_samplerate(self, channel: int) -> float:
