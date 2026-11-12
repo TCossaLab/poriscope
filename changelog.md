@@ -174,6 +174,8 @@
 
 * `scripts/new_plugin.py` parses each base module once per run instead of once per generated method
 
+* The duplication ratchet names the functions a rise newly duplicated, and says that a rise is usually a copy to remove rather than a reason to run `--update`
+
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on

@@ -1286,8 +1286,11 @@ landing there could be duplicated invisibly. One method already had been.
 
 ``scripts/measure_duplication.py`` counts, per family, how many function bodies are
 byte-identical across more than one file and how many lines would be deleted by promoting
-one copy to a shared base. ``.duplication-baseline.json`` records those counts, and
-``tests/unit/scripts/test_duplication_ratchet.py`` fails if the measurement disagrees.
+one copy to a shared base. ``.duplication-baseline.json`` records those counts and names
+each duplicated function, and ``tests/unit/scripts/test_duplication_ratchet.py`` fails if
+the measurement disagrees. A rise lists the functions it newly duplicated: that is usually
+a copy to remove, and ``--update`` is only for duplication you meant to add. The names are
+never compared, so renaming a duplicated function fails nothing.
 
 .. code-block:: bash
 

@@ -18,6 +18,23 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - The duplication baseline names the duplicated functions; tests that only pinned a copy go
+
+**Context.** The test-value audit found six tests asserting that a base class owns the only copy
+of a method. Each failed together with the duplication ratchet when a copy was pasted into a
+subclass, but the ratchet's failure invited `--update`, and the baseline held counts only, so it
+could not say what had been copied.
+
+**Decision** (Kyle left the redundancy to Claude, 2026-11-12). The ratchet is the single guard: the
+baseline also lists each family's `duplicated_functions` (`file.py:Class.method`), a rise names the
+ones that are new, and its message says a rise is usually a copy to remove. The names are never
+compared, so a rename does not churn the baseline. The per-method "only copy" tests are dropped.
+
+**Revisit if** a copy lands through `--update` unnoticed: then an explicit per-method test is worth
+its upkeep for that method.
+
+---
+
 ## 2026-11-12 - A Protein double-Gaussian component narrower than half a bin is no second population
 
 **Context.** `ProteinModel._fit_and_sanity_check_double_gaussian` accepted, on a clean single peak
