@@ -23,7 +23,7 @@
 # Contributors:
 # Kyle Briggs
 # Alejandra Carolina González González
-# Michelle Stephen
+# Michel Stephan
 
 import json
 import logging

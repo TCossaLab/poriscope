@@ -165,7 +165,7 @@ for 125, or a segment one sample short.
 
 ## 2026-11-11 - The conditioning app is ported as a data-plugin family, an NI reader, a Raw Data option and a tab
 
-**Context.** The lab's tkinter conditioning script (Michelle Stephen) read a folder - pore-size CSV, PSD `.bin`
+**Context.** The lab's tkinter conditioning script (Michel Stephan) read a folder - pore-size CSV, PSD `.bin`
 files per bias - computed each file's 1 Hz noise and plotted it beside the pore size; a second script did one file's
 PSD with the fit. No tab reads input files, no family fits the CSV, and `MetaReader` joins a folder's files into one
 timeline, while one of the 142 sample files is short (67,000 of 100,000 frames), so file boundaries cannot be found

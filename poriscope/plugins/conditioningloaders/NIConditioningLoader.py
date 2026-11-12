@@ -22,7 +22,7 @@
 #
 # Contributors:
 # Kyle Briggs
-# Michelle Stephen
+# Michel Stephan
 
 import logging
 import re
