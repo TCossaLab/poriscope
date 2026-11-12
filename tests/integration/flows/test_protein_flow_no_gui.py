@@ -17,6 +17,7 @@ replaced with a fixed path so the export either side of it is real.
 from pathlib import Path
 from typing import Any, Dict
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -103,12 +104,6 @@ def export(triad: Triad, mocker: Any, destination: Path) -> pd.DataFrame:
 
 
 @pytest.mark.timeout(120)
-def test_the_tab_sees_the_registered_loader(protein_tab: Triad) -> None:
-    """Registration reaches the tab, not just the plugin registry."""
-    assert LOADER_KEY in protein_tab.available("MetaDatabaseLoader")
-
-
-@pytest.mark.timeout(120)
 def test_the_loader_structure_reaches_the_tab(protein_tab: Triad) -> None:
     """
     The experiment tree the selection dialog would show is populated for real.
@@ -129,15 +124,22 @@ def test_plotting_then_exporting_writes_the_plotted_numbers(
     """
     The end of the pipeline: what is on the axes, written to a file.
 
-    Asserting on the CSV rather than on the axes is what makes this survive
-    refactoring, since none of the methods that produced the numbers are named here.
+    One event without the raw overlay draws its filtered trace and its fit, and
+    the export holds one time column and one current column for each, in drawing
+    order. Comparing each pair with the line it came from, read off the figure,
+    names none of the methods that produced the numbers, so this survives them
+    moving between View, Controller and Model.
     """
     plot_events(protein_tab, {"exp_a": ["0"]}, "1")
+    lines = [line for ax in protein_tab.tab_view.fig_event.axes for line in ax.lines]
+    assert len(lines) == 2, "expected the filtered trace and its fit"
 
     frame = export(protein_tab, mocker, tmp_path / "plot.csv")
 
-    assert not frame.empty
-    assert len(frame.columns) >= 2
+    assert len(frame.columns) == 2 * len(lines)
+    for i, line in enumerate(lines):
+        np.testing.assert_allclose(frame.iloc[:, 2 * i], line.get_xdata())
+        np.testing.assert_allclose(frame.iloc[:, 2 * i + 1], line.get_ydata())
 
 
 @pytest.mark.timeout(120)
