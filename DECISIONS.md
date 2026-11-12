@@ -18,6 +18,24 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - A release with any breaking change is a major version; the 2.1 work ships as 3.0
+
+**Context.** The 2.1 changelog carries about 36 breaking lines (2.0.0 had 54; the 1.x minors 0-2):
+the data-plugin contract (`report_status` with no alias, `close_resources`, `reset_channel`,
+`get_single_event_data`), refused 2.0 plot configurations and action histories, and changed
+scientific results. The wheel declares compatible-release ranges, so a `poriscope~=2.0` pin would
+install it and break. The 2026-10-09 ruling had shipped the plugin breaks in a minor anyway.
+
+**Decision** (Kyle, 2026-11-12). Release numbers follow semantic versioning: a release whose
+`changelog.md` section has any entry under Breaking Changes - API, saved files or results - is a
+major version; compatible additions are a minor; fixes that break nothing are a patch. The in-progress
+2.1.0 is renamed 3.0.0, queued in `future_fixes.md` after the test-suite speed work.
+
+**Revisit if** the project moves to a different scheme, such as calendar versions. Until then,
+read the release's Breaking Changes section before choosing its number.
+
+---
+
 ## 2026-11-12 - Qt windows are deleted after every test at root scope, and a survivor fails the test
 
 **Context.** A full serial run took 1,650 s. `Triad.close()` only hid its `MainView`, so the
@@ -2008,7 +2026,8 @@ is in `future_fixes.md`. Decision C closes at 3 of 5 taken (`raw_data`, `_write_
 deferred channel work is picked up - it breaks every plugin, so it wants a major version.
 
 **Landed in 2.1, step 8, with a different design** (Kyle, 2026-10-09; shipped in a minor
-version regardless, each break marked in `changelog.md`). One `report_status(channel=None,
+version regardless, each break marked in `changelog.md` - superseded 2026-11-12: the release is
+3.0, under the release-number convention below). One `report_status(channel=None,
 init=False)` on `BaseDataPlugin` for every plugin, `report_channel_status` removed with no
 alias ("I do not want multiple paths to getting plugin reports"); `close_resources()` takes no
 channel and is a concrete no-op, overridden only by the two SQLite writers; `reset_channel

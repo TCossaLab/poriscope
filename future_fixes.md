@@ -118,6 +118,10 @@ Step 10 waits for both tracks.
 
 ### Step 10 - docs dead-link gate and release prep
 
+- **Rename the release 2.1.0 to 3.0.0, after the test-suite speed series lands (2026-11-12).** Breaking
+  changes make it a major (DECISIONS 2026-11-12): the `changelog.md` header, this file's "2.1" headers
+  and references, the plan artifact, the Step 10 compatibility page, then `constants.py` and
+  `CITATION.cff` at the release bump.
 - **Settle how every saved format is versioned, before 2.1 merges to main (2026-11-09).** One policy for
   every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
   whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
