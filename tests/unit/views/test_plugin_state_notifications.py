@@ -13,26 +13,24 @@ loosened any of the three conditions would make every tab refetch its columns on
 every unrelated plugin event, which is invisible in a test that only checks the
 happy path.
 
-**Not a redundant override.** It is tempting to read RawData's and
-EventAnalysis's overrides of ``_factors`` and ``notify_plugin_state_changed`` as
-shadowing base versions they could inherit. That is true of ``_factors``,
-which is concrete on ``MetaView``, and **false of this method**, which is
-``@abstractmethod`` there. Their ``pass`` bodies are required by the ABC, not
-redundant, and deleting them would make both classes uninstantiable. That is
-asserted below so the claim cannot be acted on by mistake.
+**Not a redundant override.** ``notify_plugin_state_changed`` is
+``@abstractmethod`` on ``MetaView``, so the do-nothing bodies of the inert tabs are
+required by the ABC, not redundant; deleting them would make those classes
+uninstantiable. The recorded abstract surface in
+``tests/unit/plugins/test_mvc_base_contracts.py`` is what fails if the base stops
+declaring it abstract.
 """
 
-from typing import Any, Dict, List
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
-from PySide6.QtWidgets import QBoxLayout
 
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
-from poriscope.utils.MetaView import MetaView
 from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
@@ -63,8 +61,6 @@ def build(cls: type, controls_attr: str = "", selected: str = "") -> Any:
     :return: the view
     :rtype: Any
     """
-    from unittest.mock import MagicMock
-
     instance = cls.__new__(cls)
     shadow_signals(instance, cls)
     if controls_attr:
@@ -182,49 +178,3 @@ class TestTabsThatDeliberatelyDoNothing:
                 assert (
                     view.notify_plugin_state_changed(metaclass, "any", reason) is None
                 )
-
-
-class TestTheHookIsRequiredByTheBase:
-    """
-    Guards a tempting but wrong cleanup, so it cannot be acted on by mistake.
-
-    ``notify_plugin_state_changed`` looks like ``_factors``: an override that shadows
-    an inheritable base version. ``_factors`` is concrete on
-    ``MetaView``; this one is abstract, and its own docstring says it "must be
-    implemented by subclasses, even if the correct" response is to do nothing.
-    """
-
-    def test_the_base_declares_it_abstract(self) -> None:
-        """So the do-nothing bodies are mandatory, not redundant."""
-        assert "notify_plugin_state_changed" in MetaView.__abstractmethods__
-
-    def test_factors_by_contrast_is_concrete_on_the_base(self) -> None:
-        """The half of the claim that does hold."""
-        assert "_factors" not in MetaView.__abstractmethods__
-        assert "_factors" in MetaView.__dict__
-
-    def test_a_subclass_omitting_the_hook_cannot_be_instantiated(self) -> None:
-        """
-        The concrete consequence: deleting the do-nothing bodies breaks those tabs.
-
-        Instantiating is what raises, so this builds a subclass that implements
-        every other abstract method and checks the ABC still refuses it.
-        """
-
-        class _MissingHook(MetaView):
-            def _init(self) -> None:
-                """Present."""
-
-            def _set_control_area(self, layout: QBoxLayout) -> None:
-                """Present."""
-
-            def _reset_actions(self, axis_type: str = "2d") -> None:
-                """Present."""
-
-            def update_available_plugins(
-                self, available_plugins: Dict[str, List[str]]
-            ) -> None:
-                """Present."""
-
-        with pytest.raises(TypeError, match="notify_plugin_state_changed"):
-            _MissingHook()

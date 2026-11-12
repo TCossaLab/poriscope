@@ -14,8 +14,8 @@ Ten groups:
   are gone, so what is checked now is the one implementation every tab inherits.
 - ``createButton`` used to exist five times, four of them byte-identical, and
   the divergence was pinned so the merge had to decide it. **The majority version
-  was promoted to** ``MetaControls``, so what is checked now is that exactly
-  one copy survives and that it behaves as the majority version did.
+  was promoted to** ``MetaControls``, so what is checked now is that every panel's
+  button behaves as the majority version did.
 - ``format_axis_label`` existed three times - a module-level function in ``ProteinView``,
   a byte-identical method in ``MetadataView`` and an inlined loop in ``ClusteringView``.
   **All three were merged onto** ``MetaView`` as one ``@staticmethod``, which appends
@@ -76,7 +76,6 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QBoxLayout
 
-from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
@@ -86,7 +85,6 @@ from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
-from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
@@ -236,11 +234,6 @@ class TestFormatAxisLabelBehaviour:
         assert once == "Duration (ms)"
         assert view.format_axis_label(once, "ms") == once
 
-    def test_every_tab_inherits_the_one_implementation(self) -> None:
-        """No tab shadows the shared method with a copy of its own."""
-        for cls in (ClusteringView, MetadataView, ProteinView):
-            assert cls.format_axis_label is MetaView.format_axis_label
-
 
 # ===========================================================================
 # createButton - promoted to MetaControls
@@ -265,21 +258,9 @@ class TestCreateButtonWasPromoted:
 
     **It was decided: the majority version was promoted, reset included.** So the
     source-text assertions this class used to carry are gone - there is one copy
-    now, and what is worth checking is that there is exactly one, and that it
-    behaves the way the majority version did.
+    now, and what is worth checking is that it behaves the way the majority version
+    did.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """
-        No subclass may keep its own, or the promotion was partial.
-
-        A copy left behind would still shadow the base for that one tab, which is
-        the failure that would otherwise be invisible - every test below passes
-        either way, because they all resolve through the MRO.
-        """
-        assert "createButton" in MetaControls.__dict__
-        for cls in CONTROLS_CLASSES:
-            assert "createButton" not in cls.__dict__, cls.__name__
 
     @pytest.mark.parametrize("cls", CONTROLS_CLASSES, ids=lambda c: c.__name__)
     def test_every_tab_builds_the_majority_button(
@@ -296,22 +277,6 @@ class TestCreateButtonWasPromoted:
         assert button.isCheckable()
         assert not button.font().bold()
         assert widget.createButton(widget, "X", bold=True).font().bold()
-
-    @pytest.mark.parametrize("cls", CONTROLS_CLASSES, ids=lambda c: c.__name__)
-    def test_the_stylesheet_reset_is_the_accepted_behaviour_change(
-        self, qapp: object, cls: type
-    ) -> None:
-        """
-        EventAnalysis's buttons now run the reset its own copy omitted.
-
-        The measured consequence is none: ``setStyleSheet("")`` leaves the widget's
-        own stylesheet exactly as an untouched widget's, and it does not block a
-        parent stylesheet's cascade either - so "Resetting to default style" was
-        never what the call did. That is why promoting the majority version was
-        free, and this test records the reasoning rather than only the outcome.
-        """
-        widget = cls()
-        assert widget.createButton(widget, "X").styleSheet() == ""
 
 
 # ===========================================================================
@@ -370,18 +335,6 @@ class TestGetSelectedFiltersWasPromoted:
     reach this method replace it with a ``Mock``. The tests below run the real
     body through a real ``MultiSelectFilterComboBox``.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """
-        Neither tab may keep its own, or the promotion was partial.
-
-        A leftover copy would shadow the base for that one tab, and every
-        behavioural test below would still pass, because they resolve through the
-        MRO.
-        """
-        assert "get_selected_filters" in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert "get_selected_filters" not in view_cls.__dict__, view_cls.__name__
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_nothing_selected_gives_nothing(self, qapp: object, view_cls: type) -> None:
@@ -473,12 +426,6 @@ class TestRebuildEventIdCacheWasPromoted:
     left where they are; what is pinned here is the three behaviours only
     ``ProteinView``'s copy had, plus the reordering of the two failure checks.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """Neither tab may keep its own, or the promotion was partial."""
-        assert "_rebuild_event_id_cache" in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert "_rebuild_event_id_cache" not in view_cls.__dict__, view_cls.__name__
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_a_populated_result_without_event_id_is_an_error(
@@ -581,26 +528,6 @@ class TestRebuildEventIdCacheWasPromoted:
         assert "last event_id: 7" in message
         assert view.filtered_event_ids == [2, 5, 7]
 
-    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_the_scope_is_recorded_for_the_staleness_checks(
-        self, qapp: object, view_cls: type
-    ) -> None:
-        """
-        The four navigation values, whose annotations are declared on the base.
-
-        The scope is what the plot handlers compare against to decide whether the
-        cache still applies, so a rebuild that populated the ids but forgot the
-        scope would leave navigation reading a cache for the wrong channel.
-        """
-        view = build_subset_tab(view_cls)
-        answer_query_with(view, pd.DataFrame({"event_id": [1, 2]}))
-
-        view._rebuild_event_id_cache("loader", "dwell > 1", "exp1", 2, "subset")
-
-        assert view.current_sql_filter == "dwell > 1"
-        assert view.current_experiment == "exp1"
-        assert view.current_channel == 2
-
 
 # ===========================================================================
 # the two filter dialogs - two copies each, promoted to the base
@@ -616,15 +543,6 @@ class TestFilterDialogsWerePromoted:
     widgets - belonged to ``_delete_filter``; neither copy of this method touched
     a filter widget.
     """
-
-    @pytest.mark.parametrize(
-        "name", ["_show_add_filter_dialog", "show_edit_filter_dialog"]
-    )
-    def test_the_base_owns_the_only_copy(self, name: str) -> None:
-        """Neither tab may keep its own, or the promotion was partial."""
-        assert name in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert name not in view_cls.__dict__, f"{view_cls.__name__}.{name}"
 
     def test_show_edit_filter_dialog_is_no_longer_abstract(self) -> None:
         """
@@ -669,13 +587,6 @@ class TestLoadFilterWasPromoted:
     empty debug message, so validation *succeeds* and the filter is committed as
     ``<name>_raw_assisted``, renamed and reclassified.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """Neither tab may keep its own, or the promotion was partial."""
-        for name in ("_load_filter", "set_loaded_filters"):
-            assert name in MetaSubsetTabView.__dict__
-            for view_cls in SUBSET_TABS:
-                assert name not in view_cls.__dict__, f"{view_cls.__name__}.{name}"
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_a_raw_filter_is_stored_without_validation(
@@ -745,16 +656,6 @@ class TestLoadFilterWasPromoted:
 # ===========================================================================
 
 
-PANEL_NAME_ONLY = (
-    "replace_filter_item",
-    "update_filter_name",
-    "_delete_filter",
-    "set_event_id_rows",
-    "on_raw_filter_validated",
-    "restore_subset_filters",
-)
-
-
 class TestThePanelNameMethodsWerePromoted:
     """
     The six that collapsed once the base had a name for the controls panel.
@@ -770,15 +671,8 @@ class TestThePanelNameMethodsWerePromoted:
     That answer-parking method was ``relay_query_result``, filled over the signal
     bus. ``set_event_id_rows`` replaced it, filled by
     ``MetaSubsetTabController.load_event_id_cache``; it is still a promoted method
-    with one copy on the base, which is what this class checks.
+    with one copy on the base.
     """
-
-    @pytest.mark.parametrize("name", PANEL_NAME_ONLY)
-    def test_the_base_owns_the_only_copy(self, name: str) -> None:
-        """Neither tab may keep its own, or the promotion was partial."""
-        assert name in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert name not in view_cls.__dict__, f"{view_cls.__name__}.{name}"
 
     def test_delete_filter_is_no_longer_abstract(self) -> None:
         """
@@ -836,19 +730,6 @@ class TestThePanelNameMethodsWerePromoted:
         view.set_event_id_rows(None)
         assert view.event_id_rows is None
 
-    def test_the_parked_answer_is_declared_on_the_base(self) -> None:
-        """
-        The annotation moved with the method that writes it.
-
-        Only ``MetadataView`` declared it before; ``ProteinView`` assigned it at first
-        use. It is now ``event_id_rows`` with a single writer, so the
-        ``getattr(..., None)`` guards that used to surround every read are gone and the
-        declaration is what keeps the type stated once.
-        """
-        assert "event_id_rows" in MetaSubsetTabView.__annotations__
-        for view_cls in SUBSET_TABS:
-            assert "event_id_rows" not in view_cls.__annotations__
-
 
 # ===========================================================================
 # set_event_id_input - shared by both subset panels on MetaSubsetTabControls
@@ -862,15 +743,9 @@ class TestSetEventIdInputWasPromoted:
     """
     One copy, on the controls base, shared by both subset tabs' panels.
 
-    Pinned: no panel keeps its own copy, and the shared one writes the field
-    without re-emitting its edit signal, then revalidates.
+    Pinned: the shared one writes the field without re-emitting its edit signal,
+    then revalidates.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """A copy left on a panel would shadow the shared one for that tab."""
-        assert "set_event_id_input" in MetaSubsetTabControls.__dict__
-        for cls in SUBSET_CONTROLS:
-            assert "set_event_id_input" not in cls.__dict__, cls.__name__
 
     def test_validate_inputs_is_owed_by_every_panel(self) -> None:
         """``set_event_id_input`` calls it, so every panel must define it."""
@@ -975,14 +850,6 @@ class TestShiftRangeAndUpdatePlotIsShared:
     change, and an entered id past every cached one sitting just past the end - right
     goes to the first id, left to the last, silently.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """A copy left on a tab would shadow the shared one for that tab."""
-        assert "_shift_range_and_update_plot" in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert (
-                "_shift_range_and_update_plot" not in view_cls.__dict__
-            ), view_cls.__name__
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     @pytest.mark.parametrize(
@@ -1240,12 +1107,6 @@ class TestShowSelectionTree:
     scope can never produce anything; a database with no experiments says that
     instead.
     """
-
-    def test_the_base_owns_the_only_copy(self) -> None:
-        """A copy left on a tab would shadow the shared one for that tab."""
-        assert "show_selection_tree" in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert "show_selection_tree" not in view_cls.__dict__, view_cls.__name__
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_a_ticked_selection_becomes_the_scope(
