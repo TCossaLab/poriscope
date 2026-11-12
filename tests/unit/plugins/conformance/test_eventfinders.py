@@ -53,10 +53,29 @@ def identity(data):
     return data
 
 
+def _find_everything(finder_cls, chimera_log_path):
+    """
+    Run one finder over the whole synthetic recording.
+
+    :param finder_cls: The finder class to run.
+    :type finder_cls: Type[MetaEventFinder]
+    :param chimera_log_path: Path to the synthetic Chimera recording.
+    :type chimera_log_path: str
+    :return: The finder, its reader, and the start/end index lists for the channel.
+    :rtype: tuple
+    """
+    reader = build_reader(chimera_log_path)
+    finder = build_event_finder(finder_cls, reader)
+    for _progress in finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 3.0, identity):
+        pass
+    starts, ends = finder.get_event_indices()
+    return finder, reader, starts[CHIMERA_CHANNEL], ends[CHIMERA_CHANNEL]
+
+
 @pytest.fixture(params=FINDERS, ids=[cls.__name__ for cls in FINDERS])
 def found(request, chimera_log_path):
     """
-    Run one finder over the whole synthetic recording and hand back the results.
+    Run one finder over the whole synthetic recording, for a test that changes it.
 
     :param request: Pytest request, carrying the parametrised finder class.
     :type request: pytest.FixtureRequest
@@ -65,19 +84,34 @@ def found(request, chimera_log_path):
     :return: The finder, its reader, and the start/end index lists for the channel.
     :rtype: tuple
     """
+    finder, reader, starts, ends = _find_everything(request.param, chimera_log_path)
+    yield finder, reader, starts, ends
+    finder.close_resources()
+    reader.close_resources()
 
-    reader = build_reader(chimera_log_path)
-    finder = build_event_finder(request.param, reader)
-    for _progress in finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 3.0, identity):
-        pass
-    starts, ends = finder.get_event_indices()
-    yield finder, reader, starts[CHIMERA_CHANNEL], ends[CHIMERA_CHANNEL]
+
+@pytest.fixture(scope="module", params=FINDERS, ids=[cls.__name__ for cls in FINDERS])
+def found_once(request, chimera_log_path):
+    """
+    The same run, made once per finder and shared by the tests that only read it.
+
+    A test that resets, reruns or aborts the finder takes ``found`` instead.
+
+    :param request: Pytest request, carrying the parametrised finder class.
+    :type request: pytest.FixtureRequest
+    :param chimera_log_path: Path to the synthetic Chimera recording.
+    :type chimera_log_path: str
+    :return: The finder, its reader, and the start/end index lists for the channel.
+    :rtype: tuple
+    """
+    finder, reader, starts, ends = _find_everything(request.param, chimera_log_path)
+    yield finder, reader, starts, ends
     finder.close_resources()
     reader.close_resources()
 
 
 @pytest.mark.conformance
-def test_finds_every_planted_event(found) -> None:
+def test_finds_every_planted_event(found_once) -> None:
     """
     A finder locates exactly the events the fixture planted, and no others.
 
@@ -85,11 +119,11 @@ def test_finds_every_planted_event(found) -> None:
     events, too many means it is reporting noise excursions as events, and either
     would be invisible to a test that only checked ``find_events`` did not raise.
 
-    :param found: Finder, reader and index lists from the fixture.
-    :type found: tuple
+    :param found_once: Finder, reader and index lists, shared by the module.
+    :type found_once: tuple
     """
 
-    finder, _reader, starts, ends = found
+    finder, _reader, starts, ends = found_once
 
     assert len(starts) == CHIMERA_EVENTS, (
         f"located {len(starts)} of {CHIMERA_EVENTS} planted events:"
@@ -105,18 +139,18 @@ def test_finds_every_planted_event(found) -> None:
 
 
 @pytest.mark.conformance
-def test_boundaries_are_well_formed(found) -> None:
+def test_boundaries_are_well_formed(found_once) -> None:
     """
     Reported boundaries are ordered, in-bounds and non-overlapping.
 
     Every consumer indexes the reader with these numbers, so a start past its end, a
     negative index, or two events sharing samples would corrupt whatever is read.
 
-    :param found: Finder, reader and index lists from the fixture.
-    :type found: tuple
+    :param found_once: Finder, reader and index lists, shared by the module.
+    :type found_once: tuple
     """
 
-    _finder, reader, starts, ends = found
+    _finder, reader, starts, ends = found_once
     length = reader.get_channel_length(CHIMERA_CHANNEL)
 
     errors = []
@@ -140,18 +174,18 @@ def test_boundaries_are_well_formed(found) -> None:
 
 
 @pytest.mark.conformance
-def test_boundaries_land_on_the_planted_events(found) -> None:
+def test_boundaries_land_on_the_planted_events(found_once) -> None:
     """
     Each planted blockage is covered by exactly one reported interval.
 
     This is what makes the count assertion meaningful: five intervals in the wrong
     places would satisfy every structural check above.
 
-    :param found: Finder, reader and index lists from the fixture.
-    :type found: tuple
+    :param found_once: Finder, reader and index lists, shared by the module.
+    :type found_once: tuple
     """
 
-    _finder, reader, starts, ends = found
+    _finder, reader, starts, ends = found_once
 
     # The generator spaces events evenly across the recording, clear of both ends by
     # config.edge_margin_s. Rather than recompute that layout, each reported interval
@@ -187,18 +221,18 @@ def test_boundaries_land_on_the_planted_events(found) -> None:
 
 
 @pytest.mark.conformance
-def test_single_event_data_is_usable(found) -> None:
+def test_single_event_data_is_usable(found_once) -> None:
     """
     ``get_single_event_data`` returns the keys its consumers index by name.
 
     The raw-data tab reads these to plot one event; the writer reads them to store
     it. The key set is the finder's side of both contracts.
 
-    :param found: Finder, reader and index lists from the fixture.
-    :type found: tuple
+    :param found_once: Finder, reader and index lists, shared by the module.
+    :type found_once: tuple
     """
 
-    finder, _reader, _starts, _ends = found
+    finder, _reader, _starts, _ends = found_once
 
     event = finder.get_single_event_data(CHIMERA_CHANNEL, 0, identity)
     assert event is not None, "no data returned for the first located event"
@@ -241,14 +275,14 @@ def test_at_least_one_finder_was_discovered() -> None:
 
 
 @pytest.mark.conformance
-def test_the_status_report_covers_the_finder_and_each_channel(found) -> None:
+def test_the_status_report_covers_the_finder_and_each_channel(found_once) -> None:
     """
     A finder reports on itself as a whole and on any one channel.
 
-    :param found: Finder, reader and index lists from the fixture.
-    :type found: tuple
+    :param found_once: Finder, reader and index lists, shared by the module.
+    :type found_once: tuple
     """
-    finder, _reader, _starts, _ends = found
+    finder, _reader, _starts, _ends = found_once
     assert_reports_whole_and_each_channel(finder, CHIMERA_CHANNEL)
 
 

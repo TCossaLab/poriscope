@@ -27,7 +27,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication
 
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
@@ -49,12 +49,7 @@ def qt_app():
 def view(qt_app):
     """Fully-initialised ClusteringView."""
     v = ClusteringView()
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    v._set_custom_display_area(layout)
-    v._set_control_area(layout)
-    v._test_container = container
-    container.show()
+    v.show()
     qt_app.processEvents()
     return v
 

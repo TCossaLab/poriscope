@@ -11,6 +11,7 @@ channels shows as a count.
 """
 
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
@@ -28,18 +29,11 @@ CHANNEL_0 = 5
 CHANNEL_1 = 8
 
 
-@pytest.fixture
-def database(tmp_path: Path) -> str:
-    """
-    A database with 5 events on channel 0 and 8 on channel 1.
-
-    :param tmp_path: per-test scratch directory
-    :type tmp_path: Path
-    :return: path to the written database
-    :rtype: str
-    """
+@pytest.fixture(scope="module")
+def _database_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A database with 5 events on channel 0 and 8 on channel 1, written once per module."""
     written = generate_metadata_database(
-        tmp_path / "raw_scope.sqlite3",
+        tmp_path_factory.mktemp("raw_scope") / "raw_scope.sqlite3",
         experiments=[
             {
                 "name": "exp_a",
@@ -50,7 +44,24 @@ def database(tmp_path: Path) -> str:
             }
         ],
     )
-    return str(written.db_path)
+    return Path(written.db_path)
+
+
+@pytest.fixture
+def database(tmp_path: Path, _database_template: Path) -> str:
+    """
+    This test's own copy of the database, so a write leaves the next test's untouched.
+
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :param _database_template: the database written once for the module
+    :type _database_template: Path
+    :return: path to the copy
+    :rtype: str
+    """
+    copy = tmp_path / "raw_scope.sqlite3"
+    shutil.copyfile(_database_template, copy)
+    return str(copy)
 
 
 def build_tab(controller: str, tmp_path: Path, database: str, controls: str) -> Triad:

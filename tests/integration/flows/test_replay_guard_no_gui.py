@@ -31,6 +31,13 @@ import pandas as pd
 import pytest
 
 from poriscope.models.main_model import MainModel
+from poriscope.plugins.analysistabs.ClusteringController import ClusteringController
+from poriscope.plugins.analysistabs.EventAnalysisController import (
+    EventAnalysisController,
+)
+from poriscope.plugins.analysistabs.MetadataController import MetadataController
+from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.RawDataController import RawDataController
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.utils.kept_history import build_kept_history
 from poriscope.utils.MetaController import declarations_of
@@ -53,6 +60,16 @@ FILTERS = {
     "F1": "duration >= 1",
     "F2": "duration >= 2",
     "F3": "duration >= 3",
+}
+CONTROLLER_TYPES = {
+    cls.__name__: cls
+    for cls in (
+        RawDataController,
+        EventAnalysisController,
+        ClusteringController,
+        MetadataController,
+        ProteinController,
+    )
 }
 TABS = [
     "RawDataController",
@@ -761,16 +778,51 @@ def _through_the_session_file(
     return loaded.plugin_history[tab]["actions"]
 
 
+def _record(
+    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any
+) -> Tuple[Any, List[Any]]:
+    """Run the scenario's action in a fresh tab A; return A's capture and its history."""
+    (tmp_path / "a").mkdir()
+    tab_a = scenario.build(tmp_path / "a", data)
+    try:
+        scenario.seed(tab_a)
+        spy_a = Spy(tab_a)
+        scenario.act(tab_a, qtbot)
+        settle(tab_a, qtbot)
+        ignored = scenario.click_only_calls + scenario.replay_only_calls
+        captured_a = capture(tab_a, spy_a, scenario.extra, ignored, scenario.probe)
+        history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
+        return captured_a, history
+    finally:
+        tab_a.close()
+
+
+@pytest.fixture(scope="module")
+def runs() -> Dict[Any, Any]:
+    """
+    Every recording and replay this module has made, so each is made once.
+
+    A recording is plain data - A's capture and its history - and a replay's result is
+    too; each tab is closed as soon as it is captured, so nothing Qt outlives its test.
+    """
+    return {}
+
+
 def run_scenario(
     scenario: Scenario,
     tmp_path: Path,
     data: Any,
     qtbot: Any,
+    runs: Dict[Any, Any],
     kept: bool = False,
     through_session_file: bool = False,
 ) -> Tuple[Any, Any, List[Any]]:
     """
     Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
+
+    A's recording is made once per scenario and each replay once per mode; a later test
+    asking for the same one gets a copy of what was captured. A kept history that keeps
+    every entry is the whole history, so its replay is the whole history's replay.
 
     :param scenario: what to run
     :type scenario: Scenario
@@ -780,6 +832,8 @@ def run_scenario(
     :type data: Any
     :param qtbot: pytest-qt's fixture, for an action that runs in the background
     :type qtbot: Any
+    :param runs: the module's recordings and replays, from the ``runs`` fixture
+    :type runs: Dict[Any, Any]
     :param kept: replay only what a restored session keeps of A's history
     :type kept: bool
     :param through_session_file: save what is replayed in a session file and replay what
@@ -788,26 +842,31 @@ def run_scenario(
     :return: A's capture, B's capture, and the history recorded in A
     :rtype: Tuple[Any, Any, List[Any]]
     """
-    (tmp_path / "a").mkdir()
+    name = scenario.name or scenario.tab
+    key = (name, kept, through_session_file)
+    if key in runs:
+        return copy.deepcopy(runs[key])
+    if name not in runs:
+        runs[name] = _record(scenario, tmp_path, data, qtbot)
+    captured_a, history = copy.deepcopy(runs[name])
+    replayed = (
+        build_kept_history(history, declarations_of(CONTROLLER_TYPES[scenario.tab]))
+        if kept
+        else history
+    )
+    if kept and not through_session_file and replayed == history:
+        # A restore keeps every entry, so this replay is the whole history's.
+        whole = (name, False, False)
+        if whole in runs:
+            runs[key] = runs[whole]
+            return copy.deepcopy(runs[key])
+    if through_session_file:
+        replayed = _through_the_session_file(scenario.tab, replayed, tmp_path)
+
     (tmp_path / "b").mkdir()
-    tab_a = scenario.build(tmp_path / "a", data)
     tab_b = scenario.build(tmp_path / "b", data)
     try:
-        scenario.seed(tab_a)
-        spy_a = Spy(tab_a)
-        scenario.act(tab_a, qtbot)
-        settle(tab_a, qtbot)
         ignored = scenario.click_only_calls + scenario.replay_only_calls
-        captured_a = capture(tab_a, spy_a, scenario.extra, ignored, scenario.probe)
-        history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
-        replayed = (
-            build_kept_history(history, declarations_of(type(tab_a.tab_controller)))
-            if kept
-            else history
-        )
-        if through_session_file:
-            replayed = _through_the_session_file(scenario.tab, replayed, tmp_path)
-
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
         spy_b = Spy(tab_b)
@@ -822,10 +881,10 @@ def run_scenario(
                 "a listed replay-only lookup was not made: drop it from the scenario"
             )
         captured_b = capture(tab_b, spy_b, scenario.extra, ignored, scenario.probe)
-        return captured_a, captured_b, history
     finally:
-        tab_a.close()
         tab_b.close()
+    runs[key] = (captured_a, captured_b, history)
+    return copy.deepcopy(runs[key])
 
 
 # ---------------------------------------------------------------- the tests
@@ -836,10 +895,12 @@ def run_scenario(
     "scenario", SCENARIOS, ids=[s.name or s.tab for s in SCENARIOS]
 )
 def test_a_replay_reproduces_what_the_action_produced(
-    qapp, qtbot, request, tmp_path: Path, scenario: Scenario
+    qapp, qtbot, request, tmp_path: Path, scenario: Scenario, runs
 ) -> None:
     data = request.getfixturevalue(scenario.needs)
-    captured_a, captured_b, history = run_scenario(scenario, tmp_path, data, qtbot)
+    captured_a, captured_b, history = run_scenario(
+        scenario, tmp_path, data, qtbot, runs
+    )
 
     recorded = {entry["action"] for entry in history}
     assert (
@@ -856,13 +917,15 @@ def test_a_replay_reproduces_what_the_action_produced(
     "scenario", SCENARIOS, ids=[s.name or s.tab for s in SCENARIOS]
 )
 def test_a_replay_of_the_kept_history_draws_what_the_whole_history_drew(
-    qapp, qtbot, request, tmp_path: Path, scenario: Scenario
+    qapp, qtbot, request, tmp_path: Path, scenario: Scenario, runs
 ) -> None:
     """
     The plugin calls are not compared: leaving out what was replaced is the point.
     """
     data = request.getfixturevalue(scenario.needs)
-    captured_a, captured_b, _ = run_scenario(scenario, tmp_path, data, qtbot, kept=True)
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, data, qtbot, runs, kept=True
+    )
 
     assert captured_b["probe"] == captured_a["probe"]
     assert captured_b["plot_cache"] == captured_a["plot_cache"]
@@ -876,14 +939,14 @@ def test_a_replay_of_the_kept_history_draws_what_the_whole_history_drew(
     "scenario", SCENARIOS, ids=[s.name or s.tab for s in SCENARIOS]
 )
 def test_what_a_session_file_gives_back_replays_to_the_same_result(
-    qapp, qtbot, request, tmp_path: Path, scenario: Scenario
+    qapp, qtbot, request, tmp_path: Path, scenario: Scenario, runs
 ) -> None:
     """
     Saving turns tuples into lists and every value into JSON; the replay must not notice.
     """
     data = request.getfixturevalue(scenario.needs)
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, data, qtbot, kept=True, through_session_file=True
+        scenario, tmp_path, data, qtbot, runs, kept=True, through_session_file=True
     )
 
     assert captured_b["probe"] == captured_a["probe"]
@@ -895,13 +958,13 @@ def test_what_a_session_file_gives_back_replays_to_the_same_result(
 
 @pytest.mark.timeout(240)
 def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
-    qapp, qtbot, tmp_path: Path, sample_events_db: str
+    qapp, qtbot, tmp_path: Path, sample_events_db: str, runs
 ) -> None:
     """The two tabs agreeing is not enough: a fit that never ran would agree with itself."""
     scenario = next(s for s in SCENARIOS if s.tab == "EventAnalysisController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_events_db, qtbot
+        scenario, tmp_path, sample_events_db, qtbot, runs
     )
 
     for captured in (captured_a, captured_b):
@@ -911,13 +974,13 @@ def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
 
 @pytest.mark.timeout(240)
 def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
-    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str, runs
 ) -> None:
     """The two tabs agreeing is not enough: a run or a merge that did nothing would agree with itself."""
     scenario = next(s for s in SCENARIOS if s.tab == "ClusteringController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot
+        scenario, tmp_path, sample_metadata_db, qtbot, runs
     )
 
     for captured in (captured_a, captured_b):
@@ -929,13 +992,13 @@ def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
 
 @pytest.mark.timeout(240)
 def test_a_replayed_individual_plot_rebuilds_the_fit_commit_writes(
-    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str, runs
 ) -> None:
     """The two tabs agreeing is not enough: a plot that fitted nothing would agree with itself."""
     scenario = next(s for s in SCENARIOS if s.name == "ProteinController-individual")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot
+        scenario, tmp_path, sample_metadata_db, qtbot, runs
     )
 
     assert captured_a["probe"] is not None
@@ -944,12 +1007,12 @@ def test_a_replayed_individual_plot_rebuilds_the_fit_commit_writes(
 
 @pytest.mark.timeout(240)
 def test_a_replayed_ensemble_plot_leaves_the_individual_fit(
-    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str, runs
 ) -> None:
     scenario = next(s for s in SCENARIOS if s.tab == "ProteinController" and not s.name)
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot
+        scenario, tmp_path, sample_metadata_db, qtbot, runs
     )
 
     for captured in (captured_a, captured_b):

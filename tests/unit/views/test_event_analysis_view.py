@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from tests.unit.views._qt_mocks import mock_axes, mock_figure, shadow_signals
@@ -50,11 +50,6 @@ def real_view(qt_app):
     should take ``mock_view``, which is far cheaper.
     """
     v = EventAnalysisView()
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    v._set_custom_display_area(layout)
-    v._set_control_area(layout)
-    v._test_container = container
     return v
 
 

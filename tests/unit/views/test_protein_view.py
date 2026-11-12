@@ -49,7 +49,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import (
@@ -99,13 +99,9 @@ def real_view(qt_app):
     Return a fully-initialised ProteinView built from real Qt widgets.
 
     MetaView.__init__ calls _set_custom_display_area and _set_control_area
-    during the real widget build sequence; we call them explicitly here so
-    that display_stack, ax_hist, canvas_hist, proteincontrols, etc. are all
-    present — exactly as in the running application.
-
-    The parent container is kept alive for the test duration, then explicitly
-    closed and destroyed in teardown so no Qt state leaks into subsequent
-    test files when running the full suite with --cov.
+    during the real widget build sequence, so display_stack, ax_hist,
+    canvas_hist, proteincontrols, etc. are all present - exactly as in the
+    running application, and in the view's own layout.
 
     Use this only where the test needs real Qt or Matplotlib behaviour:
     asserting that construction actually produced widgets, emitting a real
@@ -113,12 +109,6 @@ def real_view(qt_app):
     Everything else should take ``mock_view``, which is far cheaper.
     """
     v = ProteinView()
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    v._set_custom_display_area(layout)
-    v._set_control_area(layout)
-    v._test_container = container  # keep Qt parent alive for test duration
-
     return v
 
 

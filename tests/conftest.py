@@ -13,6 +13,7 @@ on the specific layout it builds. The ``main_model`` fixture in
 ``tests/unit/models/test_main_model.py`` relies on this one alone.
 """
 
+import itertools
 import os
 import sys
 from collections import defaultdict
@@ -47,17 +48,37 @@ for _candidate in [_TESTS_DIR, *_TESTS_DIR.parents]:
         break
 
 
-@pytest.fixture(autouse=True)
-def sandbox_user_data_dir(monkeypatch, tmp_path):
+_SANDBOX_NUMBERS = itertools.count()
+
+
+@pytest.fixture(scope="session")
+def _sandbox_parent(tmp_path_factory):
     """
-    Point ``platformdirs.user_data_dir()`` at a per-test temporary directory.
+    One directory per session holding every test's sandbox.
+
+    Asking for ``tmp_path`` in every test is what this avoids: pytest lists its whole
+    base directory to number each new one, so that cost grows with every test run
+    before it - about 47 s over the suite.
+
+    :param tmp_path_factory: pytest's session-wide temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: the directory the sandboxes are made in
+    :rtype: pathlib.Path
+    """
+    return tmp_path_factory.mktemp("appdata_sandboxes", numbered=False)
+
+
+@pytest.fixture(autouse=True)
+def sandbox_user_data_dir(monkeypatch, _sandbox_parent):
+    """
+    Point ``platformdirs.user_data_dir()`` at a fresh per-test directory.
 
     :param monkeypatch: pytest's monkeypatch fixture.
     :type monkeypatch: pytest.MonkeyPatch
-    :param tmp_path: pytest's per-test temporary directory.
-    :type tmp_path: pathlib.Path
+    :param _sandbox_parent: the session directory each test's sandbox is made in.
+    :type _sandbox_parent: pathlib.Path
     """
-    appdata_root = tmp_path / "appdata"
+    appdata_root = _sandbox_parent / str(next(_SANDBOX_NUMBERS)) / "appdata"
     for subdir in ("session", "config", "logs", "user_plugins"):
         (appdata_root / "Poriscope" / subdir).mkdir(parents=True, exist_ok=True)
 

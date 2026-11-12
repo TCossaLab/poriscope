@@ -18,6 +18,9 @@ halves of the check cover that case independently and only the message changes. 
 is worth knowing before anyone trims either half.
 """
 
+import contextlib
+import importlib.util
+import io
 import subprocess
 import sys
 from pathlib import Path
@@ -27,21 +30,32 @@ import pytest
 pytestmark = pytest.mark.characterization
 
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "check_text_encoding.py"
+_SPEC = importlib.util.spec_from_file_location("check_text_encoding", SCRIPT)
+assert _SPEC is not None and _SPEC.loader is not None
+check_text_encoding = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(check_text_encoding)
 
 
 def run(*paths: Path) -> subprocess.CompletedProcess:
     """
-    Run the check over the given files.
+    Run the check's ``main`` over the given files, in this process.
+
+    Starting an interpreter per check cost about 0.15 s each; one test below still runs
+    the script as a program, so its ``__main__`` entry point stays covered.
 
     :param paths: the files to check
     :type paths: Path
-    :return: the completed process, with stderr captured
+    :return: the exit code and what was written to stderr
     :rtype: subprocess.CompletedProcess
     """
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), *(str(p) for p in paths)],
-        capture_output=True,
-        text=True,
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        code = check_text_encoding.main([str(p) for p in paths])
+    return subprocess.CompletedProcess(
+        args=[str(p) for p in paths],
+        returncode=code,
+        stdout="",
+        stderr=stderr.getvalue(),
     )
 
 
@@ -128,6 +142,17 @@ class TestWhatItAccepts:
 
 class TestTheRepositoryItself:
     """The files the hook is scoped to, checked as they stand."""
+
+    def test_the_script_runs_as_a_program(self, tmp_path):
+        bad = tmp_path / "requirements.txt"
+        bad.write_bytes(b"\xff\xfenumpy\x00")
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), str(bad)], capture_output=True, text=True
+        )
+
+        assert result.returncode == 1
+        assert "UTF-16LE byte-order mark" in result.stderr
 
     def test_the_shipped_requirements_files_are_clean(self):
         root = Path(__file__).resolve().parents[3]

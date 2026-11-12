@@ -164,6 +164,8 @@
 
 * `pytest -n auto` runs the suite in parallel, one file per worker, with the workers sized from the machine's cores and free memory; CI runs it this way, in about 2 minutes on the dev machine
 
+* Tests that repeated the same replay, fit, event search, recording or database now share one per module or session, each test keeping its own assertions
+
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on

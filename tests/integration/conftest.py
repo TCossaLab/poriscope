@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 import pytest
 
@@ -76,21 +76,16 @@ def _prevent_blocking_dialogs(monkeypatch):
         )
 
 
-@pytest.fixture
-def sample_chimera(tmp_path) -> Dict[str, str]:
+@pytest.fixture(scope="session")
+def _chimera_template(tmp_path_factory) -> Dict[str, Any]:
     """
-    Generate a Chimera ``.log`` + ``.json`` pair and return their locations.
+    Generate the Chimera recording once per run, for :func:`sample_chimera` to copy.
 
-    Two seconds at 4 MHz on channel 3 with five evenly spaced events, written
-    fresh into the test's own tmp_path. Previously this copied a checked-in
-    recording out of ``tests/data/``; the event count and channel are now ground
-    truth set here rather than properties of a fixture file.
+    :param tmp_path_factory: pytest's session-wide temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
 
-    :param tmp_path: Pytest-provided temporary directory, unique per test.
-    :type tmp_path: pathlib.Path
-
-    :return: Paths to the generated ``.log`` and ``.json`` and their folder.
-    :rtype: Dict[str, str]
+    :return: the generated files and the recording's ground truth.
+    :rtype: Dict[str, Any]
     """
     config = ChimeraRecordingConfig(
         base_name="synthetic",
@@ -102,20 +97,49 @@ def sample_chimera(tmp_path) -> Dict[str, str]:
         event_duration_s=DEFAULT_EVENT_DURATION_S,
     )
     dataset = generate_chimera_dataset(
-        tmp_path,
+        tmp_path_factory.mktemp("chimera_template"),
         config,
         channel=CHIMERA_CHANNEL,
         num_events=CHIMERA_NUM_EVENTS,
     )
     assert dataset.metadata_path is not None, "Chimera writer must emit a .json sidecar"
-
     return {
-        "log": str(dataset.data_path),
-        "json": str(dataset.metadata_path),
-        "folder": str(tmp_path),
+        "log": dataset.data_path,
+        "json": dataset.metadata_path,
         "channel": dataset.channel,
         "num_events": len(dataset.events),
         "duration_s": config.duration_s,
+    }
+
+
+@pytest.fixture
+def sample_chimera(tmp_path, _chimera_template) -> Dict[str, str]:
+    """
+    A Chimera ``.log`` + ``.json`` pair, copied into the test's own tmp_path.
+
+    Two seconds at 4 MHz on channel 3 with five evenly spaced events, generated once
+    per run and copied, so a test that writes beside the recording leaves the next
+    test's folder untouched.
+
+    :param tmp_path: Pytest-provided temporary directory, unique per test.
+    :type tmp_path: pathlib.Path
+    :param _chimera_template: the recording generated once for the run.
+    :type _chimera_template: Dict[str, Any]
+
+    :return: Paths to the copied ``.log`` and ``.json`` and their folder.
+    :rtype: Dict[str, str]
+    """
+    log = tmp_path / _chimera_template["log"].name
+    sidecar = tmp_path / _chimera_template["json"].name
+    shutil.copyfile(_chimera_template["log"], log)
+    shutil.copyfile(_chimera_template["json"], sidecar)
+    return {
+        "log": str(log),
+        "json": str(sidecar),
+        "folder": str(tmp_path),
+        "channel": _chimera_template["channel"],
+        "num_events": _chimera_template["num_events"],
+        "duration_s": _chimera_template["duration_s"],
     }
 
 

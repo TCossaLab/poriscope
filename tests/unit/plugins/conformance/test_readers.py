@@ -254,11 +254,17 @@ def test_reader_releases_its_input_file(reader_cls, tmp_path_factory) -> None:
     reader.close_resources()
 
     del reader
-    gc.collect()
+    # Dropping the last reference releases an acyclic reader at once. A full collection,
+    # whose cost grows with everything the run still holds, is needed only for a reader
+    # caught in a reference cycle, so it runs only when the first attempt fails.
     try:
         shutil.rmtree(out_dir)
-    except PermissionError as exc:
-        pytest.fail(f"{reader_cls.__name__} still holds its file(s) open: {exc}")
+    except PermissionError:
+        gc.collect()
+        try:
+            shutil.rmtree(out_dir)
+        except PermissionError as exc:
+            pytest.fail(f"{reader_cls.__name__} still holds its file(s) open: {exc}")
 
 
 @pytest.mark.conformance

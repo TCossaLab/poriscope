@@ -81,7 +81,66 @@ def fitter(
     :return: A configured fitter, ready to fit.
     :rtype: MetaEventFitter
     """
-    fitter_cls = request.param
+    loader = build_event_loader(
+        _database_for(
+            request.param,
+            events_db_path,
+            peaked_events_db_path,
+            peakfinder_events_db_path,
+        )
+    )
+    instance = build_event_fitter(request.param, loader)
+    yield instance
+    instance.close_resources()
+    loader.close_resources()
+
+
+@pytest.fixture(scope="module")
+def fitted(
+    request,
+    events_db_path,
+    peaked_events_db_path,
+    peakfinder_events_db_path,
+) -> MetaEventFitter:
+    """
+    One fitter per class, fitted once over its database and shared read-only.
+
+    For the checks that only read what a complete, unfiltered fit produced; a check
+    that fits differently, resets or closes takes the per-test ``fitter`` instead.
+
+    :param request: Pytest request, carrying the parametrised fitter class.
+    :type request: pytest.FixtureRequest
+    :param events_db_path: Path to the shared synthetic events database.
+    :type events_db_path: str
+    :param peaked_events_db_path: Path to the events database with a
+        resolvable intra-event dip.
+    :type peaked_events_db_path: str
+    :param peakfinder_events_db_path: Path to the events database with a dip
+        deep and narrow enough for ``PeakFinder`` specifically.
+    :type peakfinder_events_db_path: str
+    :return: A fitter that has fitted every event on ``EVENTS_CHANNEL``.
+    :rtype: MetaEventFitter
+    """
+    loader = build_event_loader(
+        _database_for(
+            request.param,
+            events_db_path,
+            peaked_events_db_path,
+            peakfinder_events_db_path,
+        )
+    )
+    instance = build_event_fitter(request.param, loader)
+    for _progress in instance.fit_events(EVENTS_CHANNEL):
+        pass
+    yield instance
+    instance.close_resources()
+    loader.close_resources()
+
+
+def _database_for(
+    fitter_cls, events_db_path, peaked_events_db_path, peakfinder_events_db_path
+) -> str:
+    """Pick the database ``FITTER_FIXTURES`` maps a fitter class to."""
     by_shape = {
         "dip": peaked_events_db_path,
         "staircase": events_db_path,
@@ -93,12 +152,7 @@ def fitter(
             f"{fitter_cls.__name__} is mapped to fixture shape {shape!r}, which "
             f"has no database here; known shapes are {sorted(by_shape)}"
         )
-    db_path = by_shape[shape] if shape is not None else events_db_path
-    loader = build_event_loader(db_path)
-    instance = build_event_fitter(fitter_cls, loader)
-    yield instance
-    instance.close_resources()
-    loader.close_resources()
+    return by_shape[shape] if shape is not None else events_db_path
 
 
 @pytest.fixture(
@@ -140,18 +194,19 @@ def pytest_generate_tests(metafunc):
     :param metafunc: Pytest's per-function collection hook argument.
     :type metafunc: pytest.Metafunc
     """
-    if "fitter" not in metafunc.fixturenames:
-        return
-    metafunc.parametrize(
-        "fitter",
-        EVENT_FITTERS,
-        ids=[cls.__name__ for cls in EVENT_FITTERS],
-        indirect=True,
-    )
+    for name, scope in (("fitter", "function"), ("fitted", "module")):
+        if name in metafunc.fixturenames:
+            metafunc.parametrize(
+                name,
+                EVENT_FITTERS,
+                ids=[cls.__name__ for cls in EVENT_FITTERS],
+                indirect=True,
+                scope=scope,
+            )
 
 
 @pytest.mark.conformance
-def test_fits_every_planted_event(fitter: MetaEventFitter) -> None:
+def test_fits_every_planted_event(fitted: MetaEventFitter) -> None:
     """
     A fitter reaches every planted event and reports fitting as complete.
 
@@ -160,23 +215,21 @@ def test_fits_every_planted_event(fitter: MetaEventFitter) -> None:
     ``step_size_1000_too_few_levels`` case in ``tests/e2e/event_analysis`` shows
     is reachable with plausible settings.
 
-    :param fitter: The configured fitter under test.
-    :type fitter: MetaEventFitter
+    :param fitted: The fitter under test, already fitted over every event on
+        ``EVENTS_CHANNEL``.
+    :type fitted: MetaEventFitter
     """
-    channels = fitter.get_channels()
+    channels = fitted.get_channels()
     assert (
         EVENTS_CHANNEL in channels
     ), f"expected channel {EVENTS_CHANNEL}, got {channels}"
 
-    for _progress in fitter.fit_events(EVENTS_CHANNEL):
-        pass
-
     assert (
-        fitter.get_eventfitting_status(EVENTS_CHANNEL) is True
-    ), f"fitting did not complete:\n{fitter.report_status()}"
-    assert fitter.get_num_events(EVENTS_CHANNEL) == EVENTS_COUNT, (
-        f"fitted {fitter.get_num_events(EVENTS_CHANNEL)} of {EVENTS_COUNT} planted events:"
-        f"\n{fitter.report_status()}"
+        fitted.get_eventfitting_status(EVENTS_CHANNEL) is True
+    ), f"fitting did not complete:\n{fitted.report_status()}"
+    assert fitted.get_num_events(EVENTS_CHANNEL) == EVENTS_COUNT, (
+        f"fitted {fitted.get_num_events(EVENTS_CHANNEL)} of {EVENTS_COUNT} planted events:"
+        f"\n{fitted.report_status()}"
     )
 
 
@@ -208,7 +261,7 @@ def test_non_finite_data_is_rejected_by_name(fitter: MetaEventFitter) -> None:
 
 
 @pytest.mark.conformance
-def test_produced_columns_are_declared(fitter: MetaEventFitter) -> None:
+def test_produced_columns_are_declared(fitted: MetaEventFitter) -> None:
     """
     Every metadata column a fitter produces is declared with a type and a unit.
 
@@ -218,26 +271,24 @@ def test_produced_columns_are_declared(fitter: MetaEventFitter) -> None:
     A ``MagicMock`` loader cannot surface this, because the produced column set
     only exists once real events have been fitted.
 
-    :param fitter: The configured fitter under test.
-    :type fitter: MetaEventFitter
+    :param fitted: The fitter under test, already fitted over every event on
+        ``EVENTS_CHANNEL``.
+    :type fitted: MetaEventFitter
     """
-    for _progress in fitter.fit_events(EVENTS_CHANNEL):
-        pass
-
     checks = (
         (
             "event",
-            fitter.get_metadata_columns(EVENTS_CHANNEL),
+            fitted.get_metadata_columns(EVENTS_CHANNEL),
             INJECTED_EVENT_COLUMNS,
-            fitter.get_event_metadata_types(),
-            fitter.get_event_metadata_units(),
+            fitted.get_event_metadata_types(),
+            fitted.get_event_metadata_units(),
         ),
         (
             "sublevel",
-            fitter.get_sublevel_columns(EVENTS_CHANNEL),
+            fitted.get_sublevel_columns(EVENTS_CHANNEL),
             INJECTED_SUBLEVEL_COLUMNS,
-            fitter.get_sublevel_metadata_types(),
-            fitter.get_sublevel_metadata_units(),
+            fitted.get_sublevel_metadata_types(),
+            fitted.get_sublevel_metadata_units(),
         ),
     )
 
@@ -264,26 +315,24 @@ def test_produced_columns_are_declared(fitter: MetaEventFitter) -> None:
 
 
 @pytest.mark.conformance
-def test_single_event_metadata_round_trips(fitter: MetaEventFitter) -> None:
+def test_single_event_metadata_round_trips(fitted: MetaEventFitter) -> None:
     """
     ``get_single_event_metadata`` returns usable data for a fitted event.
 
     This is what the Event Analysis tab calls to draw one event, so its shape is
     a real contract rather than an internal detail.
 
-    :param fitter: The configured fitter under test.
-    :type fitter: MetaEventFitter
+    :param fitted: The fitter under test, already fitted over every event on
+        ``EVENTS_CHANNEL``.
+    :type fitted: MetaEventFitter
     """
-    for _progress in fitter.fit_events(EVENTS_CHANNEL):
-        pass
-
     event_meta, sublevel_meta, filtered, raw, _fitted = (
-        fitter.get_single_event_metadata(EVENTS_CHANNEL, 0)
+        fitted.get_single_event_metadata(EVENTS_CHANNEL, 0)
     )
 
     assert event_meta, "event metadata dict is empty"
     assert sublevel_meta, "sublevel metadata dict is empty"
-    assert set(event_meta) == set(fitter.get_metadata_columns(EVENTS_CHANNEL))
+    assert set(event_meta) == set(fitted.get_metadata_columns(EVENTS_CHANNEL))
 
     for label, array in (("filtered", filtered), ("raw", raw)):
         assert isinstance(array, np.ndarray), f"{label} data is {type(array).__name__}"
@@ -434,14 +483,13 @@ def test_fitter_fixture_shapes_are_known() -> None:
 
 @pytest.mark.conformance
 def test_the_status_report_covers_the_fitter_and_each_channel(
-    fitter: MetaEventFitter,
+    fitted: MetaEventFitter,
 ) -> None:
     """
     A fitter reports on itself as a whole and on any one channel.
 
-    :param fitter: The configured fitter under test.
-    :type fitter: MetaEventFitter
+    :param fitted: The fitter under test, already fitted over every event on
+        ``EVENTS_CHANNEL``.
+    :type fitted: MetaEventFitter
     """
-    for _progress in fitter.fit_events(EVENTS_CHANNEL):
-        pass
-    assert_reports_whole_and_each_channel(fitter, EVENTS_CHANNEL)
+    assert_reports_whole_and_each_channel(fitted, EVENTS_CHANNEL)
