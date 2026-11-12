@@ -921,11 +921,13 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         # A registered column belongs to exactly one table - "columns.name" is
         # UNIQUE - so the order of the passes does not matter, and the (?<!\.)
-        # guard keeps each pass off the previous pass's output.
+        # guard keeps each pass off the previous pass's output. Nor does the order
+        # of the columns: \b never matches inside a longer name, since "_" is a word
+        # character, so "amplitude" cannot rewrite part of "sublevel_amplitude".
         segments = self._split_on_opaque_spans(conditions)
         for index in range(0, len(segments), 2):
             for cols, alias in passes:
-                for col in sorted(set(cols), key=len, reverse=True):
+                for col in dict.fromkeys(cols):
                     segments[index] = re.sub(
                         rf"(?<!\.)\b{re.escape(col)}\b",
                         f"{alias}.{col}",

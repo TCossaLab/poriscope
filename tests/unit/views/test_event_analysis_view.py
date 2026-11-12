@@ -133,26 +133,6 @@ class TestFactors:
 
 
 # ===========================================================================
-# update_plot_data
-# ===========================================================================
-
-
-class TestUpdatePlotData:
-    def test_array_input_stored_directly(self, mock_view):
-        arr = np.array([4, 5, 6])
-        mock_view.update_plot_data(arr)
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
-    def test_none_input(self, mock_view):
-        mock_view.update_plot_data(None)
-        assert mock_view.plot_data is None
-
-    def test_list_input(self, mock_view):
-        mock_view.update_plot_data([1, 2, 3])
-        assert mock_view.plot_data == [1, 2, 3]
-
-
-# ===========================================================================
 # validate_single_channel
 # ===========================================================================
 
@@ -1226,23 +1206,6 @@ class TestFactorsExtended:
     def test_first_factor_lte_second(self, mock_view):
         nr, nc = mock_view._factors(8)
         assert nr <= nc
-
-
-# ===========================================================================
-# update_plot_data — extended
-# ===========================================================================
-
-
-class TestUpdatePlotDataExtended:
-    def test_empty_array(self, mock_view):
-        arr = np.array([])
-        mock_view.update_plot_data(arr)
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
-    def test_2d_array(self, mock_view):
-        arr = np.ones((3, 4))
-        mock_view.update_plot_data(arr)
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
 
 
 # ===========================================================================

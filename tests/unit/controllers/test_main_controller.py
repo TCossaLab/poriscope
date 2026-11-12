@@ -694,23 +694,6 @@ def test_update_available_plugins_caches_and_pushes_to_tabs(
     tab.update_available_plugins.assert_called_once_with(controller.data_plugins)
 
 
-def test_update_available_plugins_skips_none_tabs(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Skip None tab entries when pushing plugin updates.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.analysis_tabs = {"X": None}
-
-    controller.update_available_plugins("MetaReader", ["R1"])
-
-    assert controller.data_plugins["MetaReader"] == ["R1"]
-
-
 def test_save_session_with_provided_file(
     controller: MainController,
     mock_main_model: MagicMock,

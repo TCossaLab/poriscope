@@ -133,17 +133,6 @@ def test_plugin_is_metaview_subclass():
 
 
 # ---------------------------------------------------------------------------
-# update_plot_data
-# ---------------------------------------------------------------------------
-
-
-def test_update_plot_data_stores_array(view):
-    data = np.array([1, 2, 3])
-    view.update_plot_data(data)
-    np.testing.assert_array_equal(view.plot_data, data)
-
-
-# ---------------------------------------------------------------------------
 # update_plot_samplerate
 # ---------------------------------------------------------------------------
 

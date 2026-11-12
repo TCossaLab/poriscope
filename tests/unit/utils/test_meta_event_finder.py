@@ -842,7 +842,8 @@ class TestFindEventsHappyPath:
         assert finder.num_events_found[0] == 2
 
     def test_invalid_range_is_skipped(self, finder):
-        # second range is degenerate (start >= end) and should be skipped
+        # The second range is degenerate (start >= end); _merge_overlapping_ranges drops
+        # it, so the run finishes over the first range alone.
         gen = finder.find_events(0, [(0, 10.0), (5.0, 5.0)], chunk_length=10.0)
         list(gen)
         assert finder.eventfinding_finished[0] is True

@@ -69,6 +69,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking:** `MetaView.update_plot_data` and `MetaView.plot_data` are removed: nothing read what they stored, so a tab calling it drew nothing; draw through the tab's own View methods
+
 * **Breaking:** a `BaseLineEdit` is no longer installed as an application event filter: one `MessageBoxValidationGuard` per application sets `suspend_validation` and `app_closing`, so a subclass overriding `eventFilter` no longer receives every application event
 
 * **Breaking:** `RawDataView.psd_data_requested` and `RawDataView.calculate_psd` carry the PSD options as a dict, and `RawDataController.calculate_psd` takes it; `load_psd_data` takes them as keyword parameters, defaulting to the PSD Update PSD always drew
@@ -199,6 +201,8 @@
 ### Analysis Tabs:
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
+
+* Code that could never change a result is removed: `_parse_event_indices`'s `allow_floats` (every caller parsed integers), `MetaDatabaseLoader`'s longest-first column sort, and `SQLiteDBLoader`'s object-dtype check
 
 * `ProteinModel._compute_theoretical_blockages` raises for a negative form factor, as its docstring says, instead of returning NaN
 

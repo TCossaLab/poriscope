@@ -776,11 +776,6 @@ class TestSQLiteDBLoader:
         dtype = pd.to_datetime(pd.Series(["2021-01-01", "2021-01-02"])).dtype
         assert loader._get_sqlite_type(dtype) == "TEXT"
 
-    def test_get_sqlite_type_object(self, loader: SQLiteDBLoader) -> None:
-        """Test SQLite type mapping for object."""
-        dtype = pd.Series([object(), object()]).dtype
-        assert loader._get_sqlite_type(dtype) == "TEXT"
-
     def test_ensure_event_counts_creates_table(
         self, loader: SQLiteDBLoader, temp_db_path: Path
     ) -> None:

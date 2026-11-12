@@ -1141,7 +1141,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             return "INTEGER"
         elif pd.api.types.is_float_dtype(dtype):
             return "REAL"
-        elif pd.api.types.is_string_dtype(dtype) or pd.api.types.is_object_dtype(dtype):
+        elif pd.api.types.is_string_dtype(dtype):  # object dtype counts as a string
             return "TEXT"
         elif pd.api.types.is_bool_dtype(dtype):
             return "INTEGER"  # Store booleans as 0 or 1

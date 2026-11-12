@@ -134,7 +134,6 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   the whole plugin-facing API a Controller gets; ``MetaModel.call`` is the same method for
   the Model's use, and neither layer should reach a plugin any other way
 - ``export_plot_data()`` to save cached data as a CSV
-- ``update_plot_data()`` to push processed data to the view
 - ``set_generator()`` to forward generators from controller to model
 - ``handle_kill_worker()`` and ``handle_kill_all_workers()`` to gracefully stop
   long-running operations; the second also stops the tab's replay
