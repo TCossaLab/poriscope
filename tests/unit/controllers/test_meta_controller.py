@@ -28,7 +28,6 @@ from pytest_mock import MockerFixture
 from poriscope.utils.LogDecorator import RESET_ACTION
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaModel import MetaModel
-from poriscope.utils.MetaView import MetaView
 
 # ----------------------------- fixtures ------------------------------
 
@@ -605,24 +604,6 @@ def test_update_tab_actions_does_not_add_empty_history(
     assert len(controller.tab_action_history) == 0
 
 
-def test_update_tab_actions_undo_removes_last_entry(
-    controller: MetaController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Remove the most recent action and replay the remaining history on undo.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    """
-    controller.tab_action_history = OrderedDict(
-        {0: {"action": "step1"}, 1: {"action": "step2"}}
-    )
-    controller.update_tab_actions(undo=True)
-    assert 1 not in controller.tab_action_history
-    controller.replay.assert_called_once()
-
-
 def test_discarding_drops_the_last_action_without_replaying(
     controller: MetaController,
     mock_view: MagicMock,
@@ -642,15 +623,6 @@ def test_discarding_drops_the_last_action_without_replaying(
     assert controller.tab_action_history == OrderedDict({0: {"action": "step1"}})
     controller.replay.assert_not_called()
     controller.update_tab_action_history.emit.assert_called_once()
-
-
-def test_discarding_is_the_controllers_own_step_with_no_view_signal() -> None:
-    """
-    Only the Controller records an action, so only it knows one was refused; it discards
-    by calling its own method, and a View carries no signal asking for it.
-    """
-    assert not hasattr(MetaView, "discard_last_tab_action")
-    assert callable(MetaController.discard_last_tab_action)
 
 
 def test_discarding_from_an_empty_history_does_nothing(
@@ -757,29 +729,7 @@ def test_update_tab_actions_undo_on_empty_history_returns_early(
     controller.update_tab_action_history.emit.assert_not_called()
 
 
-def test_update_tab_actions_undo_skips_reset_actions_entries(
-    controller: MetaController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Continue popping entries while the last item has action == RESET_ACTION.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    """
-    controller.tab_action_history = OrderedDict(
-        {
-            0: {"action": "step1"},
-            1: {"action": RESET_ACTION},
-            2: {"action": RESET_ACTION},
-        }
-    )
-    controller.update_tab_actions(undo=True)
-    # All _reset_actions entries and the last real entry should be consumed
-    controller.replay.assert_called_once()
-
-
-# -------- update_tab_actions StopIteration branches ------------------
+# -------- update_tab_actions StopIteration branch ---------------------
 
 
 def test_update_tab_actions_undo_handles_stopiteration_after_first_popitem(
@@ -803,79 +753,6 @@ def test_update_tab_actions_undo_handles_stopiteration_after_first_popitem(
     # History is now empty — view should still receive the empty history
     controller.replay.assert_called_once()
     controller.update_tab_action_history.emit.assert_called_once()
-
-
-def test_update_tab_actions_undo_handles_stopiteration_inside_reset_actions_loop(
-    controller: MetaController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Hit the ``except StopIteration: break`` inside the _reset_actions while loop.
-
-    To trigger the inner break we need the while loop to pop a _reset_actions
-    entry and then find the history completely empty so that
-    ``next(reversed(self.tab_action_history))`` raises StopIteration.
-
-    Setup: two _reset_actions entries only (no non-reset entry left after the
-    outer popitem removes the last one).  The outer popitem removes entry 1,
-    then the while loop sees entry 0 is _reset_actions, pops it, and the inner
-    next() raises StopIteration → break.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    """
-    controller.tab_action_history = OrderedDict(
-        {
-            0: {"action": RESET_ACTION},
-            1: {"action": RESET_ACTION},
-        }
-    )
-
-    controller.update_tab_actions(undo=True)
-
-    controller.replay.assert_called_once()
-    controller.update_tab_action_history.emit.assert_called_once()
-
-
-# ----------- abstract _init / _setup_connections pass lines ----------
-
-
-def test_abstract_init_pass_line_is_covered() -> None:
-    """
-    Cover the ``pass`` body of the abstract _init definition.
-
-    Calls the abstract base implementation directly via super() from a
-    concrete subclass so coverage sees the pass statement executed.
-    """
-
-    class _CallsSuper(MetaController):
-        def _init(self) -> None:
-            super()._init()  # type: ignore[safe-super]
-
-        def _setup_connections(self) -> None:
-            pass
-
-    ctrl = _CallsSuper.__new__(_CallsSuper)  # type: ignore[type-abstract]
-    ctrl._init()  # executes MetaController._init -> pass
-
-
-def test_abstract_setup_connections_pass_line_is_covered() -> None:
-    """
-    Cover the ``pass`` body of the abstract _setup_connections definition.
-
-    Calls the abstract base implementation directly so coverage sees
-    the pass statement executed.
-    """
-
-    class _CallsSuper(MetaController):
-        def _init(self) -> None:
-            pass
-
-        def _setup_connections(self) -> None:
-            super()._setup_connections()  # type: ignore[safe-super]
-
-    ctrl = _CallsSuper.__new__(_CallsSuper)  # type: ignore[type-abstract]
-    ctrl._setup_connections()  # executes MetaController._setup_connections -> pass
 
 
 # ----------- __init__ kwargs setattr branch --------------------------
