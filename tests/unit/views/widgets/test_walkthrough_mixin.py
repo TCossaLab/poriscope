@@ -1,5 +1,5 @@
 """
-Tests for poriscope/plugins/analysistabs/utils/walkthrough_mixin.py
+Tests for poriscope/views/widgets/walkthrough_mixin.py
 
 Strategy: create a minimal concrete QWidget subclass that implements the two
 abstract methods (get_current_view, get_walkthrough_steps), then test all
@@ -9,9 +9,10 @@ WalkthroughMixin methods by calling them directly.
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import QRect, Signal
+from PySide6.QtCore import QPoint, QRect, Signal
 from PySide6.QtWidgets import QWidget
 
+from poriscope.views.widgets.walkthrough import Overlay, StepDialog
 from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 # ---------------------------------------------------------------------------
@@ -235,7 +236,7 @@ class TestRunNextWalkthroughStep:
 
 
 # ---------------------------------------------------------------------------
-# _reposition_dialog – the primary position and its two fallbacks
+# _reposition_dialog – the above fallback and the last resort
 # ---------------------------------------------------------------------------
 
 
@@ -247,8 +248,6 @@ class TestRepositionDialogFallbacks:
     """
 
     def _setup(self, qtbot):
-        from poriscope.views.widgets.walkthrough import Overlay, StepDialog
-
         parent = ConcreteWalkthrough()
         parent.resize(800, 600)
         qtbot.addWidget(parent)
@@ -262,83 +261,6 @@ class TestRepositionDialogFallbacks:
         dialog.setFixedSize(320, 160)
         parent.walkthrough_dialog = dialog
         return parent, dialog
-
-    @pytest.mark.skip(
-        reason="Qt object lifetime makes this unreliable across platforms"
-    )
-    def test_candidate_fits_calls_move_and_returns(self, qtbot):
-        """Primary candidate fits → dialog.move(pos) called.
-        Parent is enormous so 'right of widget' candidate fits inside window_rect."""
-        from poriscope.views.widgets.walkthrough import Overlay, StepDialog
-
-        parent = ConcreteWalkthrough()
-        parent.resize(3000, 3000)
-        parent.move(0, 0)
-        qtbot.addWidget(parent)
-        parent.show()
-        qtbot.waitExposed(parent)
-
-        # Small target widget positioned near left edge so 'right' candidate fits
-        target = QWidget(parent)
-        target.resize(50, 50)
-        target.move(10, 1500)  # vertically centred so above/below also fits
-        target.show()
-
-        overlay = Overlay(parent)
-        # Do NOT add overlay to qtbot — parent owns it, double-delete causes the error
-        steps = [("Title", "Msg", target)]
-        dialog = StepDialog(parent, steps, overlay)
-        qtbot.addWidget(dialog)
-        dialog.setFixedSize(100, 80)
-        parent.walkthrough_dialog = dialog
-
-        # Keep hard references so GC doesn't collect them mid-test
-        parent._test_refs = [target, overlay, dialog]
-
-        move_calls = []
-        original_move = dialog.move
-
-        def tracking_move(pos):
-            move_calls.append(pos)
-            original_move(pos)
-
-        dialog.move = tracking_move
-
-        event = MagicMock()
-        parent._reposition_dialog(event)
-
-        assert len(move_calls) >= 1
-
-    @pytest.mark.skip(
-        reason="Qt object lifetime makes this unreliable across platforms"
-    )
-    def test_fallback_below_branch(self, qtbot):
-        """All candidates fail, fallback_below fits → the dialog moves below."""
-        parent, dialog = self._setup(qtbot)
-
-        move_calls = []
-        dialog.move = lambda pos: move_calls.append(pos)
-
-        # Patch QRect.contains so:
-        #   - first 4 calls (candidates) → False
-        #   - 5th call (below_rect) → True
-        #   - intersects always False
-        call_count = [0]
-
-        def fake_contains(self_rect, other):
-            call_count[0] += 1
-            if call_count[0] <= 4:
-                return False  # candidates fail
-            if call_count[0] == 5:
-                return True  # fallback_below succeeds
-            return False
-
-        with patch.object(QRect, "contains", fake_contains):
-            with patch.object(QRect, "intersects", return_value=False):
-                event = MagicMock()
-                parent._reposition_dialog(event)
-
-        assert len(move_calls) >= 1
 
     def test_fallback_above_branch(self, qtbot):
         """Candidates + below fail, fallback_above fits → the dialog moves above."""
@@ -362,7 +284,10 @@ class TestRepositionDialogFallbacks:
                 event = MagicMock()
                 parent._reposition_dialog(event)
 
-        assert len(move_calls) >= 1
+        # The step highlights the parent itself, so "above" is the parent's own
+        # top-left corner raised by the dialog's height plus the 20px margin.
+        origin = parent.mapToGlobal(QPoint(0, 0))
+        assert move_calls == [QPoint(origin.x(), origin.y() - dialog.height() - 20)]
 
     def test_last_resort_branch(self, qtbot):
         """All fallbacks fail → last-resort bottom-right placement (no crash)."""
@@ -643,11 +568,6 @@ class TestAbstractMethods:
 
 class TestRepositionDialog:
     def _make_dialog_with_steps(self, widget_instance, qtbot):
-        from poriscope.views.widgets.walkthrough import (
-            Overlay,
-            StepDialog,
-        )
-
         overlay = Overlay(widget_instance)
         qtbot.addWidget(overlay)
         steps = [("Title", "Msg", widget_instance)]
@@ -659,14 +579,6 @@ class TestRepositionDialog:
         widget.walkthrough_dialog = None
         event = MagicMock()
         widget._reposition_dialog(event)  # should not crash
-
-    def test_repositions_dialog_to_a_point(self, widget, qtbot):
-        dialog = self._make_dialog_with_steps(widget, qtbot)
-        widget.walkthrough_dialog = dialog
-        event = MagicMock()
-        widget._reposition_dialog(event)
-        # dialog should have been moved somewhere — just check no crash
-        assert dialog is not None
 
     def test_handles_list_widget_in_step(self, widget, qtbot):
         """Steps with list widgets don't crash reposition."""

@@ -48,46 +48,29 @@ def test_window_title(main_view):
     assert main_view.windowTitle().startswith("Poriscope")
 
 
-def test_toggle_menu_widgets_twice(main_view, qtbot):
+def test_a_second_toggle_inside_the_debounce_is_ignored(main_view, qtbot):
     """
-    Ensure toggling the menu twice returns visibility to the original state.
+    A double-click on the sidebar toggle swaps the sidebar once, not twice.
+
+    The second call lands while the debounce is held, so the sidebar stays expanded;
+    once the debounce releases, the next toggle collapses it again.
     """
-    qtbot.wait(50)  # Initial buffer for rendering
+    assert main_view.icon_menu_container.isVisible() is True
+    assert main_view.text_menu_container.isVisible() is False
 
-    original_icon = main_view.icon_menu_container.isVisible()
-    original_text = main_view.text_menu_container.isVisible()
-
-    # First toggle
     main_view.toggle_menu_widgets()
-    qtbot.wait(350)  # Wait long enough for QTimer to reset the flag
-
-    # Second toggle
-    main_view.toggle_menu_widgets()
-    qtbot.wait(100)  # Small buffer
-
-    final_icon = main_view.icon_menu_container.isVisible()
-    final_text = main_view.text_menu_container.isVisible()
-
-    assert final_icon == original_icon
-    assert final_text == original_text
-
-
-def test_toggle_menu_widgets_early_return(main_view, qtbot):
-    """
-    Ensure that if toggle_menu_widgets is called while toggle is in progress,
-    the second call is ignored (return branch is covered).
-    """
-    # First toggle starts the progress
-    main_view.toggle_menu_widgets()
-    assert main_view.toggle_in_progress is True  # Just to be sure
-
-    # Immediately try to toggle again — should trigger the early return
     main_view.toggle_menu_widgets()
 
-    # Wait for the QTimer to finish so it doesn't interfere with other tests
-    qtbot.wait(350)
+    assert main_view.icon_menu_container.isVisible() is False
+    assert main_view.text_menu_container.isVisible() is True
 
-    # If no exception and coverage shows that line hit, test passes
+    qtbot.waitUntil(lambda: main_view.toggle_in_progress is False, timeout=2000)
+    main_view.toggle_menu_widgets()
+
+    assert main_view.icon_menu_container.isVisible() is True
+    assert main_view.text_menu_container.isVisible() is False
+    # Leave no debounce timer running into the next test.
+    qtbot.waitUntil(lambda: main_view.toggle_in_progress is False, timeout=2000)
 
 
 def test_add_text_to_display(main_view):
