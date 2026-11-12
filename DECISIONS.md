@@ -18,6 +18,19 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - The Raw Data PSD tests compare to scipy within `rtol=1e-12`, not exactly
+
+**Context.** Branch CI's fresh-stack legs (3.14, Linux and Windows) failed two tests in
+`test_rawdata_psd_fit_no_gui.py`: 51/101 and ~120/251 bins off by a few ULPs. `NIBinaryReader.load_data`
+returns an `np.memmap` (owning a copy); the test calls `welch` on a plain ndarray of identical values.
+scipy 1.18.1 sums the two in a different order; 1.15.3 does not (numpy 2.2.6 vs 2.5.4 makes no difference).
+
+**Decision.** Relax the test, not the reader: the PSD is correct, and stripping the subclass would
+change what every caller receives for no user-visible gain. `rtol=1e-12` still fails an overlap of 124
+for 125, or a segment one sample short.
+
+**Revisit if** an exact comparison against a library is needed again: pass it the same array type.
+
 ## 2026-11-11 - The conditioning app is ported as a data-plugin family, an NI reader, a Raw Data option and a tab
 
 **Context.** The lab's tkinter conditioning script (Michelle Stephen) read a folder - pore-size CSV, PSD `.bin`

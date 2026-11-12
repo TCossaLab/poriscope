@@ -31,6 +31,10 @@ READER = "ni"
 SAMPLERATE = 1_000
 POINTS = 2_000
 DURATION = POINTS / SAMPLERATE
+# The reader hands Welch an np.memmap, the test a plain ndarray; scipy 1.18 sums the two
+# in a different order, a few ULPs apart. A different segment length or overlap moves the
+# PSD by far more than this.
+WELCH_RTOL = 1e-12
 
 
 @pytest.fixture
@@ -118,7 +122,7 @@ def test_without_the_fit_the_psd_is_what_raw_data_always_drew(
     assert tab.tab_controller.load_psd_data(READER, [5], 0.0, DURATION, "") is True
     assert _fit_lines(tab) == []
     _, expected = welch(recording["data"][:, 5], SAMPLERATE, nperseg=POINTS // 10)
-    np.testing.assert_array_equal(tab.tab_view.Pxx_list[0], expected)
+    np.testing.assert_allclose(tab.tab_view.Pxx_list[0], expected, rtol=WELCH_RTOL)
 
 
 def test_a_segment_length_and_overlap_set_the_welch_segments(
@@ -130,7 +134,7 @@ def test_a_segment_length_and_overlap_set_the_welch_segments(
     _, expected = welch(
         recording["data"][:, 5], fs=SAMPLERATE, nperseg=500, noverlap=125
     )
-    np.testing.assert_array_equal(tab.tab_view.Pxx_list[0], expected)
+    np.testing.assert_allclose(tab.tab_view.Pxx_list[0], expected, rtol=WELCH_RTOL)
 
 
 def test_a_fit_range_out_of_order_is_refused_and_not_recorded(
