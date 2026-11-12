@@ -31,7 +31,10 @@ whatever an entry starts - a redraw, a background run - gets going before the ne
 A ``result`` entry launches one plugin's run on one channel; the replay waits for that run
 to end (:py:meth:`ReplaySequence.on_run_finished`) and carries on only if the run left a
 finished channel with results. A run of that plugin on that channel that is already going
-is waited out first, since launching another would be refused.
+is waited out first, since launching another would be refused. Any other entry that starts
+background runs - a view computed before it draws - ends once every run it started has
+ended, a turn of the event loop later, so the tab has drawn before the next entry or
+"replay done"; runs that were going before it are not its own.
 
 A replay stops at the first entry that fails: one that raises, one whose action returns
 ``False`` for a call that did nothing (its declaration's ``skip_on_false``), or a run that
@@ -56,6 +59,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Set,
     Tuple,
 )
 
@@ -93,6 +97,10 @@ class ReplaySequence:
         #: (plugin key, channel) of the run this replay waits on: its own, once launched,
         #: or one already going that its next entry would launch again.
         self.waiting_for: Optional[Tuple[str, int]] = None
+        #: (plugin key, channel) of each background run the step it is on started and has
+        #: not heard end yet, for a step that is not a result: a view computed before it
+        #: draws, say.
+        self.started_runs: Set[Tuple[str, int]] = set()
         #: The position of the entry the last replay failed at, None if it did not fail.
         self.failed_at: Optional[int] = None
         #: The tab's history when the replay started, which going back replays.
@@ -240,16 +248,30 @@ class ReplaySequence:
         """
         Hear that one plugin's run on one channel ended; the Model's ``run_finished``.
 
-        Only the run the replay waits on matters. If it was the replay's own, the replay
-        carries on when the run finished with results and fails otherwise; if it was a run
-        that was already going, the entry that waited for it is launched now.
+        Only a run the replay waits on matters. If it was the replay's own result, the
+        replay carries on when the run finished with results and fails otherwise; if it was
+        a run that was already going, the entry that waited for it is launched now. If it
+        was the last of the runs the step started, the step ends on the next turn of the
+        event loop, once the tab has heard the run end too.
 
         :param channel: the channel the run worked on
         :type channel: int
         :param key: the plugin's key
         :type key: str
         """
-        if not self.running or self.waiting_for != (key, channel):
+        if not self.running:
+            return
+        if (key, channel) in self.started_runs:
+            self.started_runs.discard((key, channel))
+            if not self.started_runs:
+                self._generation += 1
+                QTimer.singleShot(
+                    0,
+                    self._controller,
+                    functools.partial(self._background_ended, self._generation),
+                )
+            return
+        if self.waiting_for != (key, channel):
             return
         self.waiting_for = None
         if not self._launched:
@@ -301,6 +323,7 @@ class ReplaySequence:
         if run is not None and self._run_going(run):
             self.waiting_for = run
             return
+        going_before = self._runs_going()
         try:
             with replaying():
                 # The panel shows what the step ran with, so a restored tab shows the values
@@ -318,8 +341,38 @@ class ReplaySequence:
             self.waiting_for = run
             self._launched = True
             return
+        self.started_runs = self._runs_going() - going_before
+        if self.started_runs:
+            return
         self._index += 1
         self._schedule()
+
+    def _background_ended(self, generation: int) -> None:
+        """
+        End a step whose background runs have all ended, and go on to the next.
+
+        :param generation: the scheduling this came from; one from before the replay ended
+            or restarted does nothing
+        :type generation: int
+        """
+        if generation != self._generation:
+            return
+        self._index += 1
+        self._schedule()
+
+    def _runs_going(self) -> Set[Tuple[str, int]]:
+        """
+        The (plugin key, channel) of every background run of the tab going now.
+
+        :return: the runs whose worker has started and not yet ended
+        :rtype: Set[Tuple[str, int]]
+        """
+        return {
+            (key, channel)
+            for key, channels in self._controller.model.thread_running.items()
+            for channel, going in channels.items()
+            if going
+        }
 
     @staticmethod
     def _run_of(
@@ -499,6 +552,7 @@ class ReplaySequence:
         self.running = False
         stop_collecting_errors(self)
         self.waiting_for = None
+        self.started_runs = set()
         self._launched = False
         self._going_back = False
         self._generation += 1
