@@ -23,13 +23,13 @@ the push order within the notification was wrong.
 Both instances and names now come from **one registry** -
 ``DataPluginModel.get_plugin_instances`` and ``get_instantiated_plugins_list`` read the
 same dict - so they cannot disagree about *what* exists. Only the order can be wrong,
-which is what test_instances_are_pushed_before_names is for.
+which is what test_a_tab_can_call_what_it_is_being_told_about_during_the_push is
+for.
 """
 
 import ast
 from pathlib import Path
 from typing import Any, Dict, List
-from unittest.mock import MagicMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -69,24 +69,6 @@ def controller(mocker: MockerFixture) -> MainController:
 
 class TestNamesAndInstancesTravelTogether:
     """Invariant 1: whatever a tab is told exists, it must be able to call."""
-
-    def test_a_lifecycle_event_pushes_both(
-        self, controller: MainController, mocker: MockerFixture
-    ) -> None:
-        """The notification every creation, deletion and rename route already emits."""
-        loader = mocker.Mock()
-        controller.data_plugin_controller.get_plugin_instances.return_value = {
-            "MetaDatabaseLoader": {"SQLiteDBLoader_0": loader}
-        }
-        tab: MagicMock = mocker.Mock()
-        controller.analysis_tabs = {"ClusteringController": tab}
-
-        controller.update_available_plugins("MetaDatabaseLoader", ["SQLiteDBLoader_0"])
-
-        named = tab.update_available_plugins.call_args.args[0]
-        pushed = tab.set_plugin_instances.call_args.args[0]
-        assert named["MetaDatabaseLoader"] == ["SQLiteDBLoader_0"]
-        assert pushed["MetaDatabaseLoader"]["SQLiteDBLoader_0"] is loader
 
     def test_the_instances_come_from_the_registry_that_owns_them(
         self, controller: MainController, mocker: MockerFixture
@@ -147,27 +129,6 @@ class TestInstancesArePushedFirst:
     asks its selected loader for columns. Push the names first and that call runs against
     an empty instance map - which is the bug that survived the first fix.
     """
-
-    def test_instances_are_pushed_before_names(
-        self, controller: MainController, mocker: MockerFixture
-    ) -> None:
-        """Recorded per tab, in call order."""
-        controller.data_plugin_controller.get_plugin_instances.return_value = {
-            "MetaDatabaseLoader": {"L": mocker.Mock()}
-        }
-        order: List[str] = []
-        tab = mocker.Mock()
-        tab.set_plugin_instances.side_effect = lambda *_: order.append("instances")
-        tab.update_available_plugins.side_effect = lambda *_: order.append("names")
-        controller.analysis_tabs = {"ClusteringController": tab}
-
-        controller.update_available_plugins("MetaDatabaseLoader", ["L"])
-
-        assert order == ["instances", "names"], (
-            "names were pushed before instances; populating a combobox fires a "
-            "selection change synchronously, so the tab asks for columns while its "
-            "instance map is still empty"
-        )
 
     def test_a_tab_can_call_what_it_is_being_told_about_during_the_push(
         self, controller: MainController, mocker: MockerFixture

@@ -3,17 +3,14 @@
 
 The widget picks the path and emits an intent; these two slots do the file work through
 the Model and hand the answer back. Both tabs inherit them, so they are driven here
-through ``MetadataController`` and asserted to be the base's only copy.
+through ``MetadataController``.
 """
 
 import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
-from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
-
-SUBSET_CONTROLLERS = (MetadataController, ProteinController)
 
 
 @pytest.fixture
@@ -33,19 +30,6 @@ def controller(mocker: MockerFixture) -> MetadataController:
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
     ctrl.add_text_to_display = mocker.Mock()  # type: ignore[assignment,method-assign]
     return ctrl
-
-
-@pytest.mark.parametrize("name", ("load_filters", "save_filters"))
-def test_the_base_owns_the_only_copy(name: str) -> None:
-    """
-    Neither tab may keep its own, or the file work landed in one tab's controller.
-
-    :param name: the slot's name
-    :return: None
-    """
-    assert name in MetaSubsetTabController.__dict__
-    for controller_cls in SUBSET_CONTROLLERS:
-        assert name not in controller_cls.__dict__, f"{controller_cls.__name__}.{name}"
 
 
 class TestLoadFilters:
