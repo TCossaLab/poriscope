@@ -183,7 +183,7 @@ def real_data_dir() -> Path:
 # hand-applied: a new file under tests/e2e/ carries the marker the moment it is
 # added, with nothing to remember and nothing to keep in sync.
 #
-# `compliance`, `smoke` and `e2e_ux` stay hand-applied: they are genuine
+# `compliance` and `e2e_ux` stay hand-applied: they are genuine
 # per-test choices that no directory implies.
 _PATH_MARKERS = (
     ("/tests/e2e/", "e2e"),
