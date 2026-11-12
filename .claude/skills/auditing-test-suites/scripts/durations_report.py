@@ -136,11 +136,20 @@ def compare(full: Dict[str, float], alone: Dict[str, float], top: int) -> None:
 def main(argv: List[str]) -> int:
     """Run the report; return 1 when the log holds no duration lines."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("log", help="a full run's output with --durations=0 --durations-min=0")
-    parser.add_argument("--alone", help="a log of the suspect files run alone, for the ratio")
-    parser.add_argument("--top", type=int, default=30, help="rows per ranked list (default 30)")
     parser.add_argument(
-        "--depth", type=int, default=3, help="path parts that name a directory (default 3)"
+        "log", help="a full run's output with --durations=0 --durations-min=0"
+    )
+    parser.add_argument(
+        "--alone", help="a log of the suspect files run alone, for the ratio"
+    )
+    parser.add_argument(
+        "--top", type=int, default=30, help="rows per ranked list (default 30)"
+    )
+    parser.add_argument(
+        "--depth",
+        type=int,
+        default=3,
+        help="path parts that name a directory (default 3)",
     )
     args = parser.parse_args(argv)
 
