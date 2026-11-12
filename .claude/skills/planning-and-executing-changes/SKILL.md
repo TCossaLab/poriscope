@@ -1,6 +1,6 @@
 ---
 name: planning-and-executing-changes
-description: The default method for planning, executing and verifying any non-trivial software change - a bug fix, feature, review, investigation, migration or release step - from the first design discussion on, even before any plan or code is wanted. Restates a rough request and confirms use cases before planning, re-derives inherited claims, gets approval before logic changes, writes tests that can fail, verifies beyond the suite, and closes findings rather than filing them; nearly a hundred field-tested lessons on how plans, handoffs, tests, gates and green CI mislead. Use whenever you are about to discuss a design or a rough feature request, write or check a plan, accept a claim from a handoff, subagent, comment or earlier session, fix a reported defect, write or edit tests, interpret a test or gate run, decide that something is done or has landed, or write a handoff - even for a one-site fix. For a refactor, also load refactoring-codebases, which builds on this one.
+description: The default method for planning, executing and verifying any non-trivial software change - a bug fix, feature, review, investigation, migration or release step - from the first design discussion on, even before any plan or code is wanted. Restates a rough request and confirms use cases before planning, re-derives inherited claims, gets approval before logic changes, writes tests that can fail, verifies beyond the suite, and closes findings rather than filing them; over a hundred field-tested lessons on how plans, handoffs, tests, gates and green CI mislead. Use whenever you are about to discuss a design or a rough feature request, write or check a plan, accept a claim from a handoff, subagent, comment or earlier session, fix a reported defect, write or edit tests, interpret a test or gate run, decide that something is done or has landed, or write a handoff - even for a one-site fix. For a refactor, also load refactoring-codebases, which builds on this one.
 ---
 
 # Planning and executing changes
@@ -13,7 +13,8 @@ misleads.
 It was distilled from a three-week, nine-step refactor of a desktop application with a plugin
 system (about 2,900 tests growing to 4,200), whose plan was re-verified ten times and moved claims
 every time. Most of what that work taught applies to any change, so it lives here; what is specific
-to refactoring lives in the `refactoring-codebases` skill, which builds on this one. Every lesson
+to refactoring lives in the `refactoring-codebases` skill, which builds on this one, and what is
+specific to porting an existing application lives in `porting-applications`. Every lesson
 carries the case that produced it. The cases are illustrations; the rules are language- and
 framework-neutral.
 
@@ -185,6 +186,10 @@ Also standing, with evidence in the reference files:
 | A metric moved the way you wanted | Prove it was earned | I12 |
 | A background run "exited 0" | Read the summary line and the sentinel | V2 |
 | A test or gate failed and you are about to rerun it | Is its full output saved to a file? | V17 |
+| A long run crawls, or you are about to start one | List the test processes already running; an orphan from an ended session competes for the machine | V16 |
+| A targeted, per-commit or clean-copy run is green | Read the skipped count against a known-good run; were the generated artefacts built in that copy? | V18 |
+| You are gating or comparing from a second worktree | Run with `python -m` from its root, and print the imported module's path | V19 |
+| A test asserts a property of every current member of a set | Assert the invariant; keep a special case with "at least one" | N16 |
 | You are writing a manual-pass step or an expected message | Is the control enabled in that state, and did you see the message in a run of the app? Read its enable condition or try it | V4 |
 | You are about to say what a function does, or what a change would cause, from a grep hit or a diff hunk | Open the whole function and read it top to bottom, or say the claim is unverified | E30 |
 | Every gate is green after changing app code | Launch the app | V3 |

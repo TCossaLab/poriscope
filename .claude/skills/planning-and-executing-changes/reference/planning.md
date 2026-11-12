@@ -103,6 +103,12 @@ before touching anything, so "the branch was green" becomes a measurement with t
 not code drift - the files were byte-identical since the plan was written; the numbers had simply
 been measured wrong. A later pass took apart a claim written the day before, in the plan itself.
 
+*Also:* a pull can move many claims at once, so re-derive after any pull made mid-work, not only before
+the next step. *Case:* 2026-11-11, partway through reviewing a design, a pull brought in
+another developer's rework of how actions are recorded and replayed (which layer records, the kind each
+action declares, the arguments it may carry). Every recording and replay claim in the design had been
+checked against the old head and was re-derived against the new one.
+
 ## P2 · A number that disagrees with itself was never checked
 
 Grep the plan for its own repeated figures before trusting any of them. When a gate's scope is

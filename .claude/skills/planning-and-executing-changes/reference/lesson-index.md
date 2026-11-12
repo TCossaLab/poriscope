@@ -50,6 +50,7 @@ IDs are unique across the two skills.
 - **N12** Structure-reading tests should announce their own obsolescence
 - **N14** Assert the net is armed
 - **N15** Never reshape production code to keep a test passing
+- **N16** Pin the invariant, not the census
 
 ## Measurement (I) - [measurement.md](measurement.md)
 
@@ -85,6 +86,7 @@ IDs are unique across the two skills.
 - **E29** One value, many readers: map the pipeline from input to outcome at every entry point
 - **E30** A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 - **E31** A new dependency is checked against the interpreter floor and the existing pins before it goes in
+- **E32** An edit script applies all of its edits or none
 
 ## Verification (V) - [verification.md](verification.md)
 
@@ -105,6 +107,8 @@ IDs are unique across the two skills.
 - **V15** A merge of upstream work produces a tree nobody has tested
 - **V16** A long run must say where it is while it runs
 - **V17** Save a failure's output before any rerun
+- **V18** A test that skips without a generated artefact passes silently wherever it is missing
+- **V19** A run from a second working copy can import the first one's code
 
 ## Finishing (X) - [finishing.md](finishing.md)
 
@@ -127,3 +131,4 @@ IDs are unique across the two skills.
 - **C10** Treat delegated work as claims, and attribute authorship explicitly
 - **C11** Stay out of the repository while someone else is driving it
 - **C12** Report outcomes faithfully, including the damage
+- **C13** Split a finished tree into the plan's commits by rebuilding each step

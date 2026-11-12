@@ -18,6 +18,7 @@ interruption costs nothing.
 - C10 Treat delegated work as claims, and attribute authorship explicitly
 - C11 Stay out of the repository while someone else is driving it
 - C12 Report outcomes faithfully, including the damage
+- C13 Split a finished tree into the plan's commits by rebuilding each step
 
 ## C1 · Logic changes need an approved plan
 
@@ -143,3 +144,17 @@ and wait, rather than polling state that is mid-change.
 If tests fail, say so with the output; if a step was skipped, say that; if a probe damaged something,
 report the cost alongside the finding - reporting one without the other is choosing which half of the
 result to hand over. When something is done and verified, state it plainly.
+
+## C13 · Split a finished tree into the plan's commits by rebuilding each step
+
+When work is finished uncommitted and the commits must follow the plan's steps, staging hunks cannot
+express a file whose final content belongs to several steps, or a generated baseline that differs at each.
+Rebuild each step's state in a separate staging worktree from the final files - shared files reconstructed
+as they stood after that step, generated baselines regenerated - and commit there with the hooks and that
+step's targeted tests. Check that the last commit's tree is byte-identical to the working tree, then move
+the branch to it.
+
+*Case:* 2026-11-11, a five-step port finished in one working tree was split into five commits this way.
+Rebuilding the fifth step with its own run caught a duplication ratchet that pinned a file family at five
+members after a sixth had been moved in - missed in the working tree, where only the moved files' own tests
+had been rerun.

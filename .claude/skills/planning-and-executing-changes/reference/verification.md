@@ -23,6 +23,8 @@ program still work for a person using it?*
 - V15 A merge of upstream work produces a tree nobody has tested
 - V16 A long run must say where it is while it runs
 - V17 Save a failure's output before any rerun
+- V18 A test that skips without a generated artefact passes silently wherever it is missing
+- V19 A run from a second working copy can import the first one's code
 
 ## The verification routine
 
@@ -206,6 +208,11 @@ report which is which, and do not propose code changes whose only justification 
 artefact. Keep such measurements in the decision log rather than the work queue, so they survive without
 implying a task. For suite-time comparisons, run both revisions in worktrees outside the synced folder.
 
+*Case:* 2026-11-11, a port compared against its original took 397 s to the original's 18.5 s. One
+channel profiled at 1.8 s, which predicted about 30 s, and a repeat of the whole comparison took 15.1 s
+to 21.7 s. The slow run had started minutes after 900 MB of input recordings were renamed in a
+cloud-synced folder; nothing in the code changed between the two.
+
 ## V14 · Bisect, don't argue
 
 When a failure has a cause somewhere in a set - commits, test files, the hunks of one diff - halve the
@@ -245,13 +252,19 @@ A logger that saves output only when the command ends shows nothing about a run 
 long suite's output to the file as it goes, give each test a timeout (pytest-timeout's `--timeout`),
 and watch the file for a stall rather than waiting for an exit, so a stop can be told apart from a
 hang and a hang names the test it is in. Before blaming the code for a stall, check the machine: a
-sleep, hibernation or power cut stops the run and shows the same silent log.
+sleep, hibernation or power cut stops the run and shows the same silent log. Before starting a long run,
+and whenever one crawls, list the test processes already running: a background run from an earlier,
+ended session keeps going, and competes with the new one for the machine and any shared state.
 
 *Case:* a full suite run through `run_logged.py` sat for 11 hours with a one-line log. The wrapper read
 line by line, but the Python child block-buffered its piped output and the log was never flushed (both
 fixed in the script since), so nothing showed where it was. The guess was contention with the app the
 user had open; the cause was the computer hibernating after a power problem. Rerun with streamed
 verbose output and a 300-second per-test timeout, it passed in 7 minutes.
+
+*Case:* 2026-11-11, a full suite in a clean copy reached 4% in 37 minutes while the machine sat at 4% CPU
+load. The previous session's run of the same suite, in a worktree since deleted, was still alive - stuck at
+3% for 90 minutes and holding 3.9 GB. Once it was killed, the new run went from 6% to 39% in 33 minutes.
 
 ## V17 · Save a failure's output before any rerun
 
@@ -264,3 +277,31 @@ counts, and read the next full and clean-copy runs for it.
 was not kept, so a hundred quiet reruns afterwards proved nothing and the cause stayed unknown.
 
 *See also:* V2 for reading the run you saved, and V9 for recording what a non-reproduction ruled out.
+
+## V18 · A test that skips without a generated artefact passes silently wherever it is missing
+
+Tests guarded by a skip-if-absent marker - generated documentation, a built extension, a downloaded
+dataset - are invisible in any copy that lacks the artefact, and a run there is green over them. A clean
+checkout, a staging worktree and a fresh CI runner all lack gitignored artefacts until something builds
+them. Build every such artefact in each copy you gate, and read the skipped count in the summary line
+against a known-good run's: a rise means something stopped running.
+
+*Case:* 2026-11-11, a five-commit series was gated per commit with targeted runs in a staging worktree,
+then by one full run in a clean copy with the API docs generated. The fifth commit added a GUI panel with a
+class docstring, which broke a documentation test asserting that every such panel had none. No per-commit
+run had executed that test: it was either outside the selection or skipped for want of the generated docs.
+The full run found it - 1 failed, 5,833 passed.
+
+## V19 · A run from a second working copy can import the first one's code
+
+With a package installed in editable mode from the main checkout, a test runner or script launched in
+another worktree may import the main checkout's code, not the worktree's: whichever copy is first on the
+import path wins, and the console-script entry point does not put the current directory there. A gate run
+that way measures the wrong tree and stays green. Run from the worktree's root with the interpreter's
+module flag (`python -m pytest`), which puts the current directory first, or set the path explicitly; and
+have any comparison print the file path of the module it imported.
+
+*Case:* 2026-11-11, gating commits in a second worktree of a package installed editable from the main
+checkout: scripts launched there imported the main checkout's code. The gates were moved to `python -m`
+from the worktree root, and the final comparison against the original application printed the imported
+module's path to show it had measured the worktree.

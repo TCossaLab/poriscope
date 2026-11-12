@@ -22,6 +22,7 @@ what does this edit cost that the diff does not show?*
 - E29 One value, many readers: map the pipeline from input to outcome at every entry point
 - E30 A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 - E31 A new dependency is checked against the interpreter floor and the existing pins before it goes in
+- E32 An edit script applies all of its edits or none
 
 ## E3 · Measure a "no-op" before promoting it, and read the comment as a claim
 
@@ -201,3 +202,16 @@ the code needed 3.12.0 (one typing feature in 40 files), every runtime dependenc
 only package needing 3.11 was the docs builder, pinned in the shared requirements file so that the
 whole file refused to install on 3.10 although the application ran there. Three months of an exact
 patch pin, and a CI image pin, rested on a dependency nobody had looked up.
+
+## E32 · An edit script applies all of its edits or none
+
+A script that edits several files and checks each anchor as it goes leaves the tree half-edited when a
+later anchor misses, and a rerun then fails on the edits already made. Check every anchor before writing
+any file, or restore on failure; keep the script in a file rather than an inline here-document, where the
+shell's quoting eats backslashes and quotes; and take anchors after the formatter has run, since it
+re-wraps the very lines they match (see also E23).
+
+*Case:* 2026-11-11, porting an application into a plugin codebase through scripted edits: a script that
+asserted each file's anchor in turn half-applied twice, and its reruns failed on the files already
+changed; inline scripts lost backslashes; and anchors copied before the formatter ran no longer matched
+the lines it had re-wrapped.

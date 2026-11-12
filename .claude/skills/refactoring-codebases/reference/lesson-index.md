@@ -56,6 +56,17 @@ IDs are unique across this skill and planning-and-executing-changes.
 
 # In planning-and-executing-changes - general lessons this skill builds on
 
+## Discovery (D) - [discovery.md](../../planning-and-executing-changes/reference/discovery.md)
+
+- **D1** Restate a rough note before designing from it
+- **D2** Search the decision log and the work queue before designing
+- **D3** A question in the request is the requester's until they answer it
+- **D4** Label every claim about the system "today" or "planned"
+- **D5** Check both halves of a lifecycle verb or a persisted file
+- **D6** On a failure path, what the user can do next is a ruling
+- **D7** "Never automatic" is not "never offered"
+- **D8** Write use cases from the request, before the plan
+
 ## Planning (P) - [planning.md](../../planning-and-executing-changes/reference/planning.md)
 
 - **P20** Detail just in time
@@ -90,6 +101,7 @@ IDs are unique across this skill and planning-and-executing-changes.
 - **N12** Structure-reading tests should announce their own obsolescence
 - **N14** Assert the net is armed
 - **N15** Never reshape production code to keep a test passing
+- **N16** Pin the invariant, not the census
 
 ## Measurement (I) - [measurement.md](../../planning-and-executing-changes/reference/measurement.md)
 
@@ -121,6 +133,11 @@ IDs are unique across this skill and planning-and-executing-changes.
 - **E23** An auto-fixer reconciles around damage and hides it
 - **E24** Keep each fix minimal, and close it where you found it
 - **E25** Fix the contract at the call sites rather than guessing at runtime
+- **E26** An atomic replace can be refused on Windows; retry it, bounded
+- **E29** One value, many readers: map the pipeline from input to outcome at every entry point
+- **E30** A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
+- **E31** A new dependency is checked against the interpreter floor and the existing pins before it goes in
+- **E32** An edit script applies all of its edits or none
 
 ## Verification (V) - [verification.md](../../planning-and-executing-changes/reference/verification.md)
 
@@ -138,6 +155,11 @@ IDs are unique across this skill and planning-and-executing-changes.
 - **V12** "Landed" is a claim about behaviour, so a text match cannot settle it
 - **V13** Separate environment artefacts from measurements
 - **V14** Bisect, don't argue
+- **V15** A merge of upstream work produces a tree nobody has tested
+- **V16** A long run must say where it is while it runs
+- **V17** Save a failure's output before any rerun
+- **V18** A test that skips without a generated artefact passes silently wherever it is missing
+- **V19** A run from a second working copy can import the first one's code
 
 ## Finishing (X) - [finishing.md](../../planning-and-executing-changes/reference/finishing.md)
 
@@ -160,3 +182,4 @@ IDs are unique across this skill and planning-and-executing-changes.
 - **C10** Treat delegated work as claims, and attribute authorship explicitly
 - **C11** Stay out of the repository while someone else is driving it
 - **C12** Report outcomes faithfully, including the damage
+- **C13** Split a finished tree into the plan's commits by rebuilding each step

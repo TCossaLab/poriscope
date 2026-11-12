@@ -87,7 +87,8 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
     commit message if the number rose;
   - its conformance recipe in `tests/unit/plugins/conformance/_recipes.py`: each family's
     dict raises `KeyError` naming itself for a plugin without one (`READER_DATASET_BUILDERS`,
-    `EVENT_FINDER_SETTINGS`, `EVENT_FITTER_SETTINGS`, `FILTER_SETTINGS`). A reader also takes
+    `EVENT_FINDER_SETTINGS`, `EVENT_FITTER_SETTINGS`, `FILTER_SETTINGS`,
+    `CONDITIONING_LOADER_BUILDERS`). A reader also takes
     `READER_EXTRA_SETTINGS` for a setting with no default, and any format-specific fuzz
     mutation in `MUTATIONS` (the shared ones follow `READER_DATASET_BUILDERS` automatically);
   - `poriscope/exposed.py`'s imports and `__all__`, so scripts can import it;
@@ -101,10 +102,26 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   is no hidden or read-only setting in the dialog, so the base reads each such setting through
   a helper that falls back to a module-level defaults dict - one source for the dialog's
   default and the deleted key's value (`ABFReader._abf_setting`, `SETTING_DEFAULTS`). The
-  subclass overrides only `get_empty_settings` and the file-set methods.
+  subclass overrides only `get_empty_settings` and the file-set methods. `SingleBinaryDecoder`
+  follows the same pattern (`_binary_setting`, `SETTING_DEFAULTS`) for its NI variant,
+  `NIBinaryReader` (2026-11-11).
+- **A new data-plugin family** is a closed list the repository keeps in about ten places;
+  re-derive it with `git grep -l <an existing family's base>` before starting, since the list moves.
+  On 2026-11-11 (`MetaConditioningLoader`) it was: `MainModel`'s allowed base classes
+  (`main_model.py`); the Data menu's submenu and its load handler (`main_view.py`); `exposed.py`;
+  `new_plugin.py`'s `FAMILIES`; the family list in `BaseDataPlugin`'s docstring; the compliance
+  test's `META_CLASSES`, where the base must redeclare `BaseDataPlugin`'s abstract methods; the
+  family lists in `check_mvc_boundary.py`, `check_plugin_module_level.py` and
+  `measure_duplication.py`; a conformance recipe dict and a family suite under
+  `tests/unit/plugins/conformance/`; a backend docs page in its toctree; every sentence that counts
+  the families (docs, `CLAUDE.md`, this skill); and the tests that pin the family set
+  (`test_main_model`, `test_main_view`).
 - New analysis tab: generate it too. `python scripts/new_plugin.py AnalysisTab MyTab`
   writes the Controller/Model/View triad and its controls panel under
   `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
+  **Read [reference/analysis-tabs.md](reference/analysis-tabs.md) before building one**: what
+  a tab needs beyond the generator and the frontend guide - data, Views, recording, workers,
+  controls panels - with the cases that taught it.
 
 ## Trap questions: check before designing
 

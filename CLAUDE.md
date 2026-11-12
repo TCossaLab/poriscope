@@ -200,7 +200,8 @@ of every session, so it should stay a short list of standing rules.
 **Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
 any fix, feature, design discussion, review, investigation or release step beyond a typo,
 from the first message about it, even when no plan or code is wanted yet. It holds the general
-method and its lessons; `refactoring-codebases` builds on it for refactors. Both live in
+method and its lessons; `refactoring-codebases` builds on it for refactors, and
+`porting-applications` for porting an existing app or script into Poriscope. All three live in
 `.claude/skills/` beside `plugin-architecture` and are tracked in git: edit the repo copy, and
 do not keep a same-named copy in `~/.claude/skills/`, because a personal skill shadows the
 project one for the bare name. Five of its rules hold in every session:

@@ -18,6 +18,7 @@ it exercise the program the way the program really runs?*
 - N12 Structure-reading tests should announce their own obsolescence
 - N14 Assert the net is armed
 - N15 Never reshape production code to keep a test passing
+- N16 Pin the invariant, not the census
 
 ## N3 · Enter, set up and tear down through the application's own doors
 
@@ -176,3 +177,16 @@ and strictly better than weakening the code or the test's meaning.
 *Case:* clearing a result attribute before an emit broke twelve tests that pre-assigned the attribute
 under a bare mock. Reworking production code to keep them green was rejected; the right fix gave each
 mock a side effect setting the attribute as the real dispatcher does.
+
+## N16 · Pin the invariant, not the census
+
+A test that asserts a property of every current member of a set - "all five panels lack a docstring",
+"each of the eight families has a page" - pins a count and a snapshot, dressed as a rule. The first new
+member breaks it although nothing the test protects has changed, and the fix is then argued from the
+test's wording rather than its purpose. Assert the invariant the test's name states over whatever members
+exist; where a special case must stay exercised, assert that at least one member still has it.
+
+*Case:* 2026-11-11, a documentation test named "the panels are documented despite having no docstring"
+also asserted that every panel had no docstring. A new panel, written with one, failed it. The rewritten
+test asserts that every panel has its page, with or without a docstring, and that at least one panel
+without one remains; it was shown to fail when a panel's page was removed.
