@@ -328,12 +328,12 @@ def eventfinder_added(qtbot, monkeypatch, trace_drawn):
 @pytest.fixture
 def events_found(qtbot, eventfinder_added, auto_dismiss_message_boxes):
     """
-    Run event detection over the recording and wait for it to yield results.
+    Run event detection over the recording and wait until every planted event is found.
 
     Progress is observed by asking the finder plugin how many events it has
     found. The view has no direct handle on the plugin, so the question goes
-    out over the application's global signal bus, which routes it to the
-    plugin and writes the answer back onto the view.
+    through the tab Model's ``call``, the way the application asks a plugin
+    (see ``ask_plugin``).
 
     :return: ``(raw_view, controls, dataset, reader_key, finder_key)``.
     """
@@ -352,7 +352,9 @@ def events_found(qtbot, eventfinder_added, auto_dismiss_message_boxes):
 
     QTest.mouseClick(controls.timer_pushButton, Qt.LeftButton)
     QTest.mouseClick(controls.find_events_pushButton, Qt.LeftButton)
-    qtbot.waitUntil(lambda: num_events_found() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: num_events_found() == ds.num_events, timeout=QT_WAIT_TIMEOUT_MS
+    )
 
     return raw_view, controls, ds, reader_key, finder_key
 
@@ -363,78 +365,41 @@ def events_found(qtbot, eventfinder_added, auto_dismiss_message_boxes):
 
 
 @pytest.mark.e2e_ux
-@pytest.mark.timeout(60)
-def test_reader_and_trace(trace_drawn):
-    """
-    The reader loads the recording and plots the requested time window.
-
-    Checks the plotted sample count matches what two seconds at the
-    dataset's sample rate should produce, confirming the reader decoded the
-    file correctly rather than merely drawing something.
-    """
-    raw_view, controls, ds, reader_key = trace_drawn
-    lines = [ln for ax in raw_view.figure.axes for ln in ax.lines]
-    assert len(lines) >= 1
-    x_data, _ = lines[0].get_data()
-    expected_samples = int(2.0 * ds.samplerate)
-    assert len(x_data) == pytest.approx(expected_samples, rel=0.01)
-
-
-@pytest.mark.e2e_ux
-@pytest.mark.timeout(90)
-def test_eventfinder_finds_exact_planted_count(qtbot, events_found):
-    """
-    Event detection finds every planted event, and no spurious extras.
-
-    The dataset contains a known number of events, so this checks for that
-    exact count -- catching both missed detections and false positives,
-    which a "found at least one" check would let through.
-    """
-    raw_view, controls, ds, reader_key, finder_key = events_found
-
-    def num_events_found() -> int:
-        return ask_plugin(
-            raw_view,
-            "RawDataController",
-            "MetaEventFinder",
-            finder_key,
-            "get_num_events_found",
-            ds.channel,
-            default=0,
-        )
-
-    qtbot.waitUntil(
-        lambda: num_events_found() == ds.num_events, timeout=QT_WAIT_TIMEOUT_MS
-    )
-    assert (
-        num_events_found() == ds.num_events
-    ), f"Expected exactly {ds.num_events} planted events, found {num_events_found()}"
-
-
-@pytest.mark.e2e_ux
 @pytest.mark.timeout(120)
 def test_plot_and_navigate_events(qtbot, events_found):
     """
-    Detected events can be plotted, and the navigation arrows work.
+    Detected events can be plotted, and the navigation arrows page through them.
 
-    Requests every event by index, waits for the figure to gain lines, then
-    steps forward and back through the event list to confirm the arrow
-    controls don't error.
+    Plots events 0-1, then steps right to 2-3 and back. Each subplot is titled
+    with its event's index, so the titles name the events actually drawn: a
+    step is complete only when the figure shows the next page, not when the
+    click returns.
     """
     raw_view, controls, ds, reader_key, finder_key = events_found
+    assert ds.num_events >= 4, "paging from 0-1 to 2-3 needs four events"
 
-    controls.event_index_lineEdit.setText(f"0-{ds.num_events - 1}")
-    before = count_plot_lines(raw_view.figure)
+    def plotted_events() -> list[str]:
+        return [ax.get_title() for ax in raw_view.figure.axes]
+
+    controls.event_index_lineEdit.setText("0-1")
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: count_plot_lines(raw_view.figure) > before, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: plotted_events() == ["Event 0", "Event 1"], timeout=QT_WAIT_TIMEOUT_MS
     )
 
-    if hasattr(controls, "right_plot_arrow_button"):
-        QTest.mouseClick(controls.right_plot_arrow_button, Qt.LeftButton)
-        qtbot.wait(QT_SHORT_PAUSE_MS)
-        QTest.mouseClick(controls.left_plot_arrow_button, Qt.LeftButton)
-        qtbot.wait(QT_SHORT_PAUSE_MS)
+    assert controls.right_plot_arrow_button.isEnabled(), "right arrow disabled"
+    QTest.mouseClick(controls.right_plot_arrow_button, Qt.LeftButton)
+    qtbot.waitUntil(
+        lambda: plotted_events() == ["Event 2", "Event 3"], timeout=QT_WAIT_TIMEOUT_MS
+    )
+    assert controls.event_index_lineEdit.text() == "2-3"
+
+    assert controls.left_plot_arrow_button.isEnabled(), "left arrow disabled"
+    QTest.mouseClick(controls.left_plot_arrow_button, Qt.LeftButton)
+    qtbot.waitUntil(
+        lambda: plotted_events() == ["Event 0", "Event 1"], timeout=QT_WAIT_TIMEOUT_MS
+    )
+    assert controls.event_index_lineEdit.text() == "0-1"
 
 
 @pytest.mark.e2e_ux

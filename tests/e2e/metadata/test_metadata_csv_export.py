@@ -25,9 +25,11 @@ Key behaviors this test relies on:
 - DictDialog holds its outcome in the private attribute dlg._result (a
   tuple), read through get_result(). It was formerly dlg.result, which
   shadowed QDialog's built-in .result() method.
-- Requires the None-check in _export_csv_subset (dialog.get_result()
-  returns None on Cancel; the unguarded "result, name = result" unpack
-  crashes without it).
+- Cancel must start nothing: dialog.get_result() returns (None, None) on
+  Cancel, and _export_csv_subset returns on an empty result. The cancel
+  path checks that no export worker was staged, which happens before the
+  click returns - a folder comparison cannot see an export that rewrites
+  the same file names, or one whose files have not landed yet.
 
 Run with:
     pytest tests/e2e/metadata/test_metadata_csv_export.py -v -s
@@ -359,7 +361,7 @@ def test_metadata_csv_export(
     assert header, "Expected a non-empty header row in the exported CSV"
 
     # =========================================================
-    # CANCEL PATH: no crash, no new file
+    # CANCEL PATH: no crash, no export started
     # =========================================================
     before_cancel_files = set(export_folder.glob("*.csv"))
 
@@ -382,8 +384,12 @@ def test_metadata_csv_export(
 
     QtCore.QTimer.singleShot(0, auto_complete_export_cancel)
     QTest.mouseClick(controls.export_csv_subset_button, Qt.MouseButton.LeftButton)
-    qtbot.wait(QT_WAIT_SHORT_MS)
 
+    # An export stages its worker before the click returns (see the accept path),
+    # and the accept path's worker is gone, so any worker now is one Cancel started.
+    assert not tab_model.workers.get(
+        loader_key
+    ), "Cancel started an export: a worker was staged for the loader"
     after_cancel_files = set(export_folder.glob("*.csv"))
     print(
         f"[DEBUG] CSV export (cancel path): files before={before_cancel_files}, "

@@ -126,10 +126,29 @@ def _fake_get_item_exact_then_substring(*wants):
     return fake_get_item
 
 
-def _replot_and_count(qtbot, controls, ea_view):
-    """Click Plot Events and return the resulting total line count."""
+def _count_draws(monkeypatch, ea_view) -> list:
+    """
+    Count every event plot the Controller hands the View, once it is drawn.
+
+    A replot of the same events leaves the previous figure in place until it is
+    replaced, so a line count read after a fixed pause passes on a refused
+    replot; waiting for this count to grow is satisfied only by a new drawing.
+    """
+    draws: list = []
+    draw = ea_view.set_event_plot_data
+    monkeypatch.setattr(
+        ea_view,
+        "set_event_plot_data",
+        lambda *args, **kwargs: (draw(*args, **kwargs), draws.append(1)),
+    )
+    return draws
+
+
+def _replot_and_count(qtbot, controls, ea_view, draws):
+    """Click Plot Events, wait for the new drawing, and return its line count."""
+    before = len(draws)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
-    qtbot.wait(QT_SHORT_PAUSE_MS)
+    qtbot.waitUntil(lambda: len(draws) > before, timeout=QT_WAIT_TIMEOUT_MS)
     return _count_lines(ea_view.figure)
 
 
@@ -180,6 +199,7 @@ def test_event_analysis_nav_and_plotting_matrix(
     # tab controller to call a plugin the way the application does.
     ea_view._test_keepalive = (model, view, controller)
     controls = ea_view.eventAnalysisControls
+    draws = _count_draws(monkeypatch, ea_view)
 
     def fill_loader_dialog(dlg) -> bool:
         pick_btn = find_button(dlg, "select input file")
@@ -221,35 +241,35 @@ def test_event_analysis_nav_and_plotting_matrix(
 
     assert controls.event_index_lineEdit.text().strip() == EVENT_RANGE_START
 
-    if controls.right_arrow_button.isEnabled():
-        QTest.mouseClick(controls.right_arrow_button, Qt.MouseButton.LeftButton)
-        qtbot.waitUntil(
-            lambda: controls.event_index_lineEdit.text().strip() == EVENT_RANGE_RIGHT,
-            timeout=QT_WAIT_TIMEOUT_MS,
-        )
+    assert controls.right_arrow_button.isEnabled(), "right arrow disabled"
+    QTest.mouseClick(controls.right_arrow_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(
+        lambda: controls.event_index_lineEdit.text().strip() == EVENT_RANGE_RIGHT,
+        timeout=QT_WAIT_TIMEOUT_MS,
+    )
 
-    if controls.left_arrow_button.isEnabled():
-        QTest.mouseClick(controls.left_arrow_button, Qt.MouseButton.LeftButton)
-        qtbot.waitUntil(
-            lambda: controls.event_index_lineEdit.text().strip() == EVENT_RANGE_START,
-            timeout=QT_WAIT_TIMEOUT_MS,
-        )
+    assert controls.left_arrow_button.isEnabled(), "left arrow disabled"
+    QTest.mouseClick(controls.left_arrow_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(
+        lambda: controls.event_index_lineEdit.text().strip() == EVENT_RANGE_START,
+        timeout=QT_WAIT_TIMEOUT_MS,
+    )
 
     # One more LEFT from 0-4 would go negative -- expected to be rejected
     # (stays at 0-4, logs "Indices must be positive"), not crash and not
     # silently accept a negative range.
-    if controls.left_arrow_button.isEnabled():
-        caplog.clear()
-        QTest.mouseClick(controls.left_arrow_button, Qt.MouseButton.LeftButton)
-        qtbot.wait(QT_SHORT_PAUSE_MS)
-        assert controls.event_index_lineEdit.text().strip() == EVENT_RANGE_START
-        assert any("Indices must be positive" in rec.message for rec in caplog.records)
+    assert controls.left_arrow_button.isEnabled(), "left arrow disabled"
+    caplog.clear()
+    QTest.mouseClick(controls.left_arrow_button, Qt.MouseButton.LeftButton)
+    qtbot.wait(QT_SHORT_PAUSE_MS)
+    assert controls.event_index_lineEdit.text().strip() == EVENT_RANGE_START
+    assert any("Indices must be positive" in rec.message for rec in caplog.records)
 
     # =========================================================
     # STAGE 2: no filter, raw ON -> should be a no-op (same count)
     # =========================================================
     controls.raw_checkbox.setChecked(True)
-    lines_no_filter_raw_on = _replot_and_count(qtbot, controls, ea_view)
+    lines_no_filter_raw_on = _replot_and_count(qtbot, controls, ea_view, draws)
     assert lines_no_filter_raw_on == baseline_lines_no_filter_raw_off
 
     controls.raw_checkbox.setChecked(False)
@@ -298,14 +318,14 @@ def test_event_analysis_nav_and_plotting_matrix(
     controls.filters_comboBox.setCurrentText(new_filter)
     assert controls.filters_comboBox.currentText() != "No Filter"
 
-    lines_with_filter_raw_off = _replot_and_count(qtbot, controls, ea_view)
+    lines_with_filter_raw_off = _replot_and_count(qtbot, controls, ea_view, draws)
     assert lines_with_filter_raw_off == baseline_lines_no_filter_raw_off
 
     # =========================================================
     # STAGE 4: filter ON, raw ON -> more lines (Data + Raw overlay)
     # =========================================================
     controls.raw_checkbox.setChecked(True)
-    lines_with_filter_raw_on = _replot_and_count(qtbot, controls, ea_view)
+    lines_with_filter_raw_on = _replot_and_count(qtbot, controls, ea_view, draws)
     assert lines_with_filter_raw_on > lines_with_filter_raw_off
 
     # =========================================================
@@ -371,7 +391,7 @@ def test_event_analysis_nav_and_plotting_matrix(
     QTest.mouseClick(controls.fit_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(fitting_complete, timeout=QT_WAIT_TIMEOUT_MS)
 
-    lines_after_fit = _replot_and_count(qtbot, controls, ea_view)
+    lines_after_fit = _replot_and_count(qtbot, controls, ea_view, draws)
     assert lines_after_fit > lines_with_filter_raw_on
 
     for w in QtWidgets.QApplication.topLevelWidgets():
