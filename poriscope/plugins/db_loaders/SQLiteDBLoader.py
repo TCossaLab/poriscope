@@ -107,7 +107,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     )
 
     #: The newest schema version this loader reads, from ``PRAGMA user_version``. 0 is a
-    #: file created before 2.1; SQLiteDBWriter stamps the version it creates a file at,
+    #: file created before 3.0; SQLiteDBWriter stamps the version it creates a file at,
     #: and a file stamped above this is refused.
     SCHEMA_VERSION = 1
 

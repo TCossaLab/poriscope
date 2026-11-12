@@ -50,7 +50,7 @@ def _file(**changes: Any) -> Dict[str, Any]:
     content: Dict[str, Any] = {
         "format": PLOT_CONFIGURATION_FORMAT,
         "format_version": PLOT_CONFIGURATION_FORMAT_VERSION,
-        "poriscope_version": "2.1.0",
+        "poriscope_version": "3.0.0",
         "tab": TAB,
         "actions": ENTRIES,
     }
@@ -176,14 +176,14 @@ def test_another_format_version_is_refused_naming_the_writer(
 ) -> None:
     path = _written(
         tmp_path / "later.json",
-        _file(format_version=2, poriscope_version="2.3.0"),
+        _file(format_version=2, poriscope_version="3.2.0"),
     )
 
     with pytest.raises(PlotConfigurationRefused) as refused:
         model.read_plot_configuration(path, TAB)
 
     assert refused.value.reason == (
-        "it was saved by Poriscope 2.3.0 in a plot configuration format this version "
+        "it was saved by Poriscope 3.2.0 in a plot configuration format this version "
         "does not read (format 2)"
     )
 

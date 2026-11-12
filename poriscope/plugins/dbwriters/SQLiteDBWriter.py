@@ -847,7 +847,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                         f"ALTER TABLE sublevels ADD COLUMN {column_name} {pytype_to_sql_type[column_type]};"
                     )
 
-            # A file created before 2.1 has no provenance column; it gains one here, and
+            # A file created before 3.0 has no provenance column; it gains one here, and
             # its existing channels read NULL.
             if not self._column_exists(cursor, "channels", "provenance"):
                 cursor.execute("ALTER TABLE channels ADD COLUMN provenance TEXT;")
@@ -1037,9 +1037,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         """
         Say why a metadata database holds another fitter's results, or None if it does not.
 
-        A file written by 2.1 records each channel's fitter in ``channels.provenance``,
+        A file written by 3.0 records each channel's fitter in ``channels.provenance``,
         and any recorded class other than this fitter's is another fitter. A file from
-        before 2.1 records none, so it is judged by its columns: every column this fitter
+        before 3.0 records none, so it is judged by its columns: every column this fitter
         declares must already be registered, on the table it declares it for. Columns the
         file has beyond those - an analysis tab's cluster labels, say - are not counted
         against it, so a fitter whose columns are a subset of another's is not told apart.

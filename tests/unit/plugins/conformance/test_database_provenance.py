@@ -4,8 +4,8 @@ Each channel of a metadata database records how its events were produced.
 ``channels.provenance`` holds JSON naming the database writer, the event fitter and the
 event loader - each by class, key and the values of its settings - with the Poriscope
 version and the time of the write. It is a column rather than a table because every
-release before 2.1 refuses a database with a table it does not know, and a column it
-ignores. A file from before 2.1 gains the column the first time a later writer appends a
+release before 3.0 refuses a database with a table it does not know, and a column it
+ignores. A file from before 3.0 gains the column the first time a later writer appends a
 channel to it; channels written before then read NULL.
 """
 
@@ -137,7 +137,7 @@ def test_an_older_database_gains_provenance_for_the_channels_written_to_it(
     written: Path, events_db_path
 ) -> None:
     """
-    A file from before 2.1 has no ``provenance`` column; appending a channel adds it
+    A file from before 3.0 has no ``provenance`` column; appending a channel adds it
     and fills it for that channel.
     """
     connection = sqlite3.connect(str(written))

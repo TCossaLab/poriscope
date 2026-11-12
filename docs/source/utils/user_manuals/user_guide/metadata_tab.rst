@@ -121,7 +121,7 @@ Step 4: Generate and Export
      time. The tab's messages appear together when it is done. If a step cannot be replayed,
      you are asked whether to **Go back** to the plot you had before loading, or **Keep** what
      was replayed and continue later with **Replay Actions** (see :ref:`replay_actions`).
-     A plot configuration saved by Poriscope 2.0, or by an earlier 2.1 build, is refused
+     A plot configuration saved by Poriscope 2.0, or by an earlier 3.0 build, is refused
      with an error and nothing is replayed; to keep those plots, draw them again and save
      them with **Save Plot Configuration**. So is a file saved for another tab, or a session
      file, which **Load Session** opens.

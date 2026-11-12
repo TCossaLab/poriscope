@@ -1,4 +1,4 @@
-## Poriscope 2.1.0: in progress
+## Poriscope 3.0.0: in progress
 
 ### Breaking Changes:
 
@@ -59,7 +59,7 @@
 
 * **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
 
-* **Breaking:** a plot configuration now names its format and version, and Load Plot Configuration refuses one saved by Poriscope 2.0 or by any earlier 2.1 build, one saved for another tab, and a session file, with one error saying why, and replays none of it
+* **Breaking:** a plot configuration now names its format and version, and Load Plot Configuration refuses one saved by Poriscope 2.0 or by any earlier 3.0 build, one saved for another tab, and a session file, with one error saying why, and replays none of it
 
 #### Application internals:
 
@@ -304,7 +304,7 @@
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 
-* **Fixed `ClassicBlockageFinder` and `BoundedBlockageFinder` hanging, and blocking quit,** on a sample below a threshold set under three baseline sigma; only unreleased 2.1 development code ever hung
+* **Fixed `ClassicBlockageFinder` and `BoundedBlockageFinder` hanging, and blocking quit,** on a sample below a threshold set under three baseline sigma; only unreleased 3.0 development code ever hung
 
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time; each channel now classifies itself as its own fitting ends
 

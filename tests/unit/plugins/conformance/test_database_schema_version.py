@@ -2,8 +2,8 @@
 A metadata database records the schema version it was created with.
 
 The writer stamps ``PRAGMA user_version`` in the same transaction that creates the
-schema, and only when it creates it, so a file reads 1 exactly when 2.1 or later
-created it; a file from before 2.1 reads 0 and keeps 0 when a later writer appends to
+schema, and only when it creates it, so a file reads 1 exactly when 3.0 or later
+created it; a file from before 3.0 reads 0 and keeps 0 when a later writer appends to
 it. A loader opens 0 and every version it knows, and refuses a newer one by name
 rather than guessing at a schema it has never seen.
 """
@@ -87,7 +87,7 @@ def test_appending_to_an_older_database_leaves_its_version_alone(
     written: Path, events_db_path
 ) -> None:
     """
-    A file from before 2.1 stays at 0 when a later writer appends to it.
+    A file from before 3.0 stays at 0 when a later writer appends to it.
 
     The stamp says which version *created* the file; it is not a claim that every
     row in it was written by that version.
@@ -124,7 +124,7 @@ def test_a_creation_that_fails_leaves_no_version(
 
 
 def test_an_older_database_opens(written: Path) -> None:
-    """A file from before 2.1, at version 0, opens as it always did."""
+    """A file from before 3.0, at version 0, opens as it always did."""
     stamp(written, 0)
 
     loader = build_db_loader(SQLiteDBLoader, str(written))

@@ -1,7 +1,7 @@
 """
 The Bessel filter against a reference implementation.
 
-Until 2.1 ``BesselFilter`` built its filter in the ``(b, a)`` form and ran ``filtfilt``,
+Until 3.0 ``BesselFilter`` built its filter in the ``(b, a)`` form and ran ``filtfilt``,
 guarded by a magic constant (any pole with modulus at or above 0.975 was refused) because
 that form goes numerically unstable at low normalised cutoffs. It now builds second-order
 sections and runs ``sosfiltfilt``; scipy's own ``bessel(..., output="sos")`` with

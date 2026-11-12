@@ -15,7 +15,7 @@ default, but tests for a mechanism you add are yours, and editing an existing te
 relevant to a production change is expected.
 
 **This file is the authoritative record of work to be done on the repository.** Entries sit
-under the release they target - 2.1, 2.2, Later, and Owner-held - grouped within each
+under the release they target - 3.0, 3.1, Later, and Owner-held - grouped within each
 by topic or by the review that found them. Move an entry between releases rather than
 re-labelling it in place.
 
@@ -26,7 +26,7 @@ execution (SWOT and roadmap: <https://claude.ai/artifact/NsZSdFtsenMyANLEDLWvKq>
 structural audit (<https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>).
 Line numbers were re-verified 2026-09-24.
 
-## 2.1 - trust the numbers
+## 3.0 - trust the numbers
 
 Accuracy tests against ground truth, reader and database correctness, type checking that sees the MVC layer, a Windows CI leg.
 
@@ -118,11 +118,7 @@ Step 10 waits for both tracks.
 
 ### Step 10 - docs dead-link gate and release prep
 
-- **Rename the release 2.1.0 to 3.0.0, after the test-suite speed series lands (2026-11-12).** Breaking
-  changes make it a major (DECISIONS 2026-11-12): the `changelog.md` header, this file's "2.1" headers
-  and references, the plan artifact, the Step 10 compatibility page, then `constants.py` and
-  `CITATION.cff` at the release bump.
-- **Settle how every saved format is versioned, before 2.1 merges to main (2026-11-09).** One policy for
+- **Settle how every saved format is versioned, before 3.0 merges to main (2026-11-09).** One policy for
   every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
   whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
   (load, convert, refuse, report). Today they differ: the session file has `format_version` 2 and refuses any other
@@ -130,12 +126,12 @@ Step 10 waits for both tracks.
   (`SQLiteDBLoader.py:112`, `:1079`); a plot configuration names its `format` and has `format_version` 1, and
   any other is refused (`MetaModel.py:478`); the event database (`SQLiteEventWriter`),
   Save Filter files (`MetaSubsetTabModel.save_filters`) and `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
-  release bump, so files saved by 2.1 development builds say 2.0.2.
-- **Tell users, before 2.1 ships, what opens in which version (2026-11-09).** One page or
-  release-notes section, gathered from the 2.1 changelog's breaking lines: 2.1 sessions do not open in
-  2.0, and the first 2.1 Restore rewrites the 2.0 autosave; a 2.0 session opens in 2.1 without actions;
-  `tab_action_history.json` and plot configurations saved by 2.0 or early 2.1 builds are refused; a
-  plugin cannot take a tab's name. Write it once every 2.1 step has landed, so it is complete.
+  release bump, so files saved by 3.0 development builds say 2.0.2.
+- **Tell users, before 3.0 ships, what opens in which version (2026-11-09).** One page or
+  release-notes section, gathered from the 3.0 changelog's breaking lines: 3.0 sessions do not open in
+  2.0, and the first 3.0 Restore rewrites the 2.0 autosave; a 2.0 session opens in 3.0 without actions;
+  `tab_action_history.json` and plot configurations saved by 2.0 or early 3.0 builds are refused; a
+  plugin cannot take a tab's name. Write it once every 3.0 step has landed, so it is complete.
 
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved
   because `conf.py` has no `nitpicky`. Third-party names resolve since 2026-10-09 (`-n` 1,476 → 97);
@@ -145,7 +141,7 @@ Step 10 waits for both tracks.
 - **The standing-policy text at the end of this file** says "all three owner-held fitters"; only the
   two PeakFinders are owner-held and NanoTrees is a deprecation candidate. Correct it.
 
-## 2.2 - responsiveness and state
+## 3.1 - responsiveness and state
 
 Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM speed, splitting the large Views.
 
@@ -419,7 +415,7 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `max_blockage - min_blockage > 500` selects events, but nothing can put a computed value such as
   `range = max_blockage - min_blockage` on an axis. Worth addressing because it is the one way of
   shaping a result for which the user must leave Assisted for raw SQL, and raw has its own column
-  limitation (the entry under 2.2).
+  limitation (the entry under 3.1).
 - **Event-tab arrows stop at 0 but run past the last event; wrap them (wanted for Raw Data's
   Plot Events), or decline, at both ends.** `MetaEventTabView._shift_range_and_update_plot:220` declines below 0 (`:274`); past
   the end it moves the field and the Controller reports the overflow (`RawDataController.py:439`,

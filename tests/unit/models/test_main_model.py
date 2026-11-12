@@ -886,7 +886,7 @@ def test_a_plot_configuration_is_refused_as_a_session(main_model, tmp_path):
             {
                 "format": PLOT_CONFIGURATION_FORMAT,
                 "format_version": 1,
-                "poriscope_version": "2.1.0",
+                "poriscope_version": "3.0.0",
                 "tab": "MetadataController",
                 "actions": [],
             }

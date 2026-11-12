@@ -30,7 +30,7 @@ def _plot_configuration(tab: str, entries: List[Dict[str, Any]]) -> str:
         {
             "format": PLOT_CONFIGURATION_FORMAT,
             "format_version": 1,
-            "poriscope_version": "2.1.0",
+            "poriscope_version": "3.0.0",
             "tab": tab,
             "actions": entries,
         }

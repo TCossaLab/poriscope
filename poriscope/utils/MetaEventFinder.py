@@ -1146,7 +1146,7 @@ class MetaEventFinder(BaseDataPlugin):
 
         The fit runs against true bin centres, so the standard deviation it returns is in
         the data's own units. The bin count is Rice's rule, ``int(2 * len(data) ** (1/3))``:
-        the quarter of that used until 2.1 left the fit about ten bins on a 10k-sample
+        the quarter of that used until 3.0 left the fit about ten bins on a 10k-sample
         chunk, which biased sigma high by 2% there and 0.6% at 100k, and left the
         linearised fit with too few bins above its threshold to solve on short clean
         chunks at all.

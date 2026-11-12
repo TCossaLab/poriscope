@@ -172,7 +172,7 @@ raised in the slot.
 **Decision** (Carolina, 2026-11-10). `{"format": "poriscope.plot_configuration", "format_version": 1,
 "poriscope_version", "tab", "actions": [...]}`, holding the tab's kept actions. `MetaModel.save_plot_configuration`
 writes it (atomically, `json_files.write_json_atomically`) and `read_plot_configuration` checks the whole file first:
-another format, version or tab, or no format at all - 2.0 and every earlier 2.1 build - is refused with the reason.
+another format, version or tab, or no format at all - 2.0 and every earlier 3.0 build - is refused with the reason.
 The session reader refuses a file that names another format. The route through the main window is removed, as Save
 and Load Filter already work in the tab's Model. `format` names the file because `kind` already means an action's kind.
 
@@ -200,7 +200,7 @@ then the tabs. A plugin cannot take a tab's name.
 
 **Rejected.** The version and `last_tab` in each tab's entry (repeated per tab; versions part of the file). Top-level
 keys beside the entries (a plugin the user names `format` collides). A reserved fake entry. 2.0 compatibility was
-not weighed (Carolina, 2026-11-09), as for action files (`DECISIONS.md` 2026-09-17); 2.1 session files do not open
+not weighed (Carolina, 2026-11-09), as for action files (`DECISIONS.md` 2026-09-17); 3.0 session files do not open
 in 2.0.
 
 **Revisit if** a file must open in an older version, or a part of the file needs its own version.
@@ -1149,7 +1149,7 @@ to a column the loader never reads.
 **Decision** (Kyle, 2026-10-08). The database writer refuses, at `_validate_settings`, to write a
 fitter into a file that holds another type's results. Type means plugin class: any number of runs
 of one fitter - other channels, recordings or settings - aggregate in one file, and ClassicCUSUM
-after CUSUM is refused. A 2.1 file names its fitter in each channel's provenance. A pre-2.1 file
+after CUSUM is refused. A 3.0 file names its fitter in each channel's provenance. A pre-3.0 file
 is accepted if every column the new fitter declares is already registered on the table it declares
 it for; amended from "registered columns equal the declared set" because the Clustering and
 Protein tabs register their own columns, so equality would refuse even the original fitter. A
@@ -1158,7 +1158,7 @@ in the right columns. Breaking.
 
 **Rejected.** Refusing only the colliding name (the narrow fix) and a per-table namespace
 (`UNIQUE(name, table_name)`), which changes how every query maps a column to its table. Refusing
-every append to a pre-2.1 file, or letting the first 2.1 write claim it.
+every append to a pre-3.0 file, or letting the first 3.0 write claim it.
 
 **Revisit if** comparing fitters in one database becomes a workflow; the per-table namespace is
 then the change to make.
@@ -1169,7 +1169,7 @@ then the change to make.
 
 **Context.** Every `SQLiteDBLoader` method opens and closes its own connection in a
 `try/finally` (18 sites), and `SQLiteEventLoader.load_event` one per event, so nothing stays
-open after a call whatever fails; the generators hold theirs only while iterated. 2.1 queued
+open after a call whatever fails; the generators hold theirs only while iterated. 3.0 queued
 connection reuse and a `journal_mode`.
 
 **Decision** (Kyle, 2026-10-08). Keep the design. The guarantee against a leaked connection, and
@@ -1191,7 +1191,7 @@ a fit; a schema cache is the first step then, before any held connection.
 ## 2026-10-08 - `get_plot_features` reads the second sublevel on purpose
 
 **Context.** `SQLitePeakDBLoader.get_plot_features` reads `result.iloc[1]` (`:178`) behind a guard
-that rules out only an empty result (`:155`), which the 2.1 queue listed as a defect.
+that rules out only an empty result (`:155`), which the 3.0 queue listed as a defect.
 
 **Decision.** Leave it. Row 0 is the padding, so row 1's start time is where the event begins,
 matching `PeakFinder`'s own `start_times[1]`. The fitter rejects any event with three or fewer
@@ -1202,11 +1202,11 @@ an edited or foreign file, and `MetadataController` reports the `IndexError` at 
 
 ---
 
-## 2026-10-07 - CUSUM's retry factor is not recorded in 2.1; the hook gets the edges in step 8
+## 2026-10-07 - CUSUM's retry factor is not recorded in 3.0; the hook gets the edges in step 8
 
 **Context.** With `Max Sublevels` set, `_locate_sublevel_transitions` retries at 1.5× the
 step size up to four times when it finds too many levels, and records which factor an
-event was finally fitted at nowhere. The 2.1 plan listed "the retry factor recorded".
+event was finally fitted at nowhere. The 3.0 plan listed "the retry factor recorded".
 
 **Decision** (Kyle, 2026-10-07, as recommended). Dropped from step 5. The value would
 have to travel from the detector to `_populate_event_metadata`, which receives the data,
@@ -1429,7 +1429,7 @@ maintained, general ABF reader.
 
 **Decision** (Kyle, 2026-10-06). The ABF readers become wrappers over `pyabf`, with the aim of
 one more general ABF plugin rather than one reader per subformat. It needs careful testing,
-so it is its own step in the 2.1 plan, placed after step 2 and gated by a spike: `pyabf`
+so it is its own step in the 3.0 plan, placed after step 2 and gated by a spike: `pyabf`
 against the shipped conversion, sample by sample and header field by header field, on every
 real ABF recording in the local `real_data` tier (three subformats, two of them multi-file
 sets). The S1.4 int16 recipe pins the arithmetic a wrapper must reproduce. `pyabf` enters as
@@ -1448,7 +1448,7 @@ and `pyabf` applies the offsets additively (`raw * gain + instOffset - sigOffset
 offset, so the spike cannot tell the two forms apart, and which one the wrapper keeps is a
 step 2b ruling, with the S1.4 recipe re-pinned to whichever is chosen.
 
-**Amended (Kyle, 2026-10-06).** Step 2b waits and moves to the end of 2.1, after step 9 and
+**Amended (Kyle, 2026-10-06).** Step 2b waits and moves to the end of 3.0, after step 9 and
 before step 10. Its goal is one general `ABFReader` plugin that takes its header from `pyabf`
 (`ABF(path, loadData=False)`, which the released 2.3.8 supports) and memmaps the data itself,
 usable on its own with one file as the dataset; it carries `_get_configs`, `_map_data` and
@@ -1476,12 +1476,12 @@ already carries a per-column compatibility scheme (`OPTIONAL_EVENT_COLUMNS`); no
 which plugins and settings produced a database's events.
 
 **Decision** (Kyle, 2026-10-06, as recommended). `PRAGMA user_version = 1` is written only
-when a writer creates the file, never on an existing one, so `overwrite=True` into a pre-2.1
-database leaves it at 0, which loaders accept as pre-2.1; a loader refuses a version it does
+when a writer creates the file, never on an existing one, so `overwrite=True` into a pre-3.0
+database leaves it at 0, which loaders accept as pre-3.0; a loader refuses a version it does
 not know rather than guessing. Provenance is a `provenance` table - plugin class, its settings
 as JSON, the Poriscope version, a timestamp - appended on every write, so a database says how
 its events were produced. The Peak loader's column list stays as the column-level mechanism,
-orthogonal to the file-level version. Executed in 2.1 step 6.
+orthogonal to the file-level version. Executed in 3.0 step 6.
 
 **Revisit if** a schema change ever needs an in-place migration; version 1 carries none, and
 the refusal-on-unknown rule is what makes adding one later safe.
@@ -1489,7 +1489,7 @@ the refusal-on-unknown rule is what makes adding one later safe.
 **Amended** (Kyle, 2026-10-08, as recommended), after step 6 re-measured it. The database writer
 has no `overwrite`: it always appends, and nothing marks a file as new. The stamp is therefore
 written inside the transaction that creates the schema, when `experiments` is absent;
-`user_version` rolls back with it, so a file is 1 only if 2.1 created it. Provenance is a nullable
+`user_version` rolls back with it, so a file is 1 only if 3.0 created it. Provenance is a nullable
 `provenance` column on `channels`, not a table: a database write is one channel, so it stays per
 write, and the loader of every release from 1.5.0 refuses an unknown table (read in each tag);
 run against both forms, v1.7.0's refused a `provenance` table and opened a file with the column,
@@ -1515,7 +1515,7 @@ a shallower level and noise bumps never qualify. *Window:* not symmetric. It run
 3 σ tail above the rectified largest peak down to whichever is nearer below it - the 3 σ tail
 or the local minimum between that peak and its neighbour - so when two populations sit close
 together the window stops at the valley and the neighbour's edge never enters the fit.
-*Bins:* Rice's rule, `2 * n ** (1/3)`, four times today's count. Executed in 2.1 step 4,
+*Bins:* Rice's rule, `2 * n ** (1/3)`, four times today's count. Executed in 3.0 step 4,
 against the S1.3 pins, which are red exactly where the old rules fail.
 
 **Evidence (step 4, 2026-10-06; synthetic rows re-derived at `df639eba`).** Four versions of
@@ -1562,7 +1562,7 @@ matter in practice, which needs a two-Gaussian fit rather than a window.
 
 **Context.** The conformance suite discovers every concrete plugin of a `Meta*` family with
 `discover_concrete()` and checks the contract: signatures, settings schema, happy-path
-behaviour. The 2.1 ground-truth tests (`test_fitter_accuracy.py`, `test_baseline_sigma_planted.py`)
+behaviour. The 3.0 ground-truth tests (`test_fitter_accuracy.py`, `test_baseline_sigma_planted.py`)
 plant a staircase or a Gaussian baseline and assert what a fitter or finder recovers from it.
 The question was whether those, too, should be parametrised over the family.
 
@@ -1592,7 +1592,7 @@ the published wheel refused to install beside any package needing a different pa
 Loosening them risks CI resolving newer versions than the goldens were captured with:
 `release.yml` and the wheel smoke install from the wheel's own metadata.
 
-**Decision** (Kyle, ruled by the 2.1 queue; executed 2026-10-05). `pyproject.toml` declares
+**Decision** (Kyle, ruled by the 3.0 queue; executed 2026-10-05). `pyproject.toml` declares
 compatible-release ranges (`~=`) for installers. `requirements.txt` keeps the exact versions
 the suite is tested against, and every workflow installs with `-c requirements.txt`, so a CI
 run resolves those and nothing newer. Dependabot moves the exact pins and the action SHAs
@@ -1609,7 +1609,7 @@ PR has caught it, which would argue for upper bounds tighter than `~=`.
 
 ## 2026-10-05 - The ABF readers' offset arithmetic is correct; the open question is pyabf
 
-**Context.** The 2.1 queue said `ABF2Header.py:199-200` "folds the offsets into the gain" instead
+**Context.** The 3.0 queue said `ABF2Header.py:199-200` "folds the offsets into the gain" instead
 of applying `raw*gain + (instOffset - sigOffset)`, and that `TCossaLabABFReader:265` hardcodes an
 offset of 0.0, and filed both as a latent reader defect.
 
@@ -1618,7 +1618,7 @@ folded form is its own convention; the arithmetic stays as it is and is pinned b
 recipe with non-zero offsets and gains. What is worth considering instead is replacing the
 hand-written ABF2 parser behind `TCossaLabABFReader` and `LegacyElementsReader` with thin wrappers
 over the `pyabf` package, which is better maintained. That is decided after a read-only spike in
-2.1 step 2: pyabf against our conversion on the lab's real ABF files, agreement measured in pA.
+3.0 step 2: pyabf against our conversion on the lab's real ABF files, agreement measured in pA.
 
 **Evidence.** The queue entry was derived from the arithmetic alone, with no reference
 implementation; the format's owner knew the convention. The synthetic ABF writer uses zero
@@ -2083,7 +2083,7 @@ is in `future_fixes.md`. Decision C closes at 3 of 5 taken (`raw_data`, `_write_
 **Revisit if** a later audit finds a taken break not called out in `changelog.md`, or when the
 deferred channel work is picked up - it breaks every plugin, so it wants a major version.
 
-**Landed in 2.1, step 8, with a different design** (Kyle, 2026-10-09; shipped in a minor
+**Landed in 3.0, step 8, with a different design** (Kyle, 2026-10-09; shipped in a minor
 version regardless, each break marked in `changelog.md` - superseded 2026-11-12: the release is
 3.0, under the release-number convention below). One `report_status(channel=None,
 init=False)` on `BaseDataPlugin` for every plugin, `report_channel_status` removed with no
@@ -5104,7 +5104,7 @@ with `--ignore-missing-imports`, so PySide6, numpy, pandas, scipy and sklearn al
 **Decision.** Do not add stubs to the hook, and do not treat this as a blocker for the
 type-policy flags.
 
-**Revisited 2026-10-05** (2.1 step 0). The hook stays the gate, but the project-venv run now
+**Revisited 2026-10-05** (3.0 step 0). The hook stays the gate, but the project-venv run now
 reports: `ci-branches.yml` runs `mypy poriscope` against the installed project with
 `continue-on-error` and prints the count. Figures that day, mypy 2.3.1: 690 errors in 70
 files, 79 of them `self.view`/`self.model` on attributes `MetaController` never declared.

@@ -267,7 +267,7 @@ to a ``hotfix/*`` or ``release/*`` branch, because none of them arrives through 
 request: ``git flow feature finish``, ``hotfix finish`` and ``release finish`` all merge
 locally, so a PR-only gate would never see the path most work actually takes. The
 **CI (Branches)** workflow, which runs the strict pre-commit checks and the full test
-suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. Since 2.1 it runs
+suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. Since 3.0 it runs
 the suite on four legs, so both ends of the supported range are tested on every push: at
 exactly Python 3.12.0, the floor, with the runtime stack pinned to ``requirements.txt``
 (on ``ubuntu-24.04`` under Xvfb - the only image ``setup-python`` builds 3.12.0 for - and

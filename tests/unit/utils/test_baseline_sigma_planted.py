@@ -6,7 +6,7 @@ and the existing tests pin it on one chunk size at a 2% tolerance. These tests s
 the fit *should* recover from a planted Gaussian - mean within a tenth of a sigma, sigma
 within 1% - at the three chunk sizes a finder actually sees, and from a two-population chunk
 where a shallower occupied level sits beside the baseline. Where the fit cannot meet the
-bound today the test is a strict expected failure naming the rule at fault; 2.1 step 4
+bound today the test is a strict expected failure naming the rule at fault; 3.0 step 4
 replaces those rules (ruling D) and turns the failures green one by one.
 
 Measured on 2026-10-05 at `64d8719c`, before step 4: sigma bias +2.0% (max 3.4%) at 10k

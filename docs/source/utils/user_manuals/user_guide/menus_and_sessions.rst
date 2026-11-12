@@ -35,17 +35,17 @@ the tab you last worked in is showing, and the **Replay the session** dialog (be
 replay them. Until you replay or work in a tab, the autosave
 keeps those actions for it, so a Restore after a crash still offers them; once you do, the
 autosave holds what that tab actually ran. A session whose tabs have no saved actions - one
-saved before Poriscope 2.1 - says so when it loads.
+saved before Poriscope 3.0 - says so when it loads.
 
 Deleting a plugin removes the recorded actions that use it. Renaming one without changing its
 settings keeps them, under the new name. Editing a setting removes them, together with those
 of the plugins built on it, and the message panel says so: they would no longer replay as they
 first ran.
 
-Sessions saved by Poriscope 2.1 do not open in 2.0. A 2.0 session opens in 2.1, with its
+Sessions saved by Poriscope 3.0 do not open in 2.0. A 2.0 session opens in 3.0, with its
 plugins and filters but no actions; the action history 2.0 kept beside it,
 ``tab_action_history.json``, cannot be replayed, and the first Restore says so. That Restore
-saves the autosave again in 2.1's format, says so, and the note does not appear again; Poriscope
+saves the autosave again in 3.0's format, says so, and the note does not appear again; Poriscope
 2.0 can then no longer restore that autosave. **Load Session** never rewrites the file you
 picked. A plugin cannot be given the name of an analysis tab, such as ``MetadataController``;
 an error says so.

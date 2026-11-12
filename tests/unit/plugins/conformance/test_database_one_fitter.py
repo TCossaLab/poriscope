@@ -5,8 +5,8 @@ The column registry maps each name to one table, so two fitters that declare the
 name on different tables - ``max_blockage`` is an event column in the CUSUM family and a
 sublevel column in the PeakFinders - would send the second fitter's values to a column
 nothing reads. The writer refuses, when it is configured and before anything is written,
-to write one fitter into a file holding another's. A file written by 2.1 names its fitter
-in each channel's provenance and is checked by class. A file from before 2.1 names none,
+to write one fitter into a file holding another's. A file written by 3.0 names its fitter
+in each channel's provenance and is checked by class. A file from before 3.0 names none,
 so it is checked by its columns: every column the new fitter declares must already be
 registered, on the table the fitter declares it for. Columns the file has beyond those -
 an analysis tab's cluster labels, say - do not count against it.
@@ -52,7 +52,7 @@ def cusum_file(events_db_path, tmp_path: Path) -> Path:
 
 def as_pre_2_1(path: Path) -> None:
     """
-    Make a written database look like one from before 2.1: no fitter recorded.
+    Make a written database look like one from before 3.0: no fitter recorded.
 
     :param path: the database
     :type path: Path

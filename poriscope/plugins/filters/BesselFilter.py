@@ -42,7 +42,7 @@ class BesselFilter(MetaFilter):
 
     The filter is built as second-order sections and applied forward and backward
     (``sosfiltfilt``), so it is zero-phase and numerically stable at any cutoff the
-    settings accept. Until 2.1 it was built as a single transfer function, which goes
+    settings accept. Until 3.0 it was built as a single transfer function, which goes
     unstable at low normalised cutoffs, and a guard refused those cutoffs outright.
     """
 

@@ -20,7 +20,7 @@
 #   interpreter with the stack resolved fresh from pyproject.toml's ranges - what
 #   `pip install poriscope` gives a user - on ubuntu-latest and windows-latest. Windows
 #   is the platform users run and the one the ten platform-conditional sites - including
-#   the wavelet DLL load in WaveletFilter - take the other branch on; until 2.1 no job
+#   the wavelet DLL load in WaveletFilter - take the other branch on; until 3.0 no job
 #   ran there. Lint, auto-fix and the mypy report run on the Linux floor leg only: their
 #   results do not depend on the platform, and two legs pushing auto-fixes would race.
 # - In a second job, builds the wheel and sdist, checks them with twine, installs the

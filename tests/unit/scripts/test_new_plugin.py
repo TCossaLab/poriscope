@@ -531,7 +531,7 @@ class TestGeneratedAnalysisTabs:
         ``MetaController`` declares ``view: MetaView`` and ``model: MetaModel``. A tab's
         controller calls methods only its own View and Model have, so without the
         redeclaration every such call is an attribute error to the type checker - the
-        shape the shipped tabs had until 2.1, found as 148 errors once the base declared
+        shape the shipped tabs had until 3.0, found as 148 errors once the base declared
         the pair. The generated controller starts out redeclared.
         """
         text = generate_tab(script, "Typed", tmp_path)["Controller"].read_text(

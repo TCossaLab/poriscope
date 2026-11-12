@@ -6,7 +6,7 @@ chunk's start and length to seconds, and hands them to ``load_data``, which conv
 back. Both event-finder read paths (``MetaEventFinder.find_events`` and
 ``get_single_event_data``) build their seconds the same way, from integer sample counts
 divided by the sample rate. The round trip is only exact if the conversion back rounds:
-until 2.1 ``_slice_request`` truncated, so ``int((i / sr) * sr)`` landed on ``i - 1`` for
+until 3.0 ``_slice_request`` truncated, so ``int((i / sr) * sr)`` landed on ``i - 1`` for
 about one index in nineteen at 100 kHz, the chunk that should have started at ``i``
 started a sample early, and the concatenation of the chunks duplicated one sample and
 lost another at that boundary (191 of 3,052 one-sample requests, and 38,000 samples of
