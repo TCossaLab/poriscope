@@ -111,6 +111,10 @@ Three rules apply regardless:
   copy fails, so nothing is left to reproduce. A clean copy takes that state out of the result,
   which is cheaper than hunting for it. If the two ever disagree again, run
   `git status --ignored` in the shared checkout and keep the output before touching anything.
+- **The root `tests/conftest.py` deletes every window a test leaves behind, and a survivor
+  fails the test.** The `QApplication` is shared by the whole session, so cleanup of Qt state
+  belongs there, never in one directory's conftest (lesson N17 in
+  `planning-and-executing-changes`): leaked windows tripled the suite's time twice.
 - `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`, with one
   exception: the analysis-tab triads under `poriscope/plugins/analysistabs/` are tested in
   `tests/unit/views/` and `tests/unit/controllers/`, while `tests/unit/plugins/analysistabs/`

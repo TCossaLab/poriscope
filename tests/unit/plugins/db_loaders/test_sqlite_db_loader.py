@@ -1,10 +1,10 @@
 """Unit tests for SQLiteDBLoader class."""
 
-import gc
 import os
 import sqlite3
 import tempfile
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 from unittest.mock import patch
@@ -28,9 +28,6 @@ class TestSQLiteDBLoader:
         db_path = Path(tmp_path)
         yield db_path
         # Clean up with retry for Windows
-        import gc
-
-        gc.collect()  # Force garbage collection to close any remaining connections
         for i in range(10):  # More retries
             try:
                 if db_path.exists():
@@ -41,8 +38,6 @@ class TestSQLiteDBLoader:
                     time.sleep(0.2)  # Longer wait
                 else:
                     # If still locked after retries, log but don't fail
-                    import warnings
-
                     warnings.warn(f"Could not delete {db_path} - file may be locked")
 
     @pytest.fixture
@@ -147,11 +142,6 @@ class TestSQLiteDBLoader:
         conn.close()
 
         yield temp_db_path
-
-        # Explicit cleanup - ensure no connections remain
-        import gc
-
-        gc.collect()
 
     @pytest.fixture
     def settings(self, mock_db: Path) -> Dict[str, Dict[str, Any]]:
@@ -839,7 +829,6 @@ class TestSQLiteDBLoader:
             assert result[3] == 2  # event_count should be 2
         finally:
             # Clean up
-            gc.collect()
             for _ in range(5):
                 try:
                     if test_db_path.exists():

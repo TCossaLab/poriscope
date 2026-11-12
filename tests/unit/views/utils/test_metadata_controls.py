@@ -10,6 +10,7 @@ Run with:
 """
 
 import pytest
+import shiboken6
 from PySide6.QtWidgets import QApplication, QComboBox, QToolButton
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
@@ -43,6 +44,13 @@ def mc(qt_app):
 class TestInstantiation:
     def test_creates_without_error(self, mc):
         assert mc is not None
+
+    def test_a_panel_deleted_before_the_event_loop_turns_is_safe(self, qt_app):
+        # The panel defers matching its column widths to the next event-loop turn; a
+        # panel deleted first must cancel that call, not run it on deleted widgets.
+        widget = MetadataControls()
+        shiboken6.delete(widget)
+        qt_app.processEvents()
 
     def test_has_db_loader_combobox(self, mc):
         assert hasattr(mc, "db_loader_comboBox")

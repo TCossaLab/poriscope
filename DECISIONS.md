@@ -18,6 +18,30 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-12 - Qt windows are deleted after every test at root scope, and a survivor fails the test
+
+**Context.** A full serial run took 1,650 s. `Triad.close()` only hid its `MainView`, so the
+integration flows left about 9,300 top-level windows and 2.47M objects alive. Each leaked
+`BaseLineEdit` stayed an application-wide event filter (`ProteinController()` built in 52 ms with
+none alive, 11.6 s with 1,000), and every full `gc.collect()` took about 2.4 s against 0.1 s.
+The views conftest had fixed the same leak in 2026-08, for its own directory only.
+
+**Decision.** An autouse fixture in the root conftest calls `tests/_window_cleanup.py` after
+every test: deliver queued events, close and `deleteLater()` every top-level widget, send the
+deferred deletes, and fail the test if any window survives. The `gc.collect()` calls in the
+SQLite loader, Chimera deprecation and standalone-settings fixtures go: none freed anything a
+test checked, and no file-lock retry ever fired. The views conftest keeps its own pass and its
+gc cadence (2026-08-28 entry).
+
+**Evidence.** Serial run 1,650 s to 493 s, 5,824 passed, no assertion changed. Without the
+first `processEvents()`, a worker's queued "finished" reached a deleted view in the
+conditioning flow.
+
+**Revisit if** a test legitimately needs a window to outlive it (none does today): give it a
+session fixture that owns the window, not an exemption in the guard.
+
+---
+
 ## 2026-11-12 - The Raw Data PSD tests compare to scipy within `rtol=1e-12`, not exactly
 
 **Context.** Branch CI's fresh-stack legs (3.14, Linux and Windows) failed two tests in
@@ -30,6 +54,8 @@ change what every caller receives for no user-visible gain. `rtol=1e-12` still f
 for 125, or a segment one sample short.
 
 **Revisit if** an exact comparison against a library is needed again: pass it the same array type.
+
+---
 
 ## 2026-11-11 - The conditioning app is ported as a data-plugin family, an NI reader, a Raw Data option and a tab
 

@@ -160,6 +160,8 @@
 
 * The Raw Data PSD tests no longer fail on scipy 1.18, which computes the same spectrum a few ULPs differently
 
+* The test suite deletes every window a test leaves behind and fails a test whose window survives, which cuts a serial run from about 27 minutes to 8
+
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on
@@ -219,6 +221,8 @@
 * `MetaController.kept_actions`, `hold_session_actions`, `session_actions`, `holds_session_actions` and `replay_available` are new, `start_replay()` with nothing to continue replays the loaded actions, and `ReplaySequence.start` takes `from_session`
 
 * `MetaController.rewrite_plugin_entries` drops or renames the entries naming a plugin in every copy a tab holds, and `ReplaySequence.rewrite_entries` in a replay's
+
+* The Metadata panel's deferred width matching is cancelled when the panel is deleted first, instead of running on deleted widgets
 
 ### User-Facing Behaviour:
 

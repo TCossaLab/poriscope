@@ -636,6 +636,13 @@ worth knowing about before you add tests:
   single test file on its own fail with ``No module named 'tests'`` while the same file
   passed in a full run.
 
+Beyond ``pytest.ini``, the root ``tests/conftest.py`` deletes every window a test leaves
+behind once the test ends, and **fails the test if a window survives**. Every test shares
+one ``QApplication``, so a window that is only closed (``close()`` hides it) stays alive and
+makes every later test slower: in November 2026 leaked windows more than tripled the
+suite's run time. If your test fails with "Windows still alive after the cleanup",
+something is keeping one of its windows from being deleted.
+
 .. note::
 
    If you add a dev dependency, it must go in **both** ``pyproject.toml``'s ``[dev]`` extra

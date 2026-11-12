@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._window_cleanup import destroy_leftover_windows
+
 # ===========================================================================
 # Repo root on sys.path
 # ===========================================================================
@@ -75,6 +77,22 @@ def sandbox_user_data_dir(monkeypatch, tmp_path):
             _fake_user_data_dir,
             raising=True,
         )
+
+
+@pytest.fixture(autouse=True)
+def destroy_windows_after_each_test():
+    """
+    Delete every window a test leaves behind, and fail the test if one survives.
+
+    This is root-level because the ``QApplication`` is shared by the whole session: a
+    window left alive in one directory slows every test in every directory after it.
+    It is autouse and declared here, so it is torn down after every fixture a test
+    asks for - a triad has stopped its workers before its windows go.
+    """
+    yield
+    survivors = destroy_leftover_windows()
+    if survivors:
+        pytest.fail(f"Windows still alive after the cleanup: {survivors}")
 
 
 # ===========================================================================
