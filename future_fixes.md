@@ -206,6 +206,10 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Fitter performance and logging
 
+- **Two loader bases share 66 identical lines** (2026-11-12, seen once the duplication ratchet
+  measured the bases): `MetaDatabaseLoader` and `MetaEventLoader` each define the same 58-line
+  `get_empty_settings` and 8-line `force_serial_channel_operations`. A shared loader base would
+  hold them once; it is a data-plugin API change.
 - **CUSUM costs 6.3 µs per sample, flat from 2k to 200k** (1.3 s for a 200k-sample
   event), holding the GIL, so per-channel threads give no multi-channel speedup;
   `IntraCUSUM.py:151` adds a second per-sample loop. JIT or C-port behind a golden ratchet.

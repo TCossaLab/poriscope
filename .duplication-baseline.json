@@ -1,8 +1,8 @@
 {
   "*Controller.py": {
     "duplicated_functions": [],
-    "files": 6,
-    "functions": 113,
+    "files": 9,
+    "functions": 202,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -12,36 +12,49 @@
       "MetadataModel.py:MetadataModel._init",
       "RawDataModel.py:RawDataModel._init"
     ],
-    "files": 6,
-    "functions": 64,
+    "files": 8,
+    "functions": 98,
     "identical_bodies": 1,
     "removable_lines": 4
   },
   "*View.py": {
     "duplicated_functions": [],
-    "files": 6,
-    "functions": 176,
+    "files": 9,
+    "functions": 261,
     "identical_bodies": 0,
     "removable_lines": 0
   },
   "*controls.py": {
-    "duplicated_functions": [],
-    "files": 6,
-    "functions": 80,
-    "identical_bodies": 0,
-    "removable_lines": 0
+    "duplicated_functions": [
+      "MetaEventTabControls.py:MetaEventTabControls.validate_inputs",
+      "MetaSubsetTabControls.py:MetaSubsetTabControls.validate_inputs"
+    ],
+    "files": 9,
+    "functions": 115,
+    "identical_bodies": 1,
+    "removable_lines": 6
   },
   "SQLite plugins": {
-    "duplicated_functions": [],
-    "files": 5,
-    "functions": 64,
-    "identical_bodies": 0,
-    "removable_lines": 0
+    "duplicated_functions": [
+      "MetaDatabaseLoader.py:MetaDatabaseLoader._init",
+      "MetaDatabaseLoader.py:MetaDatabaseLoader.force_serial_channel_operations",
+      "MetaDatabaseLoader.py:MetaDatabaseLoader.get_empty_settings",
+      "MetaDatabaseWriter.py:MetaDatabaseWriter._init",
+      "MetaEventLoader.py:MetaEventLoader._init",
+      "MetaEventLoader.py:MetaEventLoader.force_serial_channel_operations",
+      "MetaEventLoader.py:MetaEventLoader.get_empty_settings",
+      "MetaWriter.py:MetaWriter._init",
+      "SQLiteEventLoader.py:SQLiteEventLoader._init"
+    ],
+    "files": 9,
+    "functions": 158,
+    "identical_bodies": 4,
+    "removable_lines": 87
   },
   "conditioningloaders": {
     "duplicated_functions": [],
-    "files": 1,
-    "functions": 19,
+    "files": 2,
+    "functions": 35,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -90,15 +103,15 @@
       "SingleBinaryDecoder.py:SingleBinaryDecoder._validate_file_type",
       "SingleBinaryDecoder.py:SingleBinaryDecoder.reset_channel"
     ],
-    "files": 9,
-    "functions": 92,
+    "files": 10,
+    "functions": 125,
     "identical_bodies": 13,
     "removable_lines": 348
   },
   "eventfinders": {
     "duplicated_functions": [],
-    "files": 3,
-    "functions": 12,
+    "files": 4,
+    "functions": 43,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -119,15 +132,15 @@
       "NoFitter.py:NoFitter._populate_event_metadata",
       "NoFitter.py:NoFitter._pre_process_events"
     ],
-    "files": 4,
-    "functions": 34,
+    "files": 5,
+    "functions": 71,
     "identical_bodies": 7,
     "removable_lines": 171
   },
   "filters": {
     "duplicated_functions": [],
-    "files": 2,
-    "functions": 11,
+    "files": 3,
+    "functions": 23,
     "identical_bodies": 0,
     "removable_lines": 0
   },

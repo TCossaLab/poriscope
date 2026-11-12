@@ -128,6 +128,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: copies must not quietly add a duplicate somewhere else while doing it, and now it
 #: cannot.
 #:
+#: Each family also holds the ``Meta*`` bases its files inherit from (added 2026-11-12).
+#: Without them, a base method copied onto a single subclass had no identical twin in the
+#: family, so it read as one more function rather than as duplication. Entering, they
+#: brought base-to-base copies already present: abstract declarations repeated with the
+#: same docstring in sibling bases (``validate_inputs``, several ``_init``), a floor like
+#: ``MetaModel._init`` above, and two loader bases' shared ``get_empty_settings`` and
+#: ``force_serial_channel_operations``, queued in ``future_fixes.md``. ``BaseDataPlugin``
+#: is left out: it underlies every data family, so it would sit in all of them.
+#:
 #: ``ThresholdBlockageFinder`` is in the family although it shares nothing today,
 #: because a family is a set of files that *may* copy from each other, not a set that
 #: currently does.
@@ -139,6 +148,9 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataView.py",
         "poriscope/plugins/analysistabs/ProteinView.py",
         "poriscope/plugins/analysistabs/RawDataView.py",
+        "poriscope/utils/MetaView.py",
+        "poriscope/utils/MetaEventTabView.py",
+        "poriscope/utils/MetaSubsetTabView.py",
     ),
     "*Controller.py": (
         "poriscope/plugins/analysistabs/ClusteringController.py",
@@ -147,6 +159,9 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataController.py",
         "poriscope/plugins/analysistabs/ProteinController.py",
         "poriscope/plugins/analysistabs/RawDataController.py",
+        "poriscope/utils/MetaController.py",
+        "poriscope/utils/MetaEventTabController.py",
+        "poriscope/utils/MetaSubsetTabController.py",
     ),
     "*Model.py": (
         "poriscope/plugins/analysistabs/ClusteringModel.py",
@@ -155,6 +170,8 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataModel.py",
         "poriscope/plugins/analysistabs/ProteinModel.py",
         "poriscope/plugins/analysistabs/RawDataModel.py",
+        "poriscope/utils/MetaModel.py",
+        "poriscope/utils/MetaSubsetTabModel.py",
     ),
     "*controls.py": (
         "poriscope/plugins/analysistabs/utils/clusteringcontrols.py",
@@ -163,17 +180,22 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/utils/metadatacontrols.py",
         "poriscope/plugins/analysistabs/utils/proteincontrols.py",
         "poriscope/plugins/analysistabs/utils/rawdatacontrols.py",
+        "poriscope/utils/MetaControls.py",
+        "poriscope/utils/MetaEventTabControls.py",
+        "poriscope/utils/MetaSubsetTabControls.py",
     ),
     "eventfitters": (
         "poriscope/plugins/eventfitters/ClassicCUSUM.py",
         "poriscope/plugins/eventfitters/CUSUM.py",
         "poriscope/plugins/eventfitters/IntraCUSUM.py",
         "poriscope/plugins/eventfitters/NoFitter.py",
+        "poriscope/utils/MetaEventFitter.py",
     ),
     "eventfinders": (
         "poriscope/plugins/eventfinders/BoundedBlockageFinder.py",
         "poriscope/plugins/eventfinders/ClassicBlockageFinder.py",
         "poriscope/plugins/eventfinders/ThresholdBlockageFinder.py",
+        "poriscope/utils/MetaEventFinder.py",
     ),
     "datareaders": (
         "poriscope/plugins/datareaders/ABFReader.py",
@@ -185,6 +207,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/datareaders/NIBinaryReader.py",
         "poriscope/plugins/datareaders/SingleBinaryDecoder.py",
         "poriscope/plugins/datareaders/TCossaLabABFReader.py",
+        "poriscope/utils/MetaReader.py",
     ),
     "views/widgets": (
         "poriscope/views/widgets/add_subset_filter_dialog.py",
@@ -210,10 +233,12 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     # Added with its first plugin, so nothing can be duplicated yet.
     "conditioningloaders": (
         "poriscope/plugins/conditioningloaders/NIConditioningLoader.py",
+        "poriscope/utils/MetaConditioningLoader.py",
     ),
     "filters": (
         "poriscope/plugins/filters/BesselFilter.py",
         "poriscope/plugins/filters/WaveletFilter.py",
+        "poriscope/utils/MetaFilter.py",
     ),
     # One family across five directories: each holds a single SQLite plugin, and
     # these are the files likely to copy from each other. 0 removable on entry.
@@ -223,6 +248,10 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/db_loaders/SQLitePeakDBLoader.py",
         "poriscope/plugins/dbwriters/SQLiteDBWriter.py",
         "poriscope/plugins/eventloaders/SQLiteEventLoader.py",
+        "poriscope/utils/MetaDatabaseLoader.py",
+        "poriscope/utils/MetaDatabaseWriter.py",
+        "poriscope/utils/MetaEventLoader.py",
+        "poriscope/utils/MetaWriter.py",
     ),
 }
 

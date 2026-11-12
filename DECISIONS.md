@@ -30,6 +30,10 @@ baseline also lists each family's `duplicated_functions` (`file.py:Class.method`
 ones that are new, and its message says a rise is usually a copy to remove. The names are never
 compared, so a rename does not churn the baseline. The per-method "only copy" tests are dropped.
 
+Each family now also holds the `Meta*` bases its files inherit: until then a base method copied
+onto one subclass had no identical twin in the family and counted only as one more function.
+Pasting `show_selection_tree` onto `MetadataView` now fails as duplication and names both copies.
+
 **Revisit if** a copy lands through `--update` unnoticed: then an explicit per-method test is worth
 its upkeep for that method.
 

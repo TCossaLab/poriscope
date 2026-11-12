@@ -174,7 +174,7 @@
 
 * `scripts/new_plugin.py` parses each base module once per run instead of once per generated method
 
-* The duplication ratchet names the functions a rise newly duplicated, and says that a rise is usually a copy to remove rather than a reason to run `--update`
+* The duplication ratchet also measures the `Meta*` bases, so a base method copied onto one tab counts as duplication, and a rise names the functions it newly duplicated
 
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 

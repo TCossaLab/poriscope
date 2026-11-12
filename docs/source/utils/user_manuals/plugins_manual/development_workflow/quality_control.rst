@@ -1284,6 +1284,12 @@ and that is still worth having, because it stops anyone adding a duplicate there
 had been moving computation *into* the Models — which no family covered, so anything
 landing there could be duplicated invisibly. One method already had been.
 
+Each family also holds the ``Meta*`` bases its files inherit from (``MetaView``,
+``MetaSubsetTabView`` and the rest for the tabs; ``MetaReader`` for the readers). Without them,
+a base method copied onto a single tab has no identical twin in the family, so it reads as
+one more function rather than as duplication. ``BaseDataPlugin`` is left out, because it
+underlies every data family.
+
 ``scripts/measure_duplication.py`` counts, per family, how many function bodies are
 byte-identical across more than one file and how many lines would be deleted by promoting
 one copy to a shared base. ``.duplication-baseline.json`` records those counts and names
