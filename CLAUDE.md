@@ -5,8 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Poriscope is a PySide6 (Qt) desktop application for selecting and analyzing nanopore
-timeseries data (event detection, fitting, clustering, protein analysis, etc.). Python
->= 3.12, Windows-focused but CI runs on Linux under Xvfb.
+timeseries data. Python >= 3.12, Windows-focused; CI runs on Linux (Xvfb) and Windows.
 
 ## Setup
 
@@ -20,129 +19,61 @@ Run the app with the `poriscope` console-script entry point (`poriscope.main_app
 ## Common commands
 
 ```
-pytest -n auto                                # full suite in parallel - what CI runs, everywhere
-pytest                                        # full suite, serial (--marker-stats needs this)
-pytest tests/unit/plugins/test_plugin_compliance.py   # plugin interface compliance
-pytest path/to/test_file.py::test_name        # single test
-pytest --marker-stats                         # per-marker test counts and mean durations
-pytest -m "not e2e"                           # skip the e2e tests
+pytest -n auto                                       # full suite in parallel: the commit gate, what CI runs
+pytest --marker-stats                                # per-marker counts and mean durations (serial only)
+pytest tests/unit/plugins/test_plugin_compliance.py  # plugin interface compliance
 
-pre-commit run --all-files --hook-stage manual   # auto-fix: black, ruff --fix
-pre-commit run --all-files                       # strict check: ruff + mypy + pydoclint (what pre-commit/CI enforce on real commits)
-mypy poriscope                                    # NOT the gate - see the warning below
-pydoclint --baseline=.pydoclint-baseline.txt poriscope   # docstring/signature consistency check directly
+pre-commit run --all-files --hook-stage manual       # auto-fix: black, ruff --fix (never runs on commit)
+pre-commit run --all-files                           # the strict gate pre-commit and CI enforce
 ```
 
-Note: `black` and the ruff auto-fix hook only run at `stages: [manual]` — they do not
-run automatically on `git commit`. Run `pre-commit run --all-files --hook-stage manual`
-yourself before committing if you want formatting applied; the pre-commit hook itself
-runs ruff (strict, no fix), mypy, and pydoclint.
+**`pre-commit run mypy --all-files` is the mypy gate, not `mypy poriscope`.** The hook's
+isolated env has no project dependencies, so Qt/numpy/pandas are `Any` to it; the project-venv
+run sees real types and reports hundreds of errors (about a third known noise), which branch CI
+prints as a non-blocking count. Measure with the hook; see `DECISIONS.md` 2026-08-24.
 
-**`pre-commit run mypy --all-files` is the mypy gate; `mypy poriscope` is not.** The two
-disagree wildly and are blind in opposite directions. The hook runs in an isolated
-virtualenv with no project dependencies, so PySide6/numpy/pandas types are all `Any` to
-it; the project venv's `mypy poriscope` sees real types but is a different version and
-reports several hundred errors (607 with mypy 2.3.1 on 2026-10-05, down from 690 once the
-controller bases declared `view` and `model`). About a third is known noise - PySide6
-short-form enum accesses and 41 untyped imports, see `DECISIONS.md` - but the rest are real
-gaps the hook cannot see; branch CI prints this count as a non-blocking report.
-**Always measure with the hook.**
-The hook is scoped `files: ^poriscope/` because `mypy.ini`'s `exclude = ^tests/` governs
-directory discovery only and does not apply to explicitly listed paths.
+Every function under `poriscope/` carries type hints, with no exclusions; `mypy.ini` enforces
+it. Do not relax any `mypy.ini` setting to get a commit through.
 
-Every function you add under `poriscope/` needs type hints, and `mypy.ini` enforces that
-(read its own comments for which settings and why). Do not relax any of them to get a
-commit through.
-
-`pydoclint` checks a docstring's documented parameters, return type and raised exceptions
-against the real signature and body — see `[tool.pydoclint]` in `pyproject.toml` for the
-settings and the reasoning behind each. A function with no docstring is skipped entirely,
-and so is a summary-only one - including a Google-style `Args:` docstring, which reads as
-summary under `style = "sphinx"`; a documented one must carry type hints that agree with its
-`:type:`/`:rtype:`. Its raise check also counts exceptions a local `try` catches. **Every
-function under `poriscope/` is annotated, with no exclusions.**
-
-Keep `.pydoclint-baseline.txt` empty: prefer fixing the violation, and do not let the file
-grow back silently. `check-class-attributes` stays `false` until upstream fixes it — do
-not flip it back on (`pyproject.toml` and `DECISIONS.md` carry the evidence).
+`pydoclint` (settings and reasons in `[tool.pydoclint]`) skips undocumented and summary-only
+docstrings - a Google `Args:` block reads as summary - and counts an exception a local `try`
+catches as raised. Keep `.pydoclint-baseline.txt` empty, and leave `check-class-attributes`
+`false` (evidence in `pyproject.toml` and `DECISIONS.md`).
 
 The pytest markers are listed in `pytest.ini`. `e2e` and `integration` are applied
 **automatically by path** in `tests/conftest.py` - do not hand-apply them.
 
 ## Architecture
 
-Two layers using the same MVC pattern recursively: an app-shell triad (`MainModel` /
-`MainView` / `MainController`) and a plugin system for everything else — analysis tabs and
-data plugins. **Load the `plugin-architecture` skill** before reading, reasoning about,
-designing or changing a plugin, a `Meta*` base, an analysis tab or session persistence -
-including design discussion with no code planned; it carries the two plugin
-families, discovery, and the `BaseDataPlugin` settings lifecycle.
-Three rules apply regardless:
+Two layers, one MVC pattern: an app-shell triad (`MainModel`/`MainView`/`MainController`) and
+plugins - analysis tabs and data plugins. **Load the `plugin-architecture` skill** before
+reading, discussing or changing a plugin, a `Meta*` base, an analysis tab or session
+persistence, even with no code planned. Regardless:
 
-- An analysis tab never imports another tab's modules. It reaches data plugins only through
-  `MetaModel.call()`, over the instance map `MainController.update_available_plugins`
-  pushes to every tab; create/edit/delete and plugin-state changes go out on the typed
-  signals `MainController.instantiate_analysis_tab` wires point to point. The old
-  string-dispatched `global_signal` bus is gone - do not rebuild one.
-- New data plugin: **generate it, don't hand-write it** —
-  `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the nine
-  data-plugin families, the `AnalysisTab` keyword and every shipped plugin). Signatures and
-  docstrings are copied from the base verbatim, which is what the compliance test's
-  exact-equality comparison requires. The generated file is only the start: the skill lists
-  the repository registrations a new plugin also needs (duplication families, conformance
-  recipes, `exposed.py`, the user guide).
-- New analysis tab: generate it too - `python scripts/new_plugin.py AnalysisTab MyTab`
-  writes the Controller/Model/View triad and its controls panel under
-  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
+- A tab never imports another tab's modules and reaches data plugins only through
+  `MetaModel.call()`; do not rebuild the removed `global_signal` bus.
+- Generate new data plugins and analysis tabs, never hand-write them:
+  `python scripts/new_plugin.py <Meta* base | AnalysisTab> <Name>` (`--list` shows the
+  choices). The skill lists the repository registrations a new data plugin also needs.
 
 ## Testing conventions
 
-- **Run the whole suite before every commit: `pytest -n auto`, no path arguments and no
-  marker filter.** On the dev machine a full run takes about 2 minutes in parallel and 9 serially
-  (2026-11-12); `tests/conftest.py` sizes the workers from the machine's cores and free memory. Run it in
-  the background, redirected to a file. That is still no reason to select a subset, because choosing one is itself the error-prone step — a scoped run that skipped
-  `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
-  failing test while debugging is fine; the gate is a full green run immediately before
-  the commit. Documentation-only changes (docstrings, comments, markdown) need no run.
-- **Gate a merge on a clean copy of the exact commit**, not the shared working tree: run the
-  full suite in a fresh `git worktree add --detach <path> <commit>`, after
-  `python scripts/generate_all_autodoc_rst.py` there (a clean copy lacks the gitignored autodoc,
-  so its 13 tests skip). Why: on 2026-10-10 the duplication ratchet passed in the shared
-  checkout on code that fails it in every clean copy. The cause was not found and cannot be: the
-  checkout's uncommitted and ignored state at that moment was not recorded, and every committed
-  copy fails, so nothing is left to reproduce. A clean copy takes that state out of the result,
-  which is cheaper than hunting for it. If the two ever disagree again, run
-  `git status --ignored` in the shared checkout and keep the output before touching anything.
-- **The root `tests/conftest.py` deletes every window a test leaves behind, and a survivor
-  fails the test.** The `QApplication` is shared by the whole session, so cleanup of Qt state
-  belongs there, never in one directory's conftest (lesson N17 in
-  `planning-and-executing-changes`): leaked windows tripled the suite's time twice.
-- `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`, with one
-  exception: the analysis-tab triads under `poriscope/plugins/analysistabs/` are tested in
-  `tests/unit/views/` and `tests/unit/controllers/`, while `tests/unit/plugins/analysistabs/`
-  covers only the `utils/` helpers.
-- `tests/unit/plugins/test_plugin_compliance.py` recursively imports every module
-  under `poriscope.plugins` and asserts each plugin subclass implements all abstract
-  methods of its `Meta*`/`BaseDataPlugin` base, and that every override of a concrete
-  base method keeps the base's signature — this is the guardrail that keeps the
-  plugin contract intact; run it after touching any `Meta*` base or plugin signature.
-  Note it compares generic annotations (`List[str]` and friends) by **equality**, using
-  `issubclass()` only when both sides are plain classes — so widening or correcting a
-  base method's annotation breaks every subclass whose override does not match it
-  exactly. Annotate a plugin method by copying the base signature verbatim rather than
-  inferring it from the body.
-- **Never pass test paths in a hand-picked order** on the rare occasion you pass any.
-  Pytest runs explicitly listed paths in the order given, and inverting natural collection
-  order (e.g. `pytest tests/unit/views tests/unit/plugins`) has reliably segfaulted the
-  interpreter from leaked Qt state, and makes `test_plugin_compliance` audit test doubles
-  that natural order never exposes it to. Relatedly, never pipe a test run through
-  `tail`/`grep` as its only record — a faulthandler dump names the crashing test at the
-  *top* of its output, which is exactly what a tail discards — and never call a run green
-  from a progress line; read the real summary line.
-- `tests/integration/flows/` instantiate real controller/model/view stacks
-  "no_gui" (headless) for cross-plugin flows; `tests/e2e/` drive actual Qt widgets
-  (`e2e_ux` marker) end-to-end. **CI runs the entire suite on every branch push,
-  fork PR, internal PR and release** - there is no subset and no marker filter.
+- **Run the whole suite before every commit: `pytest -n auto`**, with no paths and no marker
+  filter, in the background redirected to a file. Iterating on one test while debugging is
+  fine; the gate is a full green run right before the commit. Docs-only changes need no run.
+- **Gate a merge on a clean copy of the exact commit**: `git worktree add --detach <path>
+  <commit>`, then `python scripts/generate_all_autodoc_rst.py` there (or the autodoc tests
+  skip). If the clean copy and the shared checkout disagree, save `git status --ignored` from
+  the checkout before touching anything (why: `DECISIONS.md`).
+- Qt cleanup belongs in the root `tests/conftest.py`, which deletes every leftover window and
+  fails the test on a survivor - never in one directory's conftest (lesson N17).
+- `tests/unit/` mirrors `poriscope/`, except that analysis-tab triads are tested in
+  `tests/unit/views/` and `tests/unit/controllers/`.
+- `test_plugin_compliance.py` compares generic annotations by equality: copy a base method's
+  signature verbatim into an override, and run the test after touching any `Meta*` base or
+  plugin signature.
+- Never pass test paths in a hand-picked order, and never keep a run's only record through
+  `tail`/`grep` - a faulthandler dump names the crashing test at the top.
 
 ## Docs
 
@@ -150,68 +81,36 @@ Sphinx docs live in `docs/` and are largely autogenerated from plugin docstrings
 `scripts/autodoc/*.py` / `scripts/generate_all_autodoc_rst.py`, run automatically by
 the `post-merge` git hook. Published at https://tcossalab.github.io/poriscope/.
 
-## Changelog
-
-Any time you make changes to the code, update `changelog.md` under the appropriate
-header/subheader, respecting the formatting conventions already present in that file.
-
-**One line per change, and no more.** `changelog.md` is written for *users*: it carries the
-essential user-facing information and nothing else. No sub-bullets, no evidence, no
-measurements, no explanation of why the change was made or what was rejected on the way
-there. Breaking changes are still called out explicitly as breaking, because that is
-user-facing.
-
-Everything you would otherwise have put in those sub-bullets goes in `DECISIONS.md`, which
-is written for devs and for Claude: the reasoning behind a choice, the alternatives scoped
-and rejected, the measurements that settled a question, and what would make it worth
-revisiting.
-
 ## Where things are written down
 
-- `changelog.md` — what changed, user-facing. Update it for any code change.
-- `future_fixes.md` — the authoritative record of what is still queued, organised under
-  release-target headers (3.0, 3.1, Later, Owner-held); larger speculative work goes
-  under Later. Keep it terse; prune items as they land
-  rather than leaving completed-work narrative behind. Delete a landed entry outright —
-  do not mark it `**Fixed**`, strike it through with `~~`, or retitle its section
-  `DONE`/`CLOSED`; the history already lives in `changelog.md`. When only part of an
-  item lands, delete it and rewrite what remains as a forward-facing item.
-- `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
-  would make it worth revisiting. Check here before re-litigating a settled question.
+Each kind of information lives in one place, as tersely as the facts survive:
+
+- `changelog.md` - user-facing, one line per change, for every code change: no sub-bullets,
+  evidence or reasoning. Breaking changes, including narrowing or removing anything on a `Meta*`
+  ABC, are called out as breaking. Docs-only changes get no entry.
+- `DECISIONS.md` - the reasoning: alternatives rejected, the measurement that settled it, what
+  would make it worth revisiting. Check it before re-litigating a settled question.
+- `future_fixes.md` - what is still queued, under 3.0/3.1/Later/Owner-held, one to three lines
+  with `file:line` and the measured number. Delete a landed entry outright (no `**Fixed**`,
+  `~~` or `DONE`); rewrite a partly landed one as what remains.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
   when a classifier changes how it responds, or when one of the fit constants changes.
-- `docs/source/utils/user_manuals/plugins_manual/development_workflow/quality_control.rst`
-  — the contributor-facing description of the QA gates. Hand-written, not autogenerated.
-  **Update it whenever the tooling or its configuration changes** (`mypy.ini`,
-  `.pre-commit-config.yaml`, `[tool.pydoclint]`, the baseline policy), or it will go on
-  telling contributors a policy that no longer holds.
-- `.claude/plans/` — working documents. They live there, never in
-  `docs/`, and are never committed; the folder is gitignored.
+- `docs/.../development_workflow/quality_control.rst` - the contributor-facing QA gates; update
+  it whenever `mypy.ini`, `.pre-commit-config.yaml`, `[tool.pydoclint]` or the baseline policy
+  changes.
+- `.claude/plans/` - working documents; gitignored, never committed, never under `docs/`.
 
-**All three of `changelog.md`, `DECISIONS.md` and `future_fixes.md` should be as terse as
-possible.** Two of them are written for Claude, so every needless sentence is context spent
-on a future read. Cut the prose, keep the facts: a `future_fixes.md` entry is one to three
-lines carrying the `file:line` and the measured number, and a `DECISIONS.md` entry keeps its
-context/decision/evidence/revisit shape in as few sentences as the reasoning survives in.
-Never drop the measurement itself — a queued finding without its number has to be
-re-measured before it can be worked.
-
-Depth belongs in those files, not in this one: this file is loaded in full at the start
-of every session, so it should stay a short list of standing rules.
+This file is loaded every session: keep it a short list of standing rules.
 
 ## Planning and executing work
 
-**Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
-any fix, feature, design discussion, review, investigation or release step beyond a typo,
-from the first message about it, even when no plan or code is wanted yet. It holds the general
-method and its lessons; `refactoring-codebases` builds on it for refactors,
-`porting-applications` for porting an existing app or script into Poriscope, and
-`auditing-test-suites` for auditing the test suite's speed and value. All four live in
-`.claude/skills/` beside `plugin-architecture` and are tracked in git: edit the repo copy, and
-do not keep a same-named copy in `~/.claude/skills/`, because a personal skill shadows the
-project one for the bare name. Five of its rules hold in every session:
+**Load the `planning-and-executing-changes` skill** for any fix, feature, design discussion,
+review, investigation or release step beyond a typo, from the first message. It is extended by
+`refactoring-codebases`, `porting-applications` and `auditing-test-suites`, all in
+`.claude/skills/`; edit the repo copy, since a same-named personal skill shadows it. Five of its
+rules hold in every session:
 
 - Re-derive every inherited claim - plan figures, handoff notes, subagent reports, comments, a
   user's diagnosis, your own earlier reasoning - before building on it.
@@ -223,78 +122,42 @@ project one for the bare name. Five of its rules hold in every session:
   they surfaced rather than filing them.
 - Code, comments and tests never cite a plan document or its step numbers; describe the mechanism.
 
-A lesson learned here that generalises beyond Poriscope goes into those skills, not this file;
-load the `building-skills` skill (also under `.claude/skills/`) before adding a lesson to a skill or
-creating, moving, syncing or checking one.
+Load `building-skills` before adding a lesson to a skill or creating one; a lesson that
+generalises beyond Poriscope goes into a skill, not this file.
 
-## General Instructions
+## General instructions
 
-- Prefer module- or class-level functions over nesting one function inside another, but
-  **a nested function is fine where it is genuinely the simpler option and the nested
-  function is short and simple** - typically a small closure that captures a local so it
-  can be handed to a callback, a timer or a signal. Reach for a hoisted method plus
-  `functools.partial` when the closure grows, is reused, or needs testing on its own; do
-  not hoist a three-line callback just to avoid nesting, and do not "flatten" an existing
-  one that reads well. Decorators always nest, because they require a closure -
-  `utils/LogDecorator.py` and `utils/SerializeDecorator.py` are the two modules that exist
-  today; if you add another, say in a comment that this is why it nests.
-- **Never add `@overload` or `cast()` to work around an over-broad return union.** Verify
-  every incoming call and delete the dead branch instead. If both arms are genuinely live,
-  flag it for review rather than overloading - the fix is usually to change the callers.
-  See `DECISIONS.md`.
-- **Call out breaking changes explicitly in `changelog.md`**, rather than describing them
-  as ordinary fixes. Narrowing or removing anything on a `Meta*` ABC counts.
-- Imports go at module level. Do not add function-local ("lazy") imports, and hoist
-  any you come across. The only exception is a real circular import, which goes in an
-  `if TYPE_CHECKING:` block with a comment explaining the cycle (see
-  `views/widgets/icon_menu_widget.py` for the pattern).
-- When the user reports a bug to you and asks you to fix it, double check the assumptions 
-  before implementing the fix. Do not blindly accept the assertions of the user as to the
-  cause of potential issues. Be thorough in your analysis, ensuring that you fully trace 
-  related logic paths to ensure that nothing breaks downstream as the result of an applied
-  fix, and explain any issues surfaced to the user and request input before proceeding if
-  you find that a user-based assumption or instruction would cause problems.
-- We are not in a rush, and the poriscope codebase is complex. Take the time and spend the 
-  tokens you need to get it right.
-- Before finishing any tasks, verify that the docs (both auto generated and hand-written) 
-  accurately reflect the changes, and mmake any necessary updates to the docs to keep them
-  in sync with the codebase.
+- Prefer module- or class-level functions to nested ones, but a short closure handed to a
+  callback, timer or signal is fine; hoist to a method plus `functools.partial` when it grows,
+  is reused or needs its own test. Decorators nest by necessity - say so in a comment in any
+  new decorator module.
+- **Never add `@overload` or `cast()` to work around an over-broad return union**: verify the
+  callers and delete the dead branch; if both arms are live, flag it (see `DECISIONS.md`).
+- Imports go at module level; hoist any function-local import you find. Only a real circular
+  import goes in an `if TYPE_CHECKING:` block, with a comment naming the cycle
+  (`views/widgets/icon_menu_widget.py`).
+- A user's diagnosis of a bug is a hypothesis: trace the affected logic paths, and if their
+  assumption or instruction would cause problems, explain it and ask before proceeding.
+- We are not in a rush; take the time and tokens needed to get it right.
+- Before finishing, check that the generated and hand-written docs reflect the change.
 
-## Version Controller
+## Version control
 
-- Poriscope uses git flow worksflows. feature branches are branched off `develop`, not `main`,
-  keep that in mind when doing code review on feature branches or merging anything.
-- Release tags carry a `v` prefix (`v1.8.0`), because `.github/workflows/release.yml`
-  triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
-  to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
-  so a fresh checkout needs that script run before cutting a release.
-- **Before a major release, run the `auditing-test-suites` skill** (speed and value), and land
-  what it finds before `release start`.
-- **`git flow release finish` is run by a human, interactively — hand it off, do not automate
-  it.** Everything up to it is ordinary work: `release start`, the version bumps in
-  `poriscope/constants.py` and `CITATION.cff`, dating the `changelog.md` header, a full green
-  `pytest -n auto`, and the preparation commit. Then stop and let someone run
-  `GIT_MERGE_AUTOEDIT=no git flow release finish <version>` themselves, and push `main`,
-  `develop` and the tag afterwards. Only the tag push runs `release.yml`; the release
-  branch itself is tested by `ci-branches.yml` and `docs-check.yml` on every push, so push
-  the release branch and see it green before handing off the finish.
-  It opens three editors — two merge commit messages and the tag annotation.
-  `GIT_MERGE_AUTOEDIT=no` suppresses the merges, but the tag editor always opens and **git flow
-  prefills it with nothing**, so `GIT_EDITOR=true` yields an empty message and the command dies
-  with `fatal: no tag message?` *after* the merge into `main` has landed, leaving the release
-  half-finished. **Do not pass `-m` either**: git flow appends its own text, which produced the
-  annotation `v1.8.0 v1.8.0` where every other tag reads just its version. Pointing `GIT_EDITOR`
-  at a command that writes the annotation into the file does work, and is idempotent over an
-  already-completed merge — that is how 1.9.0 was salvaged — but it is a fragile trick for a
-  once-per-release command, which is why the step is handed off. Whoever runs it should check the
-  annotation before pushing, and fix it with
-  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` if git flow duplicated it.
-- **Run `git flow release finish` and `feature finish` with no timeout wrapper, in the
-  background.** The `post-merge` hook regenerates the autodoc and rebuilds Sphinx: it ran past
-  a two-minute timeout during the 1.8.0 release, and a `feature finish` passed ten minutes on
-  2026-09-26. All the git work had already completed by then; only the release branch
-  deletion was left undone, so check `git branch` and `git tag` before re-running anything.
-  **Leave the working tree untouched until the finish reports.** The merge lands in seconds,
-  the hook then runs for minutes, and git flow re-checks for a clean tree before deleting the
-  branch: a `git stash pop` during the hook on 2026-10-19 left the merged branch undeleted,
-  which `git branch -d` then had to finish.
+- git flow: features branch from `develop`, not `main`. Release tags carry a `v` prefix
+  (`release.yml` triggers on `v*`); `scripts/setup_hooks.py` sets it per clone.
+- Before a major release, run `auditing-test-suites` and land its findings before
+  `release start`.
+- **Before every release, on the release branch, run the records-and-docs cleanup** (lesson C14
+  in `planning-and-executing-changes`): `changelog.md`, `DECISIONS.md`, `future_fixes.md`, this
+  file, the skills and the hand-written docs, each cut verified against the code, landed before
+  the preparation commit.
+- Prepare a release up to, not including, `git flow release finish`: `release start`, bump
+  `poriscope/constants.py` and `CITATION.cff`, date the `changelog.md` header, a full green
+  suite, the preparation commit, then push the release branch and see CI green. A human runs
+  `GIT_MERGE_AUTOEDIT=no git flow release finish <version>` interactively (the tag editor opens
+  empty; do not pass `-m`, which duplicates the annotation), checks the annotation - fix a
+  duplicated one with `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` - and pushes
+  `main`, `develop` and the tag. Why: `DECISIONS.md`.
+- Run `feature finish` and `release finish` in the background with no timeout: the `post-merge`
+  hook rebuilds the docs for minutes after the merge lands. Leave the working tree untouched
+  until it reports, and check `git branch`/`git tag` before re-running anything.
