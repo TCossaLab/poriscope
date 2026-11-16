@@ -1,28 +1,13 @@
 Where to Begin
 ==============
 
-Before building your first plugin in Poriscope, ask yourself:
+First decide which kind of plugin you are building:
 
-**What kind of plugin do I want to create?**
-
-Plugin Types
-------------
-
-**Analysis Tab Plugin**  
-Includes both a graphical interface (frontend) and logic (backend).  
-Follows a full MVC (Model-View-Controller) structure.
-
-**Data Plugin**  
-Logic-only plugins — no UI.  
-Simpler structure (often just a single class) depending on your needs.
-
-
-Once you pick the type of plugin you want to build, the process changes quite a bit depending on your choice.
-
-If you're going with an analysis tab, there's a bit more setup involved — but don’t worry, we’ve made it as smooth as possible thanks to our base classes.
-
-You focus on your logic and interface; we’ll handle the wiring behind the scenes.
-
-
-
+- **An analysis tab** is a new tab in the window: a Model, a View, a Controller and a
+  controls panel. Generate one with ``python scripts/new_plugin.py AnalysisTab MyTab``,
+  then see :ref:`build_frontend_plugin`.
+- **A data plugin** reads, filters, finds, fits, writes or loads data, with no UI of its
+  own: a single class that subclasses one of the nine data-plugin base classes. Generate
+  one with ``python scripts/new_plugin.py <base> MyPlugin`` (``--list`` shows the bases),
+  then see :ref:`build_data_plugin`.
 

@@ -3,22 +3,20 @@
 Ready to Build Your Own Data Plugin?
 ====================================
 
-In many ways data plugins are simpler than frontend plugins, in that they are standalone python elements that exist outside of the MVC context and can be used without the GUI as part of custom workflows. Unlike frontend plugins, data plugins are pure python objects, and are intended to be usable both as part of the poriscope gui and as standalone scripting elements. To make this possible, each type of data plugin has a well-defined common API that must be respected by any user-created plugin, enforced through the use of base classes and tests applied to contributions to the code base, as already explained in :ref:`understanding base classes <understanding_base_classes>`.
-
-To build a data plugin, you must:
-
-1. Create a subclass that inherits from one of the poriscope base classes
-2. Save that as a .py file with a filename that exactly matches the name of your subclass
-3. Provide an implementation for all abstract classes required by that base classes that respects the API defined in the base class
-4. Comply exactly with the API (argument names, order of arguments, and return types) required by the base class
+Data plugins are plain Python objects, outside the MVC layer: the same plugin runs in the
+GUI and in your own scripts (:ref:`scripting`). Each family has a common API, fixed by its
+``Meta*`` base class (:ref:`understanding_base_classes`). A data plugin is a subclass of
+one of those bases, saved in a file named exactly after the class, that implements every
+abstract method with the base's exact signature: argument names and order, and return
+type.
 
 .. _new_plugin_script:
 
 Start From a Generated Skeleton
 -------------------------------
 
-You do not have to do any of the four steps above by hand. ``scripts/new_plugin.py``
-writes a skeleton that already satisfies all four, and which passes ``ruff``, ``mypy``,
+You do not have to write that by hand. ``scripts/new_plugin.py`` writes a skeleton that
+already satisfies it, and which passes ``ruff``, ``mypy``,
 ``pydoclint``, the plugin compliance suite and the settings-schema check *before you have
 filled in a single method* — a much easier position to work from than discovering a
 signature mismatch when a reviewer runs the suite on your pull request.
@@ -46,7 +44,7 @@ name of your plugin:
 There are two things you might be doing, and the tool covers both.
 
 **A new plugin** subclasses one of the nine base classes and gets a stub for every
-abstract method that base declares — between 6 and 21 of them depending on the family.
+abstract method that base declares — between 5 and 20 of them depending on the family.
 ``--list`` prints the count for each, which is worth looking at before you commit to one.
 
 **A variant of a plugin that already ships** subclasses that plugin instead, and inherits
@@ -104,19 +102,18 @@ than a single file — pass ``AnalysisTab`` as the base. See :ref:`new_tab_scrip
    yours cannot survive that, it has to say so. Read
    :ref:`serial_channel_operations` before you finish your implementation.
 
-.. note::
-
-	Implementation of a data plugin will feel incomplete - it is! Much of the functionality is held together in the base class itself. All you are doing is filling in the blanks where the poriscope developers cannot reasonably predict how a particular piece of information can be extracted without knowing the specific thing you are trying to build. While not strictly required, we encourage plugin developers to familiarize themselves with all of the functionality in the base class - it may help with your implementation to know how the functions you are filling in are being used, and if you're lucky, you may find a bug that we missed.
-
-As long as the API is respected (order and type of arguments, return type, and any limits on the circumstances in which your plugin should `Raise`), it is sometimes acceptable to override functions that are implemented in the base class. That being said, while we have done our best to predict common behaviors, it is possible that overrides of non-abstract methods will be necessary. If you do, however, be sure that you understand the base class implementation. In many cases, it is strongly suggested that you call ``super().[function_name](...)`` and extend the implementation from there, rather than overriding completely or duplicating code, and never, ever change the arguments, argument types, or return types of public functions.
-
-To assist with quality control, any contributions to the poriscope repository will need to pass our tests and type checks. To assist with this, functions should be decorated with the ``@override`` tag to tell our type checker what to expect, and should have detailed docstrings that explain what you are doing in your function. Plugins will only be added to the repository when fully compliant, but we are happy to help if you get stuck in the process.
+Most of a data plugin's behaviour lives in its base class; you fill in only what the base
+cannot know about your format or algorithm, so it is worth reading how the base uses the
+methods you implement. You may also override a method the base implements, keeping its
+arguments, argument types, return type and the circumstances in which it raises; prefer
+calling ``super()`` and extending it to replacing it. Decorate every override with
+``@override``, and document it - contributions are merged once they pass the checks below,
+and we are happy to help if you get stuck.
 
 .. tip::
 
-   "Our tests and type checks" means something specific and checkable, not a vague
-   standard a reviewer applies by eye. See :ref:`quality_control` for exactly what
-   runs (formatting, typing, docstring consistency, plugin interface compliance
+   The checks are specific, not a standard a reviewer applies by eye. See
+   :ref:`quality_control` for exactly what runs (formatting, typing, docstring consistency, plugin interface compliance
    testing, and the behavioural conformance suite, which actually runs your plugin
    against synthetic data), and work through :ref:`pre_pr_checklist` before you open
    your pull request — it will save you a review round-trip.

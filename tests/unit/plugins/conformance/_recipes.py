@@ -913,13 +913,13 @@ _SHARED_MUTATIONS: List[Tuple[str, Callable[[SyntheticDataset], None]]] = [
 
 # Per-reader mutation lists: the shared set every format gets, plus
 # format-specific ones layered on top - not per-reader duplication. Only 4 of
-# the 8 readers have an in-band marker worth flipping (the three ABF readers'
+# the 9 readers have an in-band marker worth flipping (the three ABF readers'
 # ABF2 signature, the 2024-01 Chimera embedded header); the two sidecar-based
 # formats (2024-05 Chimera, ChimeraVC100) get sidecar mutations instead, since
 # their "header" is the sidecar file, not anything in the data file itself.
-# BinaryReader1X and SingleBinaryDecoder have no in-band marker at all - a
-# fixed-format binary dump has nothing to flip - so they get the shared set
-# only.
+# BinaryReader1X, SingleBinaryDecoder and NIBinaryReader have no in-band marker
+# at all - a fixed-format binary dump has nothing to flip - so they get the
+# shared set only.
 MUTATIONS: Dict[str, List[Tuple[str, Callable[[SyntheticDataset], None]]]] = {
     name: list(_SHARED_MUTATIONS) for name in READER_DATASET_BUILDERS
 }

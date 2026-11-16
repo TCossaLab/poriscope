@@ -14,14 +14,13 @@ Step 1: Load Event Database
 
 1. **Click** the **➕** beside **EVENT LOADER** (tooltip *Add eventloaders*) to import an existing event database.
 
-2. A dropdown menu will appear listing available loaders. For example:
+2. Choose ``SQLiteEventLoader``, the event loader Poriscope ships, which reads the
+   databases the Raw Data tab writes.
 
-   - ``SQLiteEventLoader`` – for loading `.db` files containing previously detected events.
+3. In its settings dialog:
 
-3. A plugin settings dialog will appear. For ``SQLiteEventLoader``, you must:
-
-   - Enter a **name** for the loader (e.g., ``SQLiteEventLoader_1``).
-   - Click **Select Input File** to browse for a valid `.db` file containing event data.
+   - Enter a **name** for the loader; it is prefilled (e.g., ``SQLiteEventLoader_0``).
+   - Click **Select Input File** to browse for the event database.
 
 .. note::
 
@@ -40,14 +39,10 @@ Step 2: Apply a Filter
 
 2. *(Optional)* Re-enter indices and **click Plot Events** again to preview filtered results.
 
-.. note::
-
-   Filters refine event shapes and reduce noise prior to fitting. 
-
 Step 3: Fit Events
 ------------------
 
-1. **Click** the **➕ Add Fitter** button to choose an event-fitting plugin.
+1. **Click** the **➕** beside **EVENT FITTER** to choose an event-fitting plugin.
 
 2. A dropdown will appear with available fitters. Options include:
 
@@ -57,7 +52,7 @@ Step 3: Fit Events
    - ``PeakFinder`` – classifies peaks riding on the event, for barcode and similar events.
    - ``Basic_PeakFinder`` – fits prominent peaks using window-based criteria.
    - ``NanoTrees`` – identifies nested sublevels using time-scaling and statistical analysis.
-   - ``NoFitter`` – fits nothing; records each event as one blocked stretch, from where the signal leaves the baseline to where it begins returning to it, and reports the average current over the steady part between those two edges (the edges themselves are excluded from the average, so a slow filter does not skew it).
+   - ``NoFitter`` – fits nothing; records each event as one level, from where the signal leaves the baseline to where it begins returning to it, and reports the mean current over the steady part between those edges.
 
 3. A plugin settings dialog will appear depending on the selected fitter:
 
@@ -66,8 +61,8 @@ Step 3: Fit Events
 - ``Name``: Custom name for the fitter instance.
 - ``Step Size`` (pA): Minimum change in current to detect (in σ for ``ClassicCUSUM``); must be set, and must be larger than zero.
 - ``Sensitivity``: Divides the detection threshold CUSUM picks from the event length and step size; 1 (the default and minimum) is the most conservative, and higher values detect smaller or shorter steps at the cost of more false transitions.
-- ``Rise Time`` (µs): Expected duration of a step change; must be set.
-- ``Max Sublevels``: Maximum number of levels to detect per event.
+- ``Rise Time`` (µs): How much of the signal either side of a transition is left out of the level averages, so a finite edge does not bias them; must be set.
+- ``Max Sublevels``: An event fitted with more sublevels than this is rejected; 0 (the default) removes the limit.
 
 **IntraCUSUM Settings:**
 

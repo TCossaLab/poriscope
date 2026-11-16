@@ -212,9 +212,9 @@ Once this loop is complete, our eventfinder will have flagged and built an inter
 
    Whether a plugin's channels may be driven in parallel is not a matter of taste - ask the
    plugin. :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.force_serial_channel_operations`
-   returns ``True`` when they may not, which is the case for both writer types. As of
-   Poriscope 1.7 the plugin enforces this itself rather than relying on the GUI, so the
-   guarantee holds in scripts too: if you drive a serial plugin's channels from your own
+   returns ``True`` when they may not, which is the case for both writer types. The plugin
+   enforces this itself rather than relying on the GUI, so the guarantee holds in scripts
+   too: if you drive a serial plugin's channels from your own
    threads they will serialise rather than corrupt each other. Single-threaded scripts like
    this one are unaffected. See :ref:`serial_channel_operations`.
 

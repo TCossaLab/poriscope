@@ -14,23 +14,9 @@ mode that gives you the whole query.
 
 Saved as: ``<subset_name>_assisted``
 
-**In short:** write only the condition. Poriscope adds the scope, joins the tables and chooses the
-columns, so any plot can use the filter.
-
-What you write, and what Poriscope runs
----------------------------------------
-
-For the filter ``duration > 150``, plotted as a histogram of ``duration`` for experiment 1,
-channel 2 of the :ref:`example database <example-database>`, Poriscope runs, roughly:
-
-.. code-block:: sql
-
-   SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.duration
-   FROM events e
-   WHERE (e.duration > 150) AND ((experiment_id = 1 AND channel_id IN (2)))
-
-The columns come from the axes you chose, and the scope is added for you. The query is run once
-for each ticked experiment and channel (see :ref:`How scope works <how-scope-works>`).
+The query Poriscope builds from a condition is shown, beside its Raw SQL equivalent, in
+:ref:`One filter, two modes <one-filter-two-modes>`; it is run once for each ticked
+experiment and channel (see :ref:`How scope works <how-scope-works>`).
 
 What Assisted does for you
 --------------------------
@@ -91,9 +77,7 @@ itself cannot. Qualify any reference to the outer row yourself - ``e.id`` for th
 Filter: ``e.id IN (SELECT event_db_id FROM sublevels WHERE sublevel_duration > 100)``
 
 Then select **Histogram**, x-axis: ``duration`` -> events with at least one sublevel
-longer than 100 µs. Note that the filter ``sublevel_duration > 100`` says the same thing
-more simply, because Example 4's automatic join already means "at least one sublevel
-matches".
+longer than 100 µs (the same as Example 4's simpler form).
 
 Filter: ``e.id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)``
 

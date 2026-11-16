@@ -705,8 +705,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         menu = QMenu(self)
 
         if not analysis_tabs:
-            # Normal at startup and after a session reset, so not a warning:
-            # QtHandler promotes WARNING to a modal dialog.
+            # Normal at startup and after a session reset, so not a warning.
             self.logger.debug("No analysis tabs available.")
             no_tabs_action = QAction("No analysis tabs available", self)
             no_tabs_action.setEnabled(False)

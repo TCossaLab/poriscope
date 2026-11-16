@@ -1,159 +1,137 @@
+.. _SimpleCalc:
+
 From HelloWorld to a Full MVC Analysis Tab
 ===========================================
 
-Now that you've explored your first Poriscope plugin with HelloWorld, it's time to look at a complete example of a fully implemented MVC Analysis Tab.
+SimpleCalc is the :ref:`HelloWorld` tab filled in: a two-number calculator that lists and
+plots its results. It is small enough to read whole, and it uses every part of the pattern
+the shipped tabs use - a controls panel, the View's action dispatch, an intent signal, a
+recorded Controller action and a Model that does the computation. It uses no data plugins
+and no worker threads.
 
-We'll walk through :ref:`SimpleCalc`, a lightweight but fully functional plugin that demonstrates the core responsibilities of the View, Model, and Controller.
+It was generated with ``python scripts/new_plugin.py AnalysisTab SimpleCalc`` and then
+filled in. The four files live at ``docs/source/_static/examples/simple_calc/``, and every
+code block on this page is included from them. To try it, copy them into your user plugin
+folder (see :ref:`settings`) and restart Poriscope; ``SimpleCalcController`` is then in the
+Analysis menu.
 
-This is not just an abstract demo — :ref:`SimpleCalc` shows you exactly:
+.. figure:: /_static/images/SimpleCalcInAction.png
+   :alt: The SimpleCalc tab after three calculations
+   :width: 700px
+   :align: center
 
-- How a tab is registered
-- How signals are emitted and received
-- How user input drives model logic
-- How the UI dynamically updates with the result
+   **SimpleCalc after three calculations** - two number fields, an operator, **Add
+   Calculation** and **Reset**, with the results listed under the fields and plotted above.
 
-What This Plugin Does
----------------------
+Type two numbers, pick ``+`` or ``-`` and press **Add Calculation**. Up to five results are
+kept; a sixth is refused with a line on the status panel until you press **Reset**.
 
-SimpleCalc lets users:
+How a click travels
+-------------------
 
-- Input two numeric values
-- Select an operation: addition (+) or subtraction (-)
-- Click **Add Calculation** to compute and display the result
-- View up to five results displayed
-- Click **Plot** to visualize all results
-- Click **Reset** to clear results and reset the interface
+Only the Controller holds both the View and the Model, so it is the only class that
+connects them. The View never calls the Model, and the Model never touches a widget.
 
-This example focuses on interactivity, signals, layout, and plotting — without involving file I/O or multithreading.
+**1. The panel reads its widgets and emits an action.** ``collect_parameters`` reads the
+fields at the moment of the click, and ``actionTriggered`` carries them out of the panel:
 
-How the :ref:`SimpleCalc` Plugin Works (Step-by-Step)
------------------------------------------------------
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcControls.py
+   :language: python
+   :pyobject: SimpleCalcControls.collect_parameters
 
-The plugin kicks off from the :class:`SimpleCalcController`, which does two important things right away:
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcControls.py
+   :language: python
+   :pyobject: SimpleCalcControls._on_calculate_requested
 
-- Creates an instance of :class:`SimpleCalcView` — the user interface
-- Creates an instance of :class:`SimpleCalcModel` — the logic and data handler
+**2. The View turns the action into an intent.** ``MetaView`` has already connected
+``actionTriggered`` to ``handle_parameter_change``, which dispatches on the action name and
+emits one of the View's typed intent signals:
 
-Because the controller holds both of these, it can access their methods.
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcView.py
+   :language: python
+   :start-at: calculate_requested = Signal
+   :end-at: reset_requested = Signal
 
-.. important::
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcView.py
+   :language: python
+   :pyobject: SimpleCalcView.handle_parameter_change
+   :start-at: parameters = args[0]
 
-   This is key to the MVC structure: only the controller connects view and model.  
-   If the view calls the model directly (or vice versa), you're likely breaking MVC modularity.
+**3. The Controller connects the intent to a slot,** in ``_setup_connections``:
+
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcController.py
+   :language: python
+   :pyobject: SimpleCalcController._setup_connections
+   :start-at: self.view.calculate_requested
+
+**4. The slot asks the Model, then hands the answer to the View:**
+
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcController.py
+   :language: python
+   :pyobject: SimpleCalcController.calculate
+
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcModel.py
+   :language: python
+   :pyobject: SimpleCalcModel.compute
+
+**5. The View draws what it was given.** ``show_results`` fills the panel's results line
+and redraws the plot; it computes nothing:
+
+.. literalinclude:: /_static/examples/simple_calc/SimpleCalcView.py
+   :language: python
+   :pyobject: SimpleCalcView.show_results
+
+Recording and replay
+--------------------
+
+``calculate`` and ``reset`` are decorated with ``@register_action``, so each call is recorded
+in the tab's history. That history is what **Save Session**, **Replay Actions** and Undo
+work from - see :doc:`../ready_to_build/metacontroller_base`.
+
+- ``calculate`` is ``kind="additive"``: each call adds to the ``results`` figure, and a
+  restored session keeps every one since the last reset. ``skip_on_false=True`` keeps a
+  refused calculation out of the history; the method returns ``False`` for it.
+- ``reset`` is ``kind="reset"`` on the same figure, so a saved session drops the
+  calculations before it.
+- ``clear_for_replay`` is overridden because this tab keeps its results on the Model, not
+  only in the figure; a replay that goes back must forget them too. It records nothing.
+- ``write_back`` shows a replayed calculation's numbers in the panel, so the panel ends a
+  replay showing the last calculation it ran.
+
+The recorded methods take every value they use as an argument and read no widget, which is
+what lets a replay reproduce them.
+
+The full code
+-------------
+
+The canvas, its toolbar, the control-area layout and the wiring of the panel's signals all
+come from the base classes; none of it appears below.
 
 .. tabs::
 
+   .. tab:: SimpleCalcController
+
+      .. literalinclude:: /_static/examples/simple_calc/SimpleCalcController.py
+         :language: python
+         :start-at: import logging
+
    .. tab:: SimpleCalcModel
 
-      **The Model: Doing the Math**
-
-      When the controller calls the model’s :meth:`compute` method, the model processes the operation and tracks the results internally.
-
-      Once the result is calculated, it's returned to the controller.  
-      The controller then tells the view: “Here’s the result, go show it.”
-
-      That’s it — the controller is the bridge. The view handles UI. The model handles logic.  
-      The controller connects them both.
-
-      You've now built a complete MVC Analysis Tab — and you're ready to build plugins that go way beyond simple math.
+      .. literalinclude:: /_static/examples/simple_calc/SimpleCalcModel.py
+         :language: python
+         :start-at: import logging
 
    .. tab:: SimpleCalcView
 
-      **The View: What the User Sees and Does**
+      .. literalinclude:: /_static/examples/simple_calc/SimpleCalcView.py
+         :language: python
+         :start-at: import logging
 
-      Let’s look at the view (:class:`SimpleCalcView`). 
+   .. tab:: SimpleCalcControls
 
-      .. figure:: /_static/images/SimpleCalcView.png
-         :alt: SimpleCalcView layout
-         :width: 700px
-         :align: center
+      .. literalinclude:: /_static/examples/simple_calc/SimpleCalcControls.py
+         :language: python
+         :start-at: import logging
 
-         SimpleCalc View — user inputs and control buttons.
-
-         
-      It defines all the components the user interacts with:
-
-      - A line edit (for the first value)
-      - A combo box (for selecting + or -)
-      - Another line edit (for the second value)
-      - A button labeled “Add Calculation”
-      - A row underneath to show results
-      - Two more buttons at the bottom: **Plot** and **Reset**
-
-      All of this is set up inside the control area using PySide6 layouts.
-
-      .. tip::
-
-         Check ``SimpleCalcView.py`` in :ref:`SimpleCalc` for the exact structure using Qt widgets.
-
-      The view also defines the behavior for those buttons. For example:
-
-      - ``_on_add_calculation()`` handles what happens when the user clicks Add Calculation
-      - ``_on_reset()`` clears everything
-
-      These methods are implemented in the view because they need direct access to the input fields.  
-      Once the values are ready, the view emits a signal — it does **not** perform the calculation itself.
-
-   .. tab:: SimpleCalcController
-
-      **Signals: Talking to the Controller**
-
-      The view emits three key signals:
-
-      - ``calculate_operation`` — triggered with the left value, operator, and right value
-      - ``request_plot`` — user clicked Plot
-      - ``request_reset`` — user clicked Reset
-
-      The last two don’t need extra info, but ``calculate_operation`` includes data the user entered.
-
-      The view emits the signal, and the controller listens for it.
-
-      **The Controller: Connecting and Handling**
-
-      Inside the controller’s ``_setup_connections()`` method, we connect those signals to specific handler functions:
-
-      - ``handle_add()`` — for calculations
-      - ``handle_plot()`` — to update the graph
-      - ``handle_reset()`` — to clear the state
-
-      These handlers live in the controller, because the controller manages the flow:
-
-      - It receives user input via signals
-      - It decides what to do (typically by calling the model)
-
-      .. figure:: /_static/images/SimpleCalcInAction.png
-         :alt: SimpleCalcView in action
-         :width: 700px
-         :align: center
-
-         **SimpleCalcView in Action** — This is what users see after adding calculations and plotting results.
-
-That was super simple — Why Do I Even Need Base Classes?
---------------------------------------------------------
-
-Well… ask yourself this:
-
-- Did you ever tell the application where to put your canvas?
-- Did you even create the canvas yourself — do you even know what a canvas is?
-
-Exactly. You didn’t — and you didn’t have to.
-
-All those low-level details — like initializing a ``matplotlib`` canvas, embedding it into the layout, handling signals, making sure your tab even shows up — that’s all handled by the base classes and the MVC structure.
-
-You don’t need to write that boilerplate. You don’t even need to fully understand it.
-
-But you **do** need to respect it.
-
-.. admonition:: Pro Tip
-
-   Take the time to read the functions defined in the base class that best fits your needs.  
-   They already include useful helpers — and more importantly, they let your plugin work with just a few hundred lines of your own code instead of thousands of lines of infrastructure.
-
-So yes — base classes do the heavy lifting behind the scenes.
-
-But this manual explains the parts that do concern you — and believe me, you’ll be glad you read and remember them.
-
-.. toctree::
-   :maxdepth: 1
-
-   simpleCalc_code
+The ``@log(logger=logger)`` decorator on most methods logs each call's arguments and
+return value at ``DEBUG``; see :ref:`Logging`.

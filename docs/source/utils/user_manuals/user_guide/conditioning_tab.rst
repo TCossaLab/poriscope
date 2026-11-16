@@ -5,8 +5,7 @@ Conditioning Tab
 
 The **Conditioning Tab** follows a pore conditioning experiment cycle by cycle: each channel's
 pore size against its target band, with the noise of the PSD recordings taken along the way.
-It reads an experiment written by the lab's LabVIEW and NI DAQ acquisition software, and
-replaces the standalone conditioning analysis script that read the same folders.
+It reads an experiment written by the lab's LabVIEW and NI DAQ acquisition software.
 
 Open it from **Analysis** → **New Analysis Tab** → ``ConditioningController``.
 
@@ -79,8 +78,7 @@ greyed out as disabled.
 .. note::
 
    A PSD recording shorter than its points per average is still analysed, as one shorter
-   segment, and the status panel says which one. Its frequency bins are wider than the
-   others', so check its fit range has at least two of them.
+   segment with wider frequency bins.
 
 Step 3: Exporting
 -----------------

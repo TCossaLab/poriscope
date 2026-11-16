@@ -10,13 +10,15 @@ The **Protein Tab** estimates the size and shape of a translocating protein from
 Step 1: Load a Fitted Events Database
 --------------------------------------
 
-1. Click the **➕** button to load a database of fitted events (the output of the EventAnalysis tab's ``Commit``).
-2. A plugin dialog (e.g., ``SQLiteDBLoader``) will appear. Enter a custom **Name** for the loader instance and select the SQLite ``.db`` file to load.
+1. Click the **➕** beside **DB LOADER** to load a database of fitted events (the output of the Event Analysis tab's **Commit Events**).
+2. A plugin dialog (e.g., ``SQLiteDBLoader``) will appear. Enter a **Name** for the loader instance and select the database file.
 
 Step 2: Choose Scope
 ---------------------
 
-Click the **Scope** button to select which experiments and channels contribute to the current plot. By default, everything is selected.
+Click the **Scope** button and select **one experiment and one channel**. Everything starts
+selected, but the fits and the event plots on this tab work on a single experiment,
+channel and subset, and refuse a wider scope with a message.
 
 Step 3: Enter Pore Geometry
 -----------------------------
@@ -40,12 +42,8 @@ Step 5: Configure Sampling and Binning
 
 .. note::
 
-   A bin count or width the tab cannot use is reported once on the status panel, rather
-   than once per event in the log.
-
-   **Each event is binned over its own range.** In Individual mode the range used to
-   accumulate across the events of a plot, so the bins an event was drawn on depended on
-   how many events preceded it; both per-event paths follow the same rule now.
+   A bin count or width the tab cannot use is reported once on the status panel. Each
+   event is binned over its own range.
 
    An event whose baseline is zero, or which has no samples between its paddings, cannot
    be turned into a fractional blockage. Its panel is left empty and it contributes
@@ -56,7 +54,7 @@ Step 6: Generate the Fit
 
 Click **Update Plot** to run the fit for the current mode. This draws:
 
-- A ΔI/I (or volume) histogram, or a Peak Scatterplot in Individual mode.
+- A ΔI/I histogram, or a Peak Scatterplot in Individual mode.
 - The Prolate/Oblate volume vs. shape-factor solutions on the second plot.
 
 .. note::
@@ -85,13 +83,11 @@ In **Ensemble** mode, click **Report All** to display the double-Gaussian fit pa
 Step 8: Apply Filters
 -----------------------
 
-You can restrict the events included in a fit to a named subset:
-
-1. Click the **➕** filter button to define a new filter. A Raw SQL filter scopes itself with ``:experiment_id`` and ``:channel_id``, and must return ``event_id`` to be used for the distribution plots, Plot Events and Plot Histogram.
-2. Use the filter dropdown to choose which saved subset(s) are active for the current plot.
-3. Click the info/edit button next to the dropdown to view or modify the currently selected subset.
-4. Click the delete button to remove selected subsets (individual ones can also be removed directly from the dropdown).
-5. Use **Save Filter** / **Load Filter** to persist subsets for future sessions.
+You can restrict the events included in a fit to a named subset filter, created, edited and
+saved exactly as in the Metadata tab (see :ref:`filtering-and-querying`). Select **at most
+one** subset for a fit or plot. A Raw SQL filter scopes itself with ``:experiment_id`` and
+``:channel_id``, and must return ``event_id`` to be used for the distribution plots,
+**Plot Events** and **Plot Histogram**.
 
 Step 9: Export Plot Data
 ---------------------------
@@ -101,11 +97,9 @@ Click **Export Plot Data** to save the data currently shown in your plots to dis
 Step 10: Inspect Individual Events
 -------------------------------------
 
-1. Use **Scope** to select exactly one experiment and channel.
-2. Enter a starting **event ID** and the number of events to visualize.
-3. Click **Plot Events** to view raw/filtered/fitted traces, or **Plot Histogram** for a ΔI/I histogram, for the selected events.
-4. Use the left/right arrow buttons to step through events in the filtered set.
-5. Check the **RAW** box to overlay the unfiltered raw signal alongside the filtered and fitted traces.
+**Plot Events**, its arrows and **RAW** work as in the Metadata tab (see Step 5 of
+:ref:`metadata-tab`); here the starting field is **EVENT ID**. **Plot Histogram** draws a
+ΔI/I histogram of the same events instead of their traces.
 
 .. note::
 

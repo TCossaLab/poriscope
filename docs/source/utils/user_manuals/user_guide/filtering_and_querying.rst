@@ -61,6 +61,8 @@ Choosing a mode
      - Little to watch for: the scope is always applied
      - Leaving the placeholders out, or an unbracketed ``OR``
 
+.. _one-filter-two-modes:
+
 One filter, two modes
 ---------------------
 
@@ -152,9 +154,7 @@ in the filter dropdown immediately.
 .. note::
 
    The mode radio buttons are locked once a filter is created. To change mode, delete the
-   filter and recreate it. This is by design — assisted filters contain WHERE clauses and
-   raw filters contain complete SELECT statements. These formats are incompatible and cannot
-   be safely converted.
+   filter and recreate it.
 
 Editing a Filter
 ----------------
@@ -217,8 +217,7 @@ The saved JSON format looks like:
    panel, and the filters you already have are left exactly as they were. That includes
    a **session** file, which is also a JSON object: it is refused whole rather than
    importing its plugin names as filters. A **save** that fails, on a full disk or a
-   read-only folder, is reported there too; it used to look exactly like a save that
-   worked.
+   read-only folder, is reported there too.
 
 Which plots take a filter
 -------------------------
@@ -231,10 +230,11 @@ Which plots take a filter
      - Assisted
      - Raw
    * - Update Plot: Histogram, Normalized and Categorical Histogram, Kernel Density,
-       Scatterplot, 3D Scatterplot
+       Scatterplot, 3D Scatterplot, Capture Rate
      - Works
-     - Needs the plotted columns in the result; a column of another table (``sublevel_duration``)
-       needs a join, which the status panel shows. Drawn once for each ticked channel
+     - Needs the plotted columns in the result (``start_time`` for Capture Rate); a column of
+       another table (``sublevel_duration``) needs a join, which the status panel shows. Drawn
+       once for each ticked channel
    * - Update Plot: Heatmap
      - Works, one experiment, one channel and one filter
      - Needs the plotted columns in the result, one experiment, one channel and one filter
@@ -247,7 +247,7 @@ Which plots take a filter
    * - Plot Events and the event arrows (Metadata and Protein)
      - Works, one filter and one channel
      - Needs ``event_id``, one filter and one channel
-   * - Protein tab: Update Plot (Ensemble), Plot Histogram
+   * - Protein tab: Update Plot (Individual and Ensemble), Plot Histogram
      - Works, one filter and one channel
      - Needs ``event_id``, one filter and one channel
    * - Export Subset - CSV
@@ -345,18 +345,4 @@ Columns present in the YouTube tutorial database are listed below as a reference
 
 - ``name``, ``voltage``, ``thickness``, ``conductivity`` — the experiment's name and its recorded conditions
 
-.. tip::
-
-   To inspect your database structure directly, use a SQLite browser such as
-   `DB Browser for SQLite <https://sqlitebrowser.org/>`_.
-
-
-.. note:: Tutorial Data
-
-   The data used in the YouTube tutorial series is archived on the Federated Research Data Repository (FRDR):
-
-   **DOI:** `10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
-
-   The full dataset is ~9.92 GB. Individual ``.log`` and ``.json`` files can be downloaded separately from the FRDR page if you only need specific channels.
-
-   The deposit also contains the reference SQLite databases used in the tutorial (``.sqlite3``), and a ``README.txt`` giving the parameters needed to regenerate them from the recordings.
+The tutorial database itself is part of the :ref:`tutorial dataset <tutorial_dataset>`.

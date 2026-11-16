@@ -294,7 +294,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
+        **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.

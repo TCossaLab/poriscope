@@ -13,7 +13,7 @@ What You Get by Inheriting MetaController
 
 As soon as you subclass and instantiate a :ref:`MetaController`, the following happens:
 
-- A Controller slot starts a background generator with ``self.model.run_generators(key)``; the View asks the Controller rather than signalling the Model (the ``run_generators`` signal on ``MetaView`` was removed in 2.0.0)
+- A Controller slot starts a background generator with ``self.model.run_generators(key)``; the View asks the Controller rather than signalling the Model
 - Signals from both the view and model are routed to log output and progress bars
 - The controller listens for user commands to kill workers or save/export data
 - Plugin-state changes, status messages and create/edit/delete requests are relayed to the app shell as typed signals
@@ -22,8 +22,7 @@ As soon as you subclass and instantiate a :ref:`MetaController`, the following h
 
 No need to manually handle cross-plugin communication — :ref:`MetaController` takes care of:
 
-- Forwarding the live data plugin instances to the Model, so a slot reaches a plugin with ``self.model.call(...)``, and typed signals for asking the application to create, edit or delete one
-- Returning the plugin's result directly from ``call()`` - there is no return function to route
+- Forwarding the live data plugin instances to the Model, so a slot reaches a plugin with ``self.model.call(...)`` and uses its return value, and typed signals for asking the application to create, edit or delete one (see :ref:`CallingAPlugin`)
 - Updating the main display with log messages via ``add_text_to_display``
 
 **Action history tracking**
@@ -140,21 +139,17 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 
 **Utility methods already set up**
 
-- ``call(metaclass, key, method, *args, **kwargs)`` to run a method on a data plugin and
-  get its result back, raising where it fails rather than logging somewhere else. This is
-  the whole plugin-facing API a Controller gets; ``MetaModel.call`` is the same method for
-  the Model's use, and neither layer should reach a plugin any other way
+- No ``call()`` of its own: a Controller slot reaches a data plugin through its Model,
+  ``self.model.call(metaclass, key, method, *args, **kwargs)``, which returns the result and
+  raises where it fails. Neither layer should reach a plugin any other way
 - ``export_plot_data()`` to save cached data as a CSV
-- ``set_generator()`` to forward generators from controller to model
 - ``handle_kill_worker()`` and ``handle_kill_all_workers()`` to gracefully stop
   long-running operations; the second also stops the tab's replay
 
 What You Need to Implement
 --------------------------
 
-Only two methods are abstract, and both are called automatically during setup.
-
-.. note::
-
-   Want the technical breakdown?  
-   Check the :ref:`MetaController` section of this manual — it walks through each method’s purpose and parameters.
+Two methods are abstract, and the constructor calls both: ``_init``, which must assign
+``self.view`` and ``self.model``, and ``_setup_connections``, which connects your View's
+intent signals to your Controller's slots. Each method's contract is on the
+:ref:`MetaController` reference page.

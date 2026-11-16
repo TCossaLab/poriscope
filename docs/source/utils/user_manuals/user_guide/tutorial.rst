@@ -7,12 +7,9 @@ A **built-in tutorial** is available for each tab or for the full workflow. To i
 
 .. note:: Data to follow along with
 
-   The built-in tutorial walks you through the interface, but you will need data
-   loaded to actually perform the steps it describes. The dataset used in the
-   YouTube tutorial series is archived on the Federated Research Data Repository
-   (FRDR):
-
-   `DOI: 10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
+   The tutorial walks you through the interface, but you need data loaded to perform its
+   steps. The dataset used in the YouTube tutorial series is linked in
+   :ref:`tutorial_dataset`.
 
 .. image:: /_static/images/help_tutorial_menu.png
    :alt: Help -> Tutorial Menu
@@ -34,7 +31,7 @@ If you choose **Help → Tutorial** on a page that has no tutorial, Poriscope sa
 
 The tutorial gives a **high-level overview** of actions in each tab. To fully understand parameters, implications, and edge cases, you should **refer to this documentation alongside the tutorial**.
 
-Once a new plugin (e.g., RawDataController, EventAnalysisController) has been opened, it will **automatically be added to the sidebar**.
+Once an analysis tab (e.g., RawDataController, EventAnalysisController) has been opened, it is **automatically added to the sidebar**.
 
 .. image:: /_static/images/sidebar_with_tabs.png
    :alt: Sidebar with Opened Tabs

@@ -1,51 +1,56 @@
 System Architecture
 ===================
-Poriscope is built using a modular MVC (Model-View-Controller) architecture, designed to simplify the integration of new plugins and support scalable development.
+Poriscope uses the same Model-View-Controller pattern at two levels: once for the
+application shell, and again for each analysis tab.
 
-Core Components
----------------
+The shell
+---------
 
-:ref:`Mainview`   
-Manages the user interface layout, including persistent components like the top and side menus, and the logging console.
+:ref:`MainView`
+   The window itself: the menus, the sidebar, the message panel, and a stack in the centre
+   where each analysis tab's View is shown.
 
-:ref:`MainModel`  
-Handles the application's shared data and global resources.
+:ref:`MainModel`
+   The discovered plugin classes, the application configuration and the session files.
 
-:ref:`MainController`   
-Acts as the brain of the application, coordinating all logic and interaction between models and views.
+:ref:`MainController`
+   Starts plugin discovery, opens analysis tabs, and connects each tab's signals to the
+   rest of the application.
 
 .. figure:: /_static/images/MVC_architecture_overview.png
    :alt: MVC architecture overview
    :width: 1000px
    :align: center
 
-   **MVC Architecture Overview** — A visual summary of how the Model, View, and Controller interact in Poriscope.
+   **MVC Architecture Overview** - how the shell's Model, View and Controller interact.
 
-Overview Pages
-~~~~~~~~~~~~~~
+.. figure:: /_static/images/MainView.png
+   :alt: Main View layout
+   :width: 1000px
+   :align: center
 
-.. toctree::
-   :maxdepth: 1
+   **MainView layout** - the top menu, the side menu and the display area.
 
-   mainview_overview
-   mainmodel_overview
-   maincontroller_overview
+Live data-plugin instances are held by a second, smaller triad: ``DataPluginController``,
+``DataPluginModel`` and ``DataPluginView`` create, validate, rename and delete every data
+plugin, whatever its family.
+
+Analysis tabs and data plugins
+------------------------------
+
+Each analysis tab is its own Controller, Model and View, built on ``MetaController``,
+``MetaModel`` and ``MetaView`` (see :ref:`build_frontend_plugin`). A tab reaches data
+plugins only through its Model's ``call()``, over the instances the shell pushes to every
+tab, and asks the shell to create, edit or delete one with typed signals (see
+:ref:`CallingAPlugin`). A plugin file placed in the right folder is discovered at startup;
+nothing in the shell needs editing to add one.
 
 API Documentation
 ~~~~~~~~~~~~~~~~~
 
 .. toctree::
    :maxdepth: 1
-   
-   ../../../../../utils/MainMVC/MainView
-   ../../../../../utils/MainMVC/MainModel
-   ../../../../../utils/MainMVC/MainController
 
-.. note::
-
-   Additionally, there is a ``DataPluginMVC`` architecture layer that manages plugin integration.
-   You don’t need to understand the internal workings of the MainMVC or DataPluginMVC in detail — just know that they exist and handle the behind-the-scenes logic.
-   Your plugin will interact with them, but that interaction is **not your responsibility** (seriously — treat it like a black box so you can stay focused on building great functionality).
-
-
-   
+   /utils/MainMVC/MainView
+   /utils/MainMVC/MainModel
+   /utils/MainMVC/MainController

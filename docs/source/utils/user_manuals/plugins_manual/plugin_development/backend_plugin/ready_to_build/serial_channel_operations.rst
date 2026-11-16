@@ -51,6 +51,10 @@ Base class                    Guarded generator
 :ref:`MetaDatabaseLoader`     ``export_subset_to_csv``
 ============================  ===========================
 
+The Conditioning tab reads a :ref:`MetaConditioningLoader` from one worker per channel
+without a generator, so ``ConditioningModel`` takes the same guard itself, wrapping each
+``load_psd_segment`` call in ``serialize_channel_operations``.
+
 .. important::
 
    **Writing a normal plugin? You will never apply this decorator yourself.** It sits on the
@@ -101,8 +105,7 @@ event loader:
    declaring ``True`` because its reader is unsafe protects the finder, not the reader — and
    two different finders sharing one reader would still reach it concurrently. This is latent
    today, since no shipped reader or loader returns ``True``, but if you write a reader that
-   is genuinely not thread-safe, do not rely on a finder's deferral alone. It is recorded in
-   ``future_fixes.md``.
+   is genuinely not thread-safe, do not rely on a finder's deferral alone.
 
 When you need a *process-wide* lock instead
 --------------------------------------------
@@ -111,9 +114,7 @@ When you need a *process-wide* lock instead
 process — most often a native library that is not re-entrant — a per-instance lock is not
 enough, and you must declare your own class-level lock.
 
-No shipped plugin needs one today - ``WaveletFilter`` used to hold one around its C
-library, and it was removed once the library was shown to be safe for the entry point it
-calls. The shape, if you do need it:
+No shipped plugin needs one today. The shape, if you do:
 
 .. code-block:: python
 
@@ -129,10 +130,9 @@ calls. The shape, if you do need it:
 
 .. caution::
 
-   Do not reuse ``self.lock`` for this and do not put a class-level ``lock`` on your plugin to
-   get the old behaviour back. ``BaseDataPlugin.lock`` used to be a class attribute — one lock
-   for every data plugin in the process — and is now per instance. Give a process-wide lock its
-   own clearly-named attribute so the difference in scope is visible at the call site.
+   Do not reuse ``self.lock`` for this, and do not name a class-level lock ``lock``, which
+   would shadow the per-instance one. Give a process-wide lock its own clearly-named
+   attribute so the difference in scope is visible at the call site.
 
 Filters are a special case
 --------------------------
@@ -147,7 +147,7 @@ thread-safe, guard the unsafe resource directly with your own lock inside
 This applies to scripts too
 ---------------------------
 
-Because the guard now lives on the plugin rather than in the GUI's model, it applies whenever
+Because the guard lives on the plugin rather than in the GUI's model, it applies whenever
 the plugin is used — including from a standalone script (see :ref:`scripting`). If you drive a
 writer's channels from two threads of your own, they will serialise. Single-threaded scripts
 are unaffected: the lock is reentrant and uncontended.

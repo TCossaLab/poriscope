@@ -3,251 +3,137 @@
 Quality Control and Developer Workflow
 ======================================
 
-Poriscope uses automated **quality control checks** to ensure that all contributed code
-is consistent, correct, and maintainable.
-
-These checks are enforced through continuous integration (CI) and can also be enforced
-locally using **Git hooks**.
-
-This section explains what checks exist, when they run, and how developers should work
-with them.
-
-Overview of Quality Controls
-----------------------------
+Poriscope runs automated **quality control checks** on every commit, through Git hooks, and
+again in continuous integration (CI). This page explains what each check does and how to
+work with it. If you are about to open a pull request, go straight to
+:ref:`pre_pr_checklist`.
 
 .. note::
 
-   New to "automated quality control"? The short version: instead of asking a human
-   reviewer to manually check formatting, typos in docstrings, or whether your new
-   plugin actually implements the right methods, Poriscope runs small programs that
-   check these things for you, every time, in seconds. This section explains what
-   each one does and why it exists — you don't need any prior experience with these
-   tools to follow along.
-
-The following tools are used in Poriscope:
-
-- **Black** – automatic Python code formatting
-- **Ruff** – linting and safe automatic fixes
-- **Mypy** – static type checking. Every function under ``poriscope/`` must carry
-  parameter and return type hints; see :ref:`type_checking_policy` below
-- **pydoclint** – checks that a docstring's documented parameters, return type, and
-  raised exceptions actually match the function's real signature and body (see
-  :ref:`docstring_consistency` below)
-- **settings-schema** – checks that every plugin's ``get_empty_settings()`` is
-  internally self-consistent (see :ref:`settings_schema_checking` below)
-- **check-added-large-files** – prevents accidental commits of large files
-- **Ruff security rules** – a second, separately scoped Ruff pass over
-  ``poriscope/plugins/`` only, flagging code execution, unsafe deserialization and
-  process spawning; see :ref:`plugin_trust_boundary` below
-- **plugin module-level code check** – rejects code that runs when a plugin is merely
-  discovered; see :ref:`plugin_trust_boundary` below
-- **requirements files are UTF-8 with no BOM** – refuses a ``requirements*.txt`` written
-  in UTF-16 or carrying a byte-order mark, which git records as a binary blob
-
-All nine are managed through the **pre-commit** framework.
-
-Three further gates are not pre-commit hooks but are enforced just as strictly:
-
-- a dedicated automated test — :ref:`plugin_compliance_testing` below — checks that any
-  plugin you add or modify actually implements the interface its base class requires. It
-  runs as part of the normal test suite, but for anyone contributing a plugin it is just
-  as much a compliance gate as the tools above, and often the one that matters most. A
-  companion test, :ref:`settings_schema_checking`, does the same for the settings schema
-  your plugin declares.
-- the **behavioural conformance suite** — :ref:`plugin_conformance_testing` below —
-  actually runs your plugin against synthetic data and checks it behaves like a
-  well-formed member of its family. The two checks above are static: a plugin can
-  satisfy both completely and still be wrong on the first real event. If you are
-  contributing a data reader, :ref:`reader_fuzz_testing` additionally drives it against
-  deliberately malformed files.
-- the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
-  Sphinx documentation on every pull request, and on every push to ``develop`` or a
-  ``hotfix/*`` or ``release/*`` branch, with warnings treated as errors. pydoclint
-  checks that a docstring *describes the right things*; it does not check that the
-  docstring is valid reStructuredText. Those are different failure modes, and only this
-  gate catches the second one.
+   New to "automated quality control"? Instead of asking a reviewer to check formatting,
+   docstrings, or whether your plugin implements the right methods, Poriscope runs small
+   programs that check these things every time, in seconds. You do not need any prior
+   experience with these tools to follow this page.
 
 Pre-commit Hooks (Validation)
 -----------------------------
 
-Poriscope uses *pre-commit* to run **validation checks before each commit**.
+These hooks run on every commit, through the **pre-commit** framework, whether you commit
+from the command line or from GitHub Desktop (see :doc:`developer_setup` to install them).
+They **never modify files**, and if any of them fails the commit is **blocked**.
 
-When committing code (either via the command line or GitHub Desktop), the following hooks
-run automatically:
+.. list-table::
+   :header-rows: 1
+   :widths: 24 52 24
 
-- ``ruff`` (strict mode) – validates code without modifying files
-- ``ruff-plugin-security`` – security-relevant rules, plugin tree only
-- ``mypy`` – validates static typing
-- ``pydoclint`` – validates that docstrings match real signatures and behavior
-- ``plugin-module-level`` – blocks import-time code in a data plugin
-- ``settings-schema`` – validates every plugin's declared settings schema
-- ``check-added-large-files`` – blocks files larger than 123 KB
-- ``text-encoding`` – blocks a ``requirements*.txt`` that is not plain UTF-8
+   * - Hook
+     - What it checks
+     - Scope
+   * - ``ruff``
+     - lint rules, strictly, without fixing anything
+     - every Python file
+   * - ``ruff-plugin-security``
+     - security-relevant rules; see :ref:`plugin_trust_boundary`
+     - ``poriscope/plugins/``
+   * - ``mypy``
+     - static typing; see :ref:`type_checking_policy`
+     - ``poriscope/``
+   * - ``pydoclint``
+     - docstrings match the real signature and body; see :ref:`docstring_consistency`
+     - ``poriscope/``
+   * - ``plugin-module-level``
+     - no code runs when a data plugin is merely discovered; see
+       :ref:`plugin_trust_boundary`
+     - the nine data-plugin families
+   * - ``settings-schema``
+     - every plugin's ``get_empty_settings()`` is self-consistent; see
+       :ref:`settings_schema_checking`
+     - ``poriscope/plugins/``
+   * - ``text-encoding``
+     - ``requirements*.txt`` is UTF-8 with no byte-order mark
+     - the requirements files
+   * - ``check-added-large-files``
+     - no file larger than 123 KB
+     - every file
 
-``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
-``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/``,
-``plugin-module-level`` more narrowly still to the nine data-plugin families,
-``settings-schema`` to ``poriscope/plugins/**`` — it only needs to run when a
-plugin's settings could have changed — and ``text-encoding`` to the requirements
-files, which are the ones a shell redirection regenerates. Everything else runs
-against every tracked file.
+``text-encoding`` exists because PowerShell's ``>`` and ``Out-File`` write UTF-16LE, which
+git treats as binary, and ``pre-commit-hooks``' ``fix-byte-order-marker`` only recognises
+the UTF-8 byte-order mark. Pass ``-Encoding utf8`` when regenerating either requirements
+file from PowerShell.
 
-``text-encoding`` exists because a stock hook does not cover the case. PowerShell's
-``>`` redirection and ``Out-File`` default to UTF-16LE, so ``pip freeze >
-requirements.txt`` at a PowerShell prompt writes a file git treats as binary — which
-is how this repository's ``requirements.txt`` spent its first year unreviewable.
-``pre-commit-hooks``' ``fix-byte-order-marker`` matches the UTF-8 byte-order mark
-only and would pass that file untouched. Pass ``-Encoding utf8`` when regenerating
-either requirements file from PowerShell.
+Run every hook, or one of them, by hand:
 
-These checks **never modify files**.
+.. code-block:: bash
 
-If **any hook fails**, the commit is **blocked**.
+   pre-commit run --all-files
+   pre-commit run mypy --all-files
+
+Further gates are not pre-commit hooks, but the test suite and CI enforce them just as
+strictly:
+
+- :ref:`plugin_compliance_testing` and :ref:`settings_schema_checking`: your plugin
+  implements its base class's interface and declares a consistent settings schema.
+- :ref:`plugin_conformance_testing`: your plugin actually behaves like a member of its
+  family on synthetic data; a reader is also fed malformed files
+  (:ref:`reader_fuzz_testing`).
+- :ref:`docs_render_check`: the documentation builds with warnings treated as errors.
+- If you edit the code they measure: the :ref:`duplication_ratchet`, the
+  :ref:`shell_complexity_ratchet`, the :ref:`mvc_boundary` and
+  :ref:`recorded_actions_read_no_widgets`.
+
+.. warning::
+
+   Use ``pre-commit run mypy`` rather than a bare ``mypy poriscope``. The hook runs mypy in
+   an isolated environment with no project dependencies, as CI does, so PySide6, numpy and
+   pandas are all ``Any`` to it. Mypy run from your own virtual environment sees their real
+   types and reports several hundred further messages, about a third of them known noise
+   (Qt's short-form enum accesses, untyped imports). **The hook is the gate.** Branch CI
+   still runs a bare ``mypy poriscope`` as a **non-blocking report** and prints the error
+   count, because it sees what the hook cannot - a controller calling a method its View
+   does not have, for instance. See ``DECISIONS.md``, 2026-08-24.
+
+   The mypy version is pinned three times - mirrors-mypy's ``rev`` in
+   ``.pre-commit-config.yaml``, and ``mypy==`` in ``pyproject.toml``'s ``[dev]`` extra and
+   in ``requirements-dev.txt`` - and the three move together in one commit.
 
 Automatic Formatting and Auto-fixes
 -----------------------------------
 
-Automatic formatting and safe lint fixes are intentionally excluded from the
-commit stage.
-
-The following tools run **only when explicitly requested**:
-
-- ``black`` – reformats Python code
-- ``ruff --fix`` – applies safe automatic lint fixes
-
-To run these tools manually on all files, use:
+``black`` and ``ruff --fix`` never run on commit, so a commit never changes your files. Run
+them yourself:
 
 .. code-block:: bash
 
    pre-commit run --all-files --hook-stage manual
 
-Any files modified by this command must be reviewed and committed manually.
-
-This design ensures that:
-
-- Commits never change files unexpectedly
-- Developers stay in control of formatting changes
-- CI behavior matches local expectations
-
-Installing Pre-commit
----------------------
-
-Automatic installation (recommended)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-In most cases, **pre-commit is installed automatically** when you run the Poriscope
-setup script:
-
-.. code-block:: bash
-
-   python scripts/setup_hooks.py
-
-Manual installation (fallback)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-If the setup script was not run, or if Git hooks were removed or reset, you can
-install ``pre-commit`` manually from the repository root:
-
-.. code-block:: bash
-
-   python -m pip install pre-commit
-   pre-commit install
-
-Verification
-^^^^^^^^^^^^
-
-To verify that pre-commit is active, run:
-
-.. code-block:: bash
-
-   pre-commit run --all-files
-
-If this succeeds, the repository meets all required quality checks.
-
-Using GitHub Desktop
---------------------
-
-GitHub Desktop enforces Poriscope’s Git hooks when configured to use **System Git**.
-If a validation check fails, the commit is blocked and an error message is shown.
-
-Verifying Hook Enforcement
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To confirm that hooks are active in GitHub Desktop, temporarily introduce a small
-type error in any tracked Python file:
-
-.. code-block:: python
-
-   def _pre_commit_test() -> int:
-       return "not an int"
-
-Attempt to commit the change:
-
-- If the commit is **blocked**, the hooks are working correctly.
-- If the commit is **not blocked**, re-run the setup script:
-
-  .. code-block:: bash
-
-     python scripts/setup_hooks.py
-
-After verification, revert the temporary change.
+then review what changed, stage it and commit. In CI, on branch pushes and on pull
+requests from inside the repository, the same step runs first and commits its fixes back to
+the branch; the strict hooks then run, and only problems that remain fail the job. Pull
+requests from a fork get the strict hooks only.
 
 .. note::
 
-   In Poriscope’s current workflow, formatting tools such as black and
-   ruff --fix are executed in a dedicated auto-fix step before strict
-   validation.
+   **Which Ruff rules are enabled.** Ruff's default rule set is in force, and
+   ``pyproject.toml`` adds to it with ``extend-select``. The default worth knowing is
+   ``E722``, **no bare** ``except:`` -- narrow to ``except Exception:`` at minimum, so that
+   the exceptions you swallow can be named in a ``:raises:`` docstring section. On top of
+   the defaults, ``pyproject.toml`` selects:
 
-   During continuous integration (CI), these tools may automatically modify
-   files and commit the fixes back to the branch. After auto-fixing, all
-   quality checks (including strict ruff validation and mypy) are
-   re-run, and the CI job only fails if unresolved issues remain.
+   - ``I`` -- import ordering (isort).
+   - ``B006`` -- a mutable data structure used as an argument default. A ``[]`` or
+     ``{}`` default is built once and shared by every call, so mutating it leaks state
+     between calls. Use ``None`` and create the container inside the function.
+   - ``B020`` -- a loop control variable that shadows the iterable it iterates over,
+     making the original sequence unreachable for the rest of the loop body.
+   - ``S110`` -- ``try``/``except``/``pass``, which swallows an error without a trace.
+     Log it, narrow it, or let it propagate.
 
-   A commit will not be blocked locally unless strict validation hooks fail.
-
-Running Quality Checks Manually
--------------------------------
-
-Run all **validation hooks** (the same checks enforced during commits and CI):
-
-.. code-block:: bash
-
-   pre-commit run --all-files
-
-Run individual validation tools:
-
-.. code-block:: bash
-
-   pre-commit run ruff
-   pre-commit run mypy
-   pre-commit run pydoclint
-   pre-commit run check-added-large-files
-
-.. warning::
-
-   Use ``pre-commit run mypy`` rather than a bare ``mypy poriscope``. The hook runs
-   mypy in an isolated environment with no project dependencies, which is exactly what
-   CI does. Running mypy directly from your own virtual environment sees the real
-   PySide6/numpy/pandas type stubs, and it will report several hundred additional
-   messages that the gate does not care about. Those are not failures you need to fix —
-   they are a different tool configuration answering a different question.
-   **The hook is the gate.**
-
-   That second configuration is still worth reading, because it sees what the hook
-   cannot: a controller calling a method its View does not have, for instance. Branch
-   CI therefore runs a bare ``mypy poriscope`` against the installed project as a
-   **non-blocking report** and prints the error count in the job log. The figure is
-   tracked in ``future_fixes.md`` (690 errors on 2026-10-05, 607 once the controller
-   bases declared ``view`` and ``model``); about a third of what remains is known noise
-   from Qt's short-form enum accesses and untyped imports, which is why it reports
-   rather than gates. See ``DECISIONS.md``, 2026-08-24.
-
-   The version is pinned in two places and they are deliberately kept equal:
-   ``.pre-commit-config.yaml`` runs mirrors-mypy ``rev: v1.17.1``, and
-   ``pyproject.toml``'s ``[dev]`` extra and ``requirements-dev.txt`` both declare
-   ``mypy==1.17.1``. If you bump one, bump the other in the same commit — the two drifted
-   apart until 2026-09-04, and the resulting version gap was mistaken for the dependency
-   blindness described above. See ``DECISIONS.md``.
+   The other audited ``flake8-bugbear`` and ``bandit`` rules (``B905``, ``B904``,
+   ``B007``, ``S112``, ``S101``) are deliberately **not** enabled, and the ``S608``
+   hardcoded-SQL sites are accepted; the reasoning is in ``DECISIONS.md``, so please read
+   it before re-proposing them. That is a separate question from ``ruff-plugin-security``
+   (:ref:`plugin_trust_boundary`), whose narrower ``S`` selection runs only on the plugin
+   tree.
 
 .. _docs_render_check:
 
@@ -262,37 +148,9 @@ reStructuredText is well formed. Sphinx catches it, so Sphinx is a gate.
 
 Every pull request targeting ``main``, ``develop`` or a ``release/*`` branch runs the
 **Docs Render Check** workflow, which regenerates the autodoc ``.rst`` files and builds
-the HTML with ``-W`` — warnings are errors. It also runs on every push to ``develop`` and
-to a ``hotfix/*`` or ``release/*`` branch, because none of them arrives through a pull
-request: ``git flow feature finish``, ``hotfix finish`` and ``release finish`` all merge
-locally, so a PR-only gate would never see the path most work actually takes. The
-**CI (Branches)** workflow, which runs the strict pre-commit checks and the full test
-suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. Since 3.0 it runs
-the suite on four legs, so both ends of the supported range are tested on every push: at
-exactly Python 3.12.0, the floor, with the runtime stack pinned to ``requirements.txt``
-(on ``ubuntu-24.04`` under Xvfb - the only image ``setup-python`` builds 3.12.0 for - and
-on ``windows-latest`` offscreen), and at the newest supported interpreter with the stack
-resolved fresh from the ranges in ``pyproject.toml``, which is what ``pip install
-poriscope`` gives a user (``ubuntu-latest`` and ``windows-latest``). Windows is the
-platform users run, and the platform-conditional code - including the wavelet DLL load -
-takes the other branch there. Lint, auto-fix and the mypy report run on the Linux floor leg
-only, since their results do not depend on the platform. A second job on the same four legs
-builds the wheel and sdist, checks them with ``twine check --strict``, installs the wheel
-into a fresh virtual environment (constrained to ``requirements.txt`` on the floor legs,
-unconstrained on the newest) and, from a directory outside the checkout, imports the
-package and loads the wavelet binary the way ``WaveletFilter`` does - so what a user
-installs is exercised, not only the editable checkout the suite runs against. The release workflow runs only when a ``v*`` tag is
-pushed: it re-runs the suite on the tagged commit, checks the distributions with twine, and
-publishes to PyPI and GitHub only if that passes.
-
-Every action the workflows use is pinned to a commit SHA, with the tag it resolved from in
-a trailing comment, and Dependabot (``.github/dependabot.yml``) opens weekly pull requests
-against ``develop`` to move those pins and the exact dependency pins in
-``requirements.txt``. ``pyproject.toml`` declares the ranges installers get, each starting
-at the version ``requirements.txt`` pins; the pull-request, docs and release workflows and
-the floor legs of branch CI install with ``requirements.txt`` so a run resolves those and
-nothing newer, and only the newest-interpreter legs resolve the ranges fresh. Move a pin
-and its lower bound together.
+the HTML with ``-W`` — warnings are errors. It also runs on every push to ``develop``,
+``hotfix/*`` and ``release/*``, because git flow merges those locally rather than through a
+pull request.
 
 To run exactly what the docs check runs:
 
@@ -333,93 +191,42 @@ rendering problem the moment you merge rather than when you open a pull request.
 
 .. note::
 
-   **The build imports the real package, PySide6 included.** ``autodoc`` does not mock
-   Qt - ``docs/source/conf.py`` explains at length why mocking it is not an option here -
-   so ``sphinx-build`` needs an environment in which ``import poriscope`` works fully. On
-   a development machine with the project installed that is automatic. In CI both docs
-   workflows install ``libegl1``, ``libgl1`` and ``libxkbcommon0`` first: those are the
-   libraries the bundled ``libQt6Gui``/``libQt6Widgets``/``libQt6Svg`` link against that
-   the runner image does not already provide, and the dynamic loader resolves all three
-   the moment the module is imported. Without them the import fails halfway through
-   ``poriscope.exposed`` and the build fills with unrelated autodoc errors. Xvfb and the
-   ``libxcb-*`` packages the test workflows install are not needed, since those load with
-   the xcb platform plugin and a docs build never instantiates a ``QApplication``.
+   **The build imports the real package, PySide6 included.** ``autodoc`` does not mock Qt
+   (``docs/source/conf.py`` explains why), so ``sphinx-build`` needs an environment in
+   which ``import poriscope`` works fully - automatic on a development machine with the
+   project installed. In CI the docs workflows install the Qt libraries the runner lacks
+   (``libegl1``, ``libgl1``, ``libxkbcommon0``) first; without them the build fills with
+   unrelated autodoc errors.
 
 .. note::
 
-   **The build downloads other projects' indexes.** A type such as ``numpy.ndarray``,
-   ``pd.DataFrame`` or ``QWidget`` in a docstring becomes a link to that library's own
-   documentation through ``sphinx.ext.intersphinx``, which fetches each library's
-   ``objects.inv`` (Python, Qt for Python, numpy, pandas, matplotlib, scikit-learn) at
-   build time. ``conf.py`` also maps the import abbreviations (``np.``, ``npt.``,
-   ``pd.``) and the bare Qt and matplotlib names to the full names those indexes list.
-   A site that cannot be reached is reported as an info line and its types render as
-   plain text; it does not fail a ``-W`` build. References to Poriscope's own code that
-   point nowhere are not yet a gate: ``nitpicky`` is off until they are fixed.
+   **The build downloads other projects' indexes.** Through ``sphinx.ext.intersphinx``, a
+   type such as ``numpy.ndarray`` or ``QWidget`` in a docstring links to that library's
+   own documentation. A site that cannot be reached is reported as an info line and its
+   types render as plain text; it does not fail a ``-W`` build. References to Poriscope's
+   own code that point nowhere are not yet a gate: ``nitpicky`` is off.
 
-Running Auto-fix Hooks Manually
--------------------------------
+What CI Runs
+------------
 
-To apply all automatic formatting and safe fixes:
+- **CI (Branches)**, on every push to ``develop``, ``feature/*``, ``bugfix/*``,
+  ``hotfix/*`` and ``release/*``: auto-fix, the strict pre-commit hooks and the
+  non-blocking mypy report, then the full test suite on four legs - Python 3.12.0 (the
+  floor) with the runtime stack pinned to ``requirements.txt``, and the newest supported
+  Python with the ranges in ``pyproject.toml`` resolved fresh, each on Linux and Windows.
+  A second job builds the wheel and sdist, checks them with ``twine check --strict``, and
+  imports the installed wheel, wavelet library included, outside the checkout.
+- **Pull requests**: one workflow for pull requests from inside the repository, and a
+  restricted, read-only one for forks (strict hooks and the full suite, no auto-fix).
+- **Docs Render Check**: see :ref:`docs_render_check`.
+- **Release**, only when a ``v*`` tag is pushed: re-runs the suite on the tagged commit,
+  checks the distributions with twine, and publishes to PyPI and GitHub only if that
+  passes.
 
-.. code-block:: bash
-
-   pre-commit run --all-files --hook-stage manual
-
-After running:
-
-1. Review the changes
-2. Stage the modified files
-3. Commit manually
-
-.. note::
-
-   **Ruff runs in two modes**:
-
-   - **Auto-fix mode (manual stage)**: fixes code and modifies files
-   - **Validation mode (commit & CI)**: checks only, fails on violations
-
-.. note::
-
-   **Which rules are enabled.** Ruff's default rule set is in force and
-   ``pyproject.toml`` uses ``extend-select``, which adds to those defaults rather
-   than replacing them. That matters more than it looks: several conventions this
-   project cares about are already enforced without appearing anywhere in the
-   config. The one worth knowing is ``E722``, **no bare** ``except:`` -- narrow to
-   ``except Exception:`` at minimum, so that the exceptions you are actually
-   swallowing can be named in a ``:raises:`` docstring section.
-
-   On top of the defaults, ``pyproject.toml`` selects:
-
-   - ``I`` -- import ordering (isort).
-   - ``B006`` -- a mutable data structure used as an argument default. A ``[]`` or
-     ``{}`` default is built once, when the function is defined, and then shared by
-     every call, so anything that mutates it leaks state between calls. Use ``None``
-     and create the container inside the function.
-   - ``B020`` -- a loop control variable that shadows the iterable it iterates over.
-     It does not break the loop, because the iterator is created before the first
-     assignment, but it makes the original sequence unreachable for the rest of the
-     loop body and forces the parameter to be annotated loosely.
-
-   The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled
-   *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
-   ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
-   maintained code fixed. What keeps each one from becoming a gate differs by rule.
-   ``S101`` would flag every ``assert`` in the test suite, where 3,674 of its 3,681 sites
-   are (2026-09-27), so suppressing it there would suppress essentially all of it. ``B905`` needs a
-   per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
-   advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
-   spread across the test suite and the fitter plugins another developer maintains. In each case enabling the rule would require a
-   ``per-file-ignores`` entry that hides a real check rather than satisfying it. The
-   reasoning, and the separate acceptance of the ``S608`` hardcoded-SQL sites, are
-   recorded in ``DECISIONS.md``; what each audit found is in ``changelog.md``. Please do
-   not re-propose them without reading that entry first.
-
-   **This is a different question from the security rules that do run on the plugin
-   tree.** ``ruff-plugin-security`` selects a separate, narrower set of ``S`` rules and
-   applies them only under ``poriscope/plugins/`` -- see
-   :ref:`plugin_trust_boundary`. The two do not overlap: none of the audited-and-declined
-   rules above is in that selection, and ``S608`` is not either.
+Every action is pinned to a commit SHA, and Dependabot opens weekly pull requests against
+``develop`` to move those pins and the exact pins in ``requirements.txt``. Each range in
+``pyproject.toml`` starts at the version ``requirements.txt`` pins, so move a pin and its
+lower bound together.
 
 .. _plugin_trust_boundary:
 
@@ -431,10 +238,7 @@ finds.** ``MainModel.populate_available_plugins()`` walks ``poriscope/plugins/``
 configured user-plugin folder recursively, and for each file it calls
 ``spec.loader.exec_module()``. Python runs module-level code unconditionally, before
 anything has inspected the class -- so a plugin file is a code-execution boundary in a way
-that the rest of the application is not.
-
-For code written inside the lab that is an accepted convenience. For a plugin arriving in
-a pull request from outside it is worth a check, so two hooks police it:
+that the rest of the application is not. Two hooks police it:
 
 ``ruff-plugin-security``
    A second Ruff pass over ``poriscope/plugins/``, selecting only rules a
@@ -473,40 +277,17 @@ exemptions -- if one fires on your plugin, it has found something real.
 Skipping Hooks (Advanced Use Only)
 ----------------------------------
 
-In exceptional cases:
-
-.. code-block:: bash
-
-   git commit --no-verify
-
-This should only be used in emergencies. Regular use undermines code quality and consistency.
-
-.. warning::
-
-   Skipping local verification does **not** bypass automated checks in the continuous
-   integration (CI) pipeline. All enforced quality checks are re-run on GitHub, and
-   commits that fail CI will not be merged. In practice, using ``--no-verify`` only
-   delays failure and should be avoided.
+``git commit --no-verify`` skips the hooks, for emergencies only. It does **not** skip CI,
+which re-runs every enforced check, so in practice it only delays the failure.
 
 .. _docstring_consistency:
 
 Docstring and Signature Consistency (pydoclint)
 ------------------------------------------------
 
-.. note::
-
-   This is a "docstring linter." If that phrase is new to you: a *linter* is a
-   program that reads your code without running it and flags things that look wrong.
-   Most linters (like Ruff) look at style. ``pydoclint`` instead compares your
-   docstring's claims against what the function's code actually does.
-
-Think of a docstring like the label on a bottle of reagent: it tells the next person
-(possibly a future version of yourself) what's inside, how much to use, and what to
-watch out for. A label that doesn't match the contents is arguably *worse* than no
-label at all, because people trust it and act on it anyway. ``pydoclint`` exists to
-catch exactly that mismatch — automatically, before it ships.
-
-Concretely, for every documented function, ``pydoclint`` checks that:
+``pydoclint`` reads your code without running it and compares each docstring's claims with
+what the function actually does, because a docstring that is wrong is trusted and acted on
+anyway. For every documented function it checks that:
 
 - every parameter named in the docstring actually exists in the function signature
   (and vice versa — no undocumented parameters, no documented parameters that don't
@@ -560,27 +341,10 @@ check just the docstring/signature rules on their own:
 Why is there a "baseline" file?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When ``pydoclint`` was first introduced, roughly 1,090 pre-existing docstring
-mismatches predated the tool. Rather than blocking every future commit on cleaning up
-the entire history at once, they were recorded in ``.pydoclint-baseline.txt`` and
-allowed to remain while they were worked through.
-
-.. important::
-
-   **That cleanup is finished.** ``.pydoclint-baseline.txt`` is now an empty,
-   zero-byte file, and it should stay that way. There is nothing left to forgive, so
-   every violation the hook reports is a real one in code you touched, and it will
-   fail the commit.
-
-   In particular, **do not** regenerate the baseline to make a failure go away:
-
-   .. code-block:: bash
-
-      # Don't do this to silence a failure - fix the docstring instead.
-      pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope
-
-   Re-populating the baseline would silently re-open the door to exactly the
-   mismatches the cleanup closed. Fix the docstring the tool is complaining about.
+``.pydoclint-baseline.txt`` once listed violations that predated the tool. It is now
+empty and must stay empty, so every violation the hook reports is real and fails the
+commit. **Do not** regenerate it (``pydoclint --generate-baseline=True ...``) to silence a
+failure; fix the docstring instead.
 
 .. _type_checking_policy:
 
@@ -644,17 +408,16 @@ worth knowing about before you add tests:
 Beyond ``pytest.ini``, the root ``tests/conftest.py`` deletes every window a test leaves
 behind once the test ends, and **fails the test if a window survives**. Every test shares
 one ``QApplication``, so a window that is only closed (``close()`` hides it) stays alive and
-makes every later test slower: in November 2026 leaked windows more than tripled the
-suite's run time. If your test fails with "Windows still alive after the cleanup",
+makes every later test slower. If your test fails with "Windows still alive after the cleanup",
 something is keeping one of its windows from being deleted.
 
 .. note::
 
    If you add a dev dependency, it must go in **both** ``pyproject.toml``'s ``[dev]`` extra
    and ``requirements-dev.txt``. They are byte-for-byte mirrors of each other and nothing
-   enforces that. Every test workflow installs ``.[dev]``; ``ci-branches.yml`` and
-   ``ci-fork-pr.yml`` fall back to ``requirements-dev.txt`` only if that editable install
-   fails, so a file missing the entry breaks CI exactly when the fallback is needed. Pin it
+   enforces that. Every test workflow installs ``.[dev]``; the branch and pull-request
+   workflows fall back to ``requirements-dev.txt`` only if that editable install fails, so a
+   file missing the entry breaks CI exactly when the fallback is needed. Pin it
    exactly with ``==``, as every other entry in both files is.
 
 Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` extra but is
@@ -673,20 +436,11 @@ run for a figure nothing acts on.
 Plugin Interface Compliance Testing
 ------------------------------------
 
-Recall from :ref:`understanding base classes <understanding_base_classes>` that every
-``MetaXXXX`` base class is a blueprint: it defines exactly which methods a plugin
-*must* implement, with which arguments, in which order, and returning what type.
-Writing a plugin that follows the blueprint isn't optional — it's how Poriscope's GUI
-and scripting layer both know how to talk to your plugin without any extra
-configuration.
-
-Continuing that analogy: if the base class is the blueprint, then
-``tests/unit/plugins/test_plugin_compliance.py`` is the building inspector. It doesn't
-care about interior decorating (that's your algorithm's business) — it walks through
-every plugin in the codebase and checks that the load-bearing structure the blueprint
-demanded is actually there.
-
-Concretely, this test:
+Every ``Meta*`` base class (see :ref:`understanding base classes
+<understanding_base_classes>`) defines exactly which methods a plugin must implement, with
+which arguments and types; that is how the GUI and the scripting layer talk to your plugin
+without extra configuration. ``tests/unit/plugins/test_plugin_compliance.py`` checks every
+plugin against that contract. It:
 
 1. recursively imports every module under ``poriscope.plugins`` so that every plugin
    class actually gets loaded,
@@ -734,9 +488,8 @@ instantiation, so a contradiction baked into the schema itself — a ``Min`` abo
 is not among its own ``Options`` — surfaces as a ``TypeError`` or ``ValueError`` raised
 from inside the base class, with nothing pointing at your schema as the cause.
 
-The single most common version of this, and the one that caught real plugins in the
-codebase when the check was introduced, is declaring ``"Type": float`` and then writing an
-int default:
+The most common version of this is declaring ``"Type": float`` and then writing an int
+default:
 
 .. code-block:: python
 
@@ -777,17 +530,10 @@ plugin that ships no real defaults to check (every parameter omits ``Value`` or 
 Behavioural Conformance Testing
 --------------------------------
 
-The :ref:`compliance test <plugin_compliance_testing>` was the building inspector: it
-confirmed that every load-bearing wall the blueprint called for is really there. What
-nobody has done yet is move in and turn the taps on.
-
-That is this suite's job. Compliance and schema checking are both *static* — they read
-your plugin without ever running your algorithm — so a plugin can satisfy both
-completely and still get the wrong answer on the very first real event. A reader can
-report exactly the right number of samples while returning them with the sign flipped.
-A fitter can declare every metadata column correctly and then reject every event it is
-handed. Nothing above this point would notice either.
-
+Compliance and schema checking are both *static* - they read your plugin without running
+your algorithm - so a plugin can satisfy both and still get the wrong answer on the first
+real event: a reader can return the right number of samples with the sign flipped, or a
+fitter declare every metadata column and then reject every event it is handed.
 ``tests/unit/plugins/conformance/`` closes that gap. It builds your plugin the way the
 application does — real settings, a real parent plugin, a real file — drives it over
 synthetic data from ``tests/synthetic_data/``, and checks it behaves like a
@@ -875,7 +621,11 @@ anything depends on which family your plugin belongs to. At a glance:
    * - ``MetaReader``
      - **Always**
      - A fixture entry, always — the lookup is per class, so even a covered format
-       needs one. How much work it is varies; see the four rows further down.
+       needs one. How much work it is varies; see :doc:`conformance_recipes`.
+   * - ``MetaConditioningLoader``
+     - **Always**
+     - An entry in ``CONDITIONING_LOADER_BUILDERS`` that writes an experiment folder in
+       your format and returns the loader built over it.
 
 .. note::
 
@@ -888,283 +638,18 @@ anything depends on which family your plugin belongs to. At a glance:
 
    **Where to start.** Run ``pytest -m conformance`` before you have written any of
    your algorithm, while your plugin is still the generated skeleton. You will get one
-   clear failure naming exactly what to add, and adding it is a line or two. Doing it
-   first means the suite is watching your plugin from your earliest commit, so the day
-   you invert a gain or drop a sign you hear about it straight away instead of in
-   review. Everything below is reference for when that failure appears.
+   clear failure naming exactly what to add, and from then on the suite watches your
+   plugin from your earliest commit.
 
-The detail, family by family. **Every edit below is in one file**,
-``tests/unit/plugins/conformance/_recipes.py``, called ``_recipes.py`` from here on;
-the only exceptions are called out explicitly where they arise.
-
-* **``MetaFilter``, ``MetaEventFinder``, ``MetaEventFitter``: yes, always.** Each of
-  these is looked up by class name in a dict in ``_recipes.py``
-  (``FILTER_SETTINGS``, ``EVENT_FINDER_SETTINGS``, ``EVENT_FITTER_SETTINGS``), where an
-  entry is a plain ``{"YourClassName": {"Param Name": value, ...}}`` dict:
-
-  .. code-block:: python
-
-     # _recipes.py
-     EVENT_FINDER_SETTINGS: Dict[str, Dict[str, Any]] = {
-         "ClassicBlockageFinder": {"Threshold": 200.0},
-     }
-
-  You only need to list a *parameter* here if ``get_empty_settings()`` leaves it with
-  no default (``Value`` omitted or ``None``) — anything your plugin already defaults is
-  used as-is. If yours is a **variant** of a shipped plugin, that includes everything
-  its parent left without a default, not just what you added: a variant of
-  ``BesselFilter`` still has to supply ``Cutoff`` and ``Samplerate``. The ``ValueError``
-  names them, so you do not have to work it out in advance.
-
-  **The entry itself is still required even when you have nothing to put in it**, since
-  the lookup is on dict membership rather than on unset parameters. A plugin whose every
-  parameter has a default takes an empty dict, and two shipped fitters do exactly that:
-
-  .. code-block:: python
-
-     EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
-         "NoFitter": {},
-         "PeakFinder": {},
-     }
-
-  The two failures you can hit are therefore distinct. No entry at all gives
-  ``KeyError: No conformance recipe for YourPlugin. Add one to ...`` — which an empty
-  dict resolves. An entry that exists but leaves an undefaulted parameter unset gives
-  ``ValueError: YourPlugin's conformance recipe leaves [...] unset and they have no
-  default``, naming the exact parameters rather than just the plugin.
-
-  Pick those values for the test signal, not for real data. The fixtures build a 2000 pA
-  baseline with 15 pA of noise and -400 pA events, so the ``Threshold: 200.0`` above says
-  "halfway down a 400 pA event in this recording" — it is not a recommended setting for
-  your plugin, and it would need changing if the fixture's noise or event size ever did.
-  That is also why these values live in the test file rather than on your plugin class:
-  they describe the test, not the science.
-
-  **Event fitters additionally choose which events database they are driven against.**
-  A *fixture* is a synthetic recording built with known content deliberately planted in
-  it — the software equivalent of running a reference standard through your instrument.
-  Because you know exactly what went in, you can tell whether what your plugin reports
-  coming out is right.
-
-  And as with a real standard, the one you choose has to contain the feature you are
-  testing for. Handing a step detector a recording with no steps in it proves nothing,
-  the same way a calibration standard with no analyte in it would tell you nothing
-  about your detector. So a fitter gets a flat blockage by default, and if that is the
-  wrong standard for yours, map your class to whichever of these shapes fits, in
-  ``FITTER_FIXTURES`` beside the recipe dicts in ``_recipes.py``:
-
-  .. list-table::
-     :header-rows: 1
-     :widths: 22 46 32
-
-     * - Shape
-       - if your fitter needs
-       - as these already do
-     * - *not listed*
-       - nothing inside the event; the blockage alone is enough
-       - ``NoFitter``
-     * - ``"dip"``
-       - a resolvable dip inside the blockage, as a peak-based fitter does
-       - ``Basic_PeakFinder``
-     * - ``"staircase"``
-       - a known number of discrete levels, as a step or changepoint detector does
-       - ``CUSUM``, ``ClassicCUSUM``, ``IntraCUSUM``, ``NanoTrees``
-     * - ``"deep_dip"``
-       - a dip both deeper than the carrier blockage and narrower than the
-         peak-search window
-       - ``PeakFinder``
-
-  Those four rows account for every fitter that ships, so the quickest way to place
-  your own is to find the one it most resembles. Naming it is one line:
-
-  .. code-block:: python
-
-     # _recipes.py
-     FITTER_FIXTURES: Dict[str, str] = {
-         "CUSUM": "staircase",
-         "YourFitter": "staircase",
-     }
-
-  **If none of the three suits your fitter**, those are not the only options — they are
-  just the shapes anyone has needed so far. Which way you go depends on whether a
-  suitable recording could exist at all.
-
-  *If it could* — your fitter looks for something no fixture contains yet, an
-  exponential decay or an oscillation, say — then **add a fixture of your own**. Doing
-  that means writing a new shape into the events-database generator and wiring it
-  through to the suite: four edits, with the staircase as the worked example to copy
-  from.
-
-  .. list-table::
-     :header-rows: 1
-     :widths: 30 38 32
-
-     * - Edit, to add a fixture shape
-       - What goes there
-       - Copy from the staircase
-     * - ``tests/synthetic_data/synthetic_events_db.py``
-       - a new planting parameter, threaded through ``generate_events_database``,
-         ``_write_channel`` and ``_build_event_trace`` — all three, or it never
-         reaches the trace. Taper the shape rather than making it rectangular: sharp
-         edges were measured to trip fitters *more* often, not less.
-       - ``sublevel_amplitudes_pA``
-     * - ``conformance/conftest.py``
-       - a session-scoped fixture building a database with that parameter set
-       - ``staircase_events_db_path``
-     * - ``conformance/_recipes.py``
-       - the shape's constants, its name added to ``FITTER_FIXTURE_SHAPES``, and a
-         ``FITTER_FIXTURES`` entry mapping your fitter to it
-       - ``STAIRCASE_LEVEL_AMPLITUDES_PA``, ``"staircase"``
-     * - ``conformance/test_eventfitters.py``
-       - add your shape to the ``by_shape`` map in the ``fitter`` fixture, **and
-         write a check that reads the planted shape**. The mapping alone buys
-         nothing: the four generic fitter checks pass on any signal that yields
-         events, so without an assertion of your own the fixture is built, routed,
-         used - and never actually examined. Nothing enforces that last part; the
-         staircase and dip checks are the worked examples to copy.
-       - ``staircase_fitter``,
-         ``test_sublevel_count_matches_the_planted_staircase``
-
-  There is deliberately no way to exempt a fitter from this. Every discovered fitter
-  is driven, and one the current fixtures cannot exercise fails rather than being
-  marked as skipped — because a missing shape is almost always something to plant
-  rather than to excuse. Be sceptical of "no fixture could suit this": a fitter is
-  handed arrays of numbers, the generator computes arbitrary arrays, and multi-channel
-  recordings are already supported (``generate_multichannel_dataset``), so the four
-  edits above are nearly always the answer.
-
-  How loudly the wrong choice fails depends on your fitter, and it is worth knowing
-  that "loudly" is not guaranteed. A strict peak fitter left out of its set rejects
-  every planted event, which is obvious. A tolerant one does not: measured,
-  ``Basic_PeakFinder`` fits all 25 events on a flat blockage and reports 6-24
-  sublevels per event, because it finds peaks in the 15 pA noise — so the flat
-  database looks like a success. Leaving a step detector out of
-  ``"staircase"`` in ``FITTER_FIXTURES`` is quieter still: its sublevel-count check is
-  never collected, so the suite goes green having never tested what the fitter is
-  for.
-
-  Check the fixture and the recipe together, since a wrong pairing of the two hides
-  itself: a threshold set above the feature you are looking for costs nothing on a
-  fixture that has no such feature in it.
-* **``MetaWriter``, ``MetaDatabaseWriter``, ``MetaDatabaseLoader``, ``MetaEventLoader``:
-  usually nothing.** These build generically from the file parameter every plugin in the
-  family already has, plus the four experiment-metadata parameters the two writers
-  share — and no plugin shipped in these families declares anything beyond that, so all
-  four are covered with zero recipe work today. If yours does declare an extra required
-  parameter with no default, you get the same
-  ``ValueError: YourPlugin's conformance recipe leaves ['Your Param'] unset`` as above,
-  and it names where the value goes: these four have no per-class dict, so it belongs
-  in the ``overrides`` built inside that family's ``build_*`` function.
-* **``MetaReader``: always, and it is the one real piece of work.** A reader's
-  "recipe" is not settings — it is a synthetic file in its actual on-disk format,
-  since that is the entire thing a reader varies over. Every existing format lives
-  under ``tests/synthetic_data/`` (``synthetic_chimera.py``,
-  ``synthetic_chimera_vc100.py``, ``synthetic_binary.py``, ``synthetic_abf2.py``),
-  each a subclass of ``BaseSyntheticRecordingWriter`` that only has to implement
-  ``_write()``, and each derived directly from the real parsing code rather than
-  guessed — see each module's docstring for that derivation. Every reader needs an
-  entry in ``READER_DATASET_BUILDERS`` in ``_recipes.py``, keyed by class name rather
-  than by format, and a reader with no entry fails the same way the other families
-  do — including one whose format is already covered, since the lookup is per class.
-  Note what the *value* is: not settings, but a callable that writes a recording and
-  returns the ground truth for it.
-
-  .. code-block:: python
-
-     # _recipes.py
-     READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
-         "ChimeraReader20240501": _chimera_20240501_dataset,
-         "YourReader": _your_format_dataset,
-     }
-
-  What that entry costs depends on how far your format sits from a covered one. Most
-  readers land on the first row:
-
-  .. list-table::
-     :header-rows: 1
-     :widths: 32 68
-
-     * - If your reader
-       - the entry is
-     * - reads a covered format and wants the same signal
-       - one line pointing at that format's existing builder — the usual case for a
-         variant of a shipped reader.
-     * - reads a covered format from a rig whose numbers mean something different
-       - a call to the existing generator with your own config. The config carries
-         the signal and the electronics: baseline, noise, event amplitude and
-         duration, ``samplerate``, plus per-format fields such as ``tia_gain``,
-         ``i_offset`` and ``filter_gain``.
-     * - stores the same samples, but arranged differently in the file
-       - a new generator function in that format's existing module, since the config
-         describes the signal and cannot describe file layout.
-         ``synthetic_chimera.py`` holds two generators for exactly this reason: the
-         samples are encoded identically, but one format keeps its metadata in a
-         separate ``.json`` file and the other embeds it in the recording's own
-         header.
-     * - reads a genuinely new format
-       - a new writer module under ``tests/synthetic_data/`` — a
-         ``BaseSyntheticRecordingWriter`` subclass implementing ``_write()``.
-
-  Your reader may need a **setting that the file itself does not carry**, the way
-  ``SingleBinaryDecoder`` has to be told its sample rate because nothing in the file
-  records it. Supply those in ``READER_EXTRA_SETTINGS``, as a small function that reads
-  what it needs off the recording that was just written:
-
-  .. code-block:: python
-
-     # _recipes.py
-     READER_EXTRA_SETTINGS: Dict[str, Callable[[SyntheticDataset], Dict[str, Any]]] = {
-         "SingleBinaryDecoder": lambda dataset: {"Sampling Rate": dataset.samplerate},
-     }
-
-  Leave that out and you get the same ``ValueError`` as the other families, naming the
-  parameter, rather than an unhelpful error from deep inside ``apply_settings``.
-
-  Finally, once your reader has a fixture it is fuzz-tested for free: the suite feeds it
-  truncated and corrupted copies of its own recording and checks it fails cleanly instead
-  of hanging or crashing. You add nothing for that — see :ref:`reader_fuzz_testing`.
-
-  What those shared mutations cannot know about is anything particular to *your* format.
-  If yours has a part that identifies or describes it — a signature at the start of the
-  file, a header, a companion file beside the recording — add a **mutation**: a short
-  function that damages that one thing, so you find out what your parser does when it is
-  wrong. Two edits, both in ``_recipes.py``. Write the function, next to the shipped ones
-  — this one is ``_flip_abf2_signature`` with the name changed, and it is the whole of it:
-
-  .. code-block:: python
-
-     def _corrupt_your_marker(dataset: SyntheticDataset) -> None:
-         """Corrupt the marker your format puts at the start of the file."""
-         data = bytearray(dataset.data_path.read_bytes())
-         data[0:4] = b"\x00\x00\x00\x00"
-         dataset.data_path.write_bytes(bytes(data))
-
-  then register it for your reader, below where ``MUTATIONS`` is built:
-
-  .. code-block:: python
-
-     MUTATIONS["YourReader"].append(("corrupt_your_marker", _corrupt_your_marker))
-
-  The name in that tuple is what appears in the test id, so a failure points straight at
-  the mutation that caused it. Nothing fails if you skip all this, which is how the most
-  distinctive part of a format ends up being the one part never tested.
-
-However much or little your family turned out to need, the suite is run the same way.
-Scope it to your own plugin by name while you are iterating — the parametrised test ids
-carry the class name, so ``-k`` matches it:
+The family-by-family reference for writing a recipe - the settings dicts, choosing an
+event fitter's fixture, a reader's synthetic file, extra settings and format-specific
+mutations - is on its own page, :doc:`conformance_recipes`. However much your family needs,
+the suite is run the same way; the test ids carry the class name, so ``-k`` matches it:
 
 .. code-block:: bash
 
    pytest -m conformance                    # every plugin, all nine families
    pytest -m conformance -k YourPlugin      # only yours, while you work
-
-.. tip::
-
-   Watch the units. Two plugins in this codebase declare a parameter in sigma where
-   their siblings use picoamps — ``ThresholdBlockageFinder``'s ``Threshold`` and
-   ``ClassicCUSUM``'s ``Step Size`` — so a recipe value copied from a sibling silently
-   detects nothing. Read the parameter's ``Units`` entry rather than the sibling's
-   number. Declaring ``Units`` on your own parameters is what makes this checkable.
 
 .. _real_recordings_tier:
 
@@ -1183,16 +668,11 @@ a developer with the recordings runs it by setting one variable:
 
    PORISCOPE_REAL_DATA_DIR="/path/to/data" pytest -m real_data
 
-``tests/unit/plugins/conformance/test_real_recordings.py`` is the tier's first module. It
-lists six recordings - a Binary 1X file, a Chimera 2024-05 set, a multi-file Chimera
-2024-01 set, two TCossaLab ABF sets and a Legacy Elements ABF file - each with the
-subfolder it lives in, the reader that opens it, and what that reader reported on
-2026-10-06: the sample rate, the channels, every channel's length and file count, and the
-median of the first second, the last second and a second across the first file boundary,
-in picoamps. Those medians are goldens for the conversion, which any change to a reader
-has to reproduce - the move of the ABF readers onto ``ABFReader`` and ``pyabf``, for one. A
-recording whose subfolder is missing skips its tests rather than failing them, so a
-partial copy of the data is still useful.
+``tests/unit/plugins/conformance/test_real_recordings.py`` lists each recording with the
+subfolder it lives in, the reader that opens it, and what that reader reported - sample
+rate, channels, lengths and median currents - as goldens any change to a reader has to
+reproduce. A recording whose subfolder is missing skips its tests, so a partial copy of
+the data is still useful.
 
 Keep two things apart when reading these results: a synthetic test that fails is a defect
 or a wrong expectation; a real-recording test that fails may also be a property of that one
@@ -1221,9 +701,9 @@ lets the reader get:
 Coverage follows the fixtures. ``MUTATIONS`` in ``_recipes.py`` is keyed by reader class
 name and built from ``READER_DATASET_BUILDERS``' own keys, so a reader is fuzz-tested from
 the moment it has a conformance fixture, with nothing further to register here. Each
-reader gets the shared mutations above, plus any format-specific ones registered for
-it — five of the seven have those today, the two headerless binary formats having
-nothing of their own to corrupt. :ref:`plugin_conformance_testing` shows how to add one.
+reader gets the shared mutations above, plus any format-specific ones registered for it;
+a headerless binary format has nothing of its own to corrupt. :doc:`conformance_recipes`
+shows how to add one.
 
 These run as part of ``pytest -m conformance`` like everything else, but they are quick
 enough to run on their own while you are working on a parser:
@@ -1235,31 +715,21 @@ enough to run on their own while you are working on a parser:
 
 .. note::
 
-   The suite deliberately does not assert a single exception type for malformed
-   input. Measured directly: a 0-byte file alone already produces four different
-   exception families depending on reader and format — ``ValueError`` (most
-   readers), ``json.JSONDecodeError`` (a ``ValueError`` subclass, one format's
-   embedded-header parse), ``NotImplementedError`` (the three ABF readers, from
-   ``pyabf``'s header parse; *not* a ``ValueError`` subclass) — and a missing
-   sidecar raises ``FileNotFoundError`` or
-   ``OSError`` depending on the reader. Standardizing that, and whether a reader
-   should degrade gracefully when its sidecar is missing, are open questions for
-   whoever owns each reader family, tracked in ``future_fixes.md`` — not something
-   this suite decides.
+   The suite deliberately does not assert a single exception type for malformed input:
+   readers raise different ones today (``ValueError``, ``NotImplementedError`` from
+   ``pyabf``, ``FileNotFoundError``, ``OSError``). Whether they should converge is an
+   open question tracked in ``future_fixes.md``, not something this suite decides.
 
 .. _duplication_ratchet:
 
 Duplication Ratchet
 --------------------
 
-This one affects you if you edit any plugin or widget file: the ratchet measures ten
-**families**. They are the six ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
-``poriscope/plugins/analysistabs/``, the six ``*controls.py`` under its ``utils/``, the data
-readers, event fitters, event finders, filters, shared widgets, and the five SQLite plugins
-(the event writer, the two database loaders, the database writer and the event loader). Those families carry a
-large amount of byte-identical duplication, and the 2.0.0 refactor removed most of it. The
-ratchet exists so that removal is *demonstrated* rather than asserted, and so it cannot
-grow back unnoticed.
+This one affects you if you edit any plugin or widget file. The ratchet measures byte-identical
+duplication in **families** of files that tend to copy from one another - the analysis
+tabs' Views, Controllers, Models and controls panels, each data-plugin folder, the shared
+widgets and the SQLite plugins; ``FAMILIES`` in ``scripts/measure_duplication.py`` is the
+list - so that duplication cannot grow back unnoticed.
 
 ``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are **deliberately outside**
 the fitters family: their logic is another maintainer's under standing policy, so a ratchet
@@ -1273,16 +743,9 @@ either in a family or in** ``EXCLUDED``, and a test fails on any that is neither
 with its reason, in the commit that adds it. A changed file or function count is reported
 as a list change, not as duplication; rerun with ``--update`` to record it.
 
-**A family is widened before the step that would fool it, never after.** ``*Model.py`` and
-``eventfinders`` were both added that way, and the reason is the same in both cases: a gate
-scoped by file path stops measuring the moment a refactor moves code out of that path, and
-it fails *silently*, because the number moves the way you wanted. ``eventfinders`` starts at
-zero removable lines — its three finders share near-copies, which byte-identity cannot see —
-and that is still worth having, because it stops anyone adding a duplicate there unnoticed.
-
-``*Model.py`` joined them in September 2026, part-way through the refactor, which by then
-had been moving computation *into* the Models — which no family covered, so anything
-landing there could be duplicated invisibly. One method already had been.
+**Widen a family before the change that would fool it, never after.** A gate scoped by
+file path stops measuring the moment code moves out of that path, and it fails *silently*,
+because the number moves the way you wanted.
 
 Each family also holds the ``Meta*`` bases its files inherit from (``MetaView``,
 ``MetaSubsetTabView`` and the rest for the tabs; ``MetaReader`` for the readers). Without them,
@@ -1309,10 +772,8 @@ a win — and it fails too, so the win is recorded in the same commit that earne
 baseline also records each family's file and function counts, so adding or removing *any*
 method in a measured file fails the check as well. That failure names the function count
 ("the family gained functions") rather than calling it duplication, since the removable
-count has not moved; rerun ``--update`` in the same commit. Under
-a "no worse than" rule the baseline would quietly overstate the duplication still present
-and the slack would accumulate unnoticed. If your change legitimately removed duplication,
-rerun with ``--update`` and commit the new baseline alongside it.
+count has not moved. If your change legitimately removed duplication or changed the
+function list, rerun with ``--update`` and commit the new baseline alongside it.
 
 .. warning::
 
@@ -1338,18 +799,10 @@ under ``poriscope/controllers/`` and ``poriscope/models/``, ``main_view.py``,
 ``settings_window.py``, and ``main_app.py``, plus the two packages' ``__init__.py``. Nine
 files in all, listed explicitly in the script.
 
-These files are covered by nothing else. The MVC boundary rules scan them and read zero
-on all five, and no duplication family includes them, so before this gate existed the
-shell could be restructured in either direction unobserved.
-
-**The shell is measured in complexity, not in lines**, and that was a deliberate choice.
-When the gate was introduced ``settings_window.py`` had *zero* functions over the threshold
-despite 890 lines, and ``main_view.py`` two despite 1,235 — the length is flat Qt widget
-construction, with no branching to untangle. Every shell file reads zero now. Driving those line counts down would chase a
-number that does not describe a problem. The scope is nine files rather than the whole
-repository for the same reason the fitters are excluded from the duplication ratchet:
-repo-wide, most long functions live in owner-held plugins and in ``setupUi`` methods the
-refactor deliberately keeps per-tab.
+No duplication family includes these files, so this is the gate that watches them. **The
+shell is measured in complexity, not in lines**: its length is mostly flat Qt widget
+construction with no branching to untangle, and every shell file currently has no
+function over the threshold.
 
 ``scripts/measure_shell_complexity.py`` reports, per file, how many functions were
 scanned, how many exceed cyclomatic complexity 10, and the summed complexity of those
@@ -1378,12 +831,8 @@ count: ``with``, ``assert``, and ``return``/``break``/``continue``.
 
 .. note::
 
-   ``with`` not counting is the one worth knowing. Scoring it as a branch would mark a
-   function down for using a context manager, which runs against this project's own rule
-   that database resources are closed explicitly. It also mattered in practice: counting
-   ``with`` inflated ``create_appdata_folders`` from 17 to 20 on its four ``with`` blocks
-   alone, and held ``remove_pages_except`` at exactly 10, hiding it *under* the threshold
-   rather than judging it.
+   ``with`` not counting is the one worth knowing: scoring it as a branch would mark a
+   function down for using a context manager.
 
 .. warning::
 
@@ -1406,14 +855,12 @@ Analysis-Tab MVC Boundary
 
 Like the ratchet above, this one affects you if you edit the analysis tabs, the widgets they
 are built from, the app shell's own views and controllers, or the shared bases under
-``poriscope/utils/``. Before 2.0.0 the analysis tabs had no real Model, so their Views
-absorbed work a Model should do; 2.0.0 moved that work onto the tab Models. Five rules
-describe the boundary it put back:
+``poriscope/utils/``. Five rules keep computation in the Models and plugin access behind
+``call()``:
 
-1. **No View emits on the plugin bus, and the bus does not come back.** The
-   ``global_signal`` bus was removed in 2.0.0, so this rule can no longer fire against
-   anything that exists. It is kept as a tripwire: reintroducing that signal in a View is
-   caught here permanently. See :ref:`GlobalSignal` if the name is unfamiliar.
+1. **No View emits on the plugin bus, and the bus does not come back.** The removed
+   ``global_signal`` bus (see :ref:`GlobalSignal`) is kept as a tripwire: reintroducing it
+   in a View is caught here.
 2. **No View imports a computation library to compute with** — ``numpy``, ``scipy``,
    ``sklearn``, ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``. An import used
    *only* to write a type is exempt: a method annotated ``Sequence[npt.NDArray[np.float64]]``
@@ -1540,16 +987,9 @@ looks like an environment nit rather than like the entire numerical golden net n
 
 .. note::
 
-   If this test fails, install the development extras and rerun:
-
-   .. code-block:: bash
-
-      pip install -e ".[dev]"
-
-   ``pytest-regressions`` is pinned in **both** ``pyproject.toml`` and
-   ``requirements-dev.txt``: CI installs ``.[dev]`` and falls back to
-   ``requirements-dev.txt`` if that fails. Adding it to only one is the mistake this test is
-   positioned to catch early.
+   If this test fails, install the development extras (``pip install -e ".[dev]"``) and
+   rerun. ``pytest-regressions`` must be in both dev-dependency lists; see
+   :ref:`test_suite_configuration`.
 
 .. _pre_pr_checklist:
 
@@ -1558,11 +998,9 @@ Pre-Pull-Request Compliance Checklist
 
 .. important::
 
-   This is the section to bookmark. Before opening or updating a pull request —
-   especially one adding a new data plugin or frontend plugin family — walk through
-   these steps in order. They mirror exactly what CI will check, so a clean run here
-   means CI should pass too, and a maintainer won't send your PR back with something
-   you could have caught yourself in thirty seconds.
+   This is the section to bookmark. Before opening or updating a pull request, walk
+   through these steps in order. They mirror what CI checks, so a clean run here means CI
+   should pass too.
 
 .. tip::
 
@@ -1572,30 +1010,14 @@ Pre-Pull-Request Compliance Checklist
    wrong by hand is by far the most common reason a first plugin PR comes back, and the
    generator copies both verbatim out of the base class.
 
-   **A generated analysis tab passes all three steps as generated**, because a tab has no
-   settings schema and no conformance recipe: the triad is ``black``/``ruff`` clean,
-   satisfies ``mypy`` and ``pydoclint``, and its three classes are concrete, so
-   ``tests/unit/plugins`` is green over it before you write anything. It also runs —
-   ``tests/unit/views/test_generated_analysis_tab.py`` constructs one and drives the
-   methods the shell calls on a newly opened tab, which is the gate that keeps the
-   scaffold honest as the ``Meta*`` bases change.
+   **A generated analysis tab passes steps 1-3 as generated**, because a tab has no
+   settings schema and no conformance recipe.
 
-   **What a freshly generated skeleton does and does not pass**, measured against one
-   generated plugin in each of the nine families: steps 1 and 2 pass cleanly — it is
-   already ``black``/``ruff`` clean and satisfies ``mypy``, ``pydoclint``, the security
-   and module-level checks, and the settings schema. Step 3 does **not** pass, and is
-   not meant to: the skeleton's methods still raise ``NotImplementedError``, and the
-   conformance suite has no recipe for a plugin it has never seen, so every family
-   reports errors until you fill the stubs in and register your recipe. Those are
-   expected, and each names what it wants; see :ref:`plugin_conformance_testing`.
-   A failure in step 1 or 2, by contrast, really is one you caused.
-
-   One of those step-3 errors catches everybody, including families that otherwise
-   need no recipe at all. The generator seeds ``get_empty_settings`` with a
-   placeholder parameter — ``"My Parameter"``, marked ``# TODO``, with no default —
-   so conformance correctly reports it unset. Replace it with the parameters your
-   plugin actually needs, or delete it if it needs none; until you do, no generated
-   plugin in any family can pass.
+   **A generated data plugin passes steps 1 and 2 but not step 3**, and is not meant to:
+   its methods still raise ``NotImplementedError``, it ships a placeholder parameter
+   (``"My Parameter"``) with no default, and the conformance suite has no recipe for it.
+   Each error names what it wants; see :ref:`plugin_conformance_testing`. A failure in
+   step 1 or 2, by contrast, really is one you caused.
 
 ☐ **1. Apply automatic formatting and safe fixes.**
 
@@ -1638,14 +1060,10 @@ consistency, and behavioural conformance. The second is the fast, pytest-indepen
 settings-schema check, useful when you only want to check the one plugin you are
 working on (``python scripts/check_plugin_schemas.py MyEventFinder``). See
 :ref:`plugin_compliance_testing`, :ref:`settings_schema_checking` and
-:ref:`plugin_conformance_testing` above for what each one actually checks — they
-catch different mistakes. A new filter, event finder or event fitter needs a settings
-recipe added to ``tests/unit/plugins/conformance/_recipes.py``; conformance fails
-with a message telling you exactly where. The other plugin families usually need
-nothing added — see :ref:`plugin_conformance_testing` above for the full breakdown.
-A new **reader** is the exception: it needs a synthetic file in its own on-disk
-format, and it is also driven against malformed input by
-:ref:`reader_fuzz_testing`, which the same ``pytest tests/unit/plugins`` run covers.
+:ref:`plugin_conformance_testing` above for what each one checks. A new filter, event
+finder, event fitter, reader or conditioning loader needs a recipe in
+``tests/unit/plugins/conformance/_recipes.py`` (see :doc:`conformance_recipes`);
+conformance fails with a message telling you exactly where.
 
 ☐ **4. Run the test suite** — the same suite continuous integration runs on every
 branch push:
@@ -1658,9 +1076,7 @@ There is no subset and no marker filter: CI runs the whole suite everywhere, e2e
 included. ``-n auto`` runs it in parallel through ``pytest-xdist``, one test file per
 worker at a time. ``tests/conftest.py`` chooses the number of workers from your machine:
 one per logical core, but no more than your free memory holds at about 2 GB each. Set
-``PYTEST_XDIST_AUTO_NUM_WORKERS`` to choose the number yourself. On a 22-core desktop with
-13 GB free that is six workers and about two minutes (2026-11-12); plain ``pytest`` runs the
-same suite serially in about nine.
+``PYTEST_XDIST_AUTO_NUM_WORKERS`` to choose the number yourself.
 
 For per-marker counts and mean durations, run ``pytest --marker-stats``, serially: under
 ``-n`` the main process collects no tests, so it has nothing to report.
@@ -1670,7 +1086,7 @@ For per-marker counts and mean durations, run ``pytest --marker-stats``, seriall
 .. code-block:: bash
 
    python scripts/generate_all_autodoc_rst.py
-   sphinx-build -W --keep-going -b html docs/source docs/build
+   sphinx-build -W --keep-going -b html -d docs/.doctrees docs/source docs/build
 
 Warnings are errors here, and the same build runs on your pull request. See
 :ref:`docs_render_check` above for why this is a separate gate from ``pydoclint``.
@@ -1697,24 +1113,3 @@ instead.
 
 Once all six boxes are checked, you're ready to open (or re-request review on) your
 pull request.
-
-Summary for New Developers
---------------------------
-
-- Pre-commit enforces consistent, high-quality code
-- Hooks run automatically on commit
-- GitHub Desktop enforces the same rules
-- Most formatting and lint issues are auto-fixable
-- Mypy and pydoclint issues must be resolved manually — neither has a baseline or
-  waiver left to fall back on
-- All new code under ``poriscope/`` must carry type hints; see
-  :ref:`type_checking_policy`
-- New or modified plugins must also pass ``test_plugin_compliance.py`` — see
-  :ref:`plugin_compliance_testing`
-- …and must pass the behavioural conformance suite, which runs your plugin against real
-  synthetic data rather than only inspecting its interface. Most new plugins need to add
-  a settings recipe for it; see :ref:`plugin_conformance_testing` for which families do
-  and what to write
-- Docstrings must render, not just describe the right parameters — every pull request
-  rebuilds the docs with warnings as errors; see :ref:`docs_render_check`
-- Before opening a pull request, work through :ref:`pre_pr_checklist` in full

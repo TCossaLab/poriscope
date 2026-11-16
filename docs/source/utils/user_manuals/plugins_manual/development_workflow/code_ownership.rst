@@ -24,18 +24,9 @@ remember to tag them.
    If you touch a file someone else maintains, they will simply be asked to look. That is
    the whole mechanism.
 
-Why This Is Advisory
---------------------
-
-Poriscope is designed to accept plugin contributions from outside the lab —
-``.github/workflows/ci-fork-pr.yml`` exists specifically to run validation on
-fork-originated pull requests. A required-owner-review rule would put a single named
-individual in front of every one of those contributions, including files whose maintainer
-happens to be busy, on leave, or no longer with the lab.
-
-Correctness is the job of the automated gates described in :doc:`quality_control`, which
-every pull request must pass. Those are the checks that block. ``CODEOWNERS`` sits
-alongside them as a courtesy to reviewers, not as an additional hurdle.
+   Poriscope accepts plugin contributions from outside the lab, and a required-owner rule
+   would put one named person in front of each of them. Correctness is the job of the
+   automated gates in :doc:`quality_control`, which every pull request must pass.
 
 Who Owns What
 -------------
@@ -82,22 +73,11 @@ Relationship to the ``# Contributors:`` Headers
 -----------------------------------------------
 
 Every source file under ``poriscope/`` and ``scripts/`` opens with the MIT licence header
-followed by a ``# Contributors:`` block naming the people who wrote it.
-``scripts/new_plugin.py`` fills that block in from your Git author name when it generates
-a new plugin, so it stays accurate for new code automatically.
-
-Those headers and ``CODEOWNERS`` answer two different questions and will not always
-agree:
-
-- The header records **who wrote the file**. It is attribution, and it is permanent.
-- ``CODEOWNERS`` records **who maintains the file now**. It changes as people join the
-  lab, move between areas, or leave it.
-
-Two consequences follow. First, files written by contributors who have since left the lab
-pass to Kyle Briggs, so their ``CODEOWNERS`` entry no longer names the original author
-even though the header still does — and rightly so, since the header is a record of
-authorship. Second, the test suites under ``tests/`` carry no headers at all but do have a
-maintainer, so the two sources cannot be derived from one another in either direction.
+and a ``# Contributors:`` block, which ``scripts/new_plugin.py`` fills in from your Git
+author name. The header records **who wrote the file** and is permanent attribution;
+``CODEOWNERS`` records **who maintains it now**. So they will not always agree: files by
+contributors who have left the lab pass to Kyle Briggs while their headers keep the
+original author, and ``tests/`` has maintainers but no headers.
 
 Changing an Ownership Entry
 ---------------------------

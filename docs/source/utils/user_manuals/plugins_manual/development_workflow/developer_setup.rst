@@ -7,48 +7,25 @@ quality control and post-merge automation.
 This setup is intended for Poriscope users who want to become contributors or developers.
 
 
-Overview
---------
+Running the Setup
+-----------------
 
-The setup script performs two key tasks:
-
-1. Installs and activates **pre-commit** hooks for quality control
-2. Installs a **post-merge** Git hook that automates environment maintenance
-
-These hooks work together to ensure that:
-
-- Code quality checks run before commits
-- Developer environments stay synchronized after pulls and merges
-
-
-What the Setup Script Does
---------------------------
-
-When executed, the setup script:
-
-- Detects the repository root using ``git rev-parse --show-toplevel``
-- Installs the ``pre-commit`` Python package (if missing)
-- Uninstalls any existing pre-commit hooks
-- Reinstalls pre-commit hooks using the repository configuration
-- Copies the project’s post-merge hook into ``.git/hooks/``
-- Marks the post-merge hook as executable
-- Sets ``gitflow.prefix.versiontag`` to ``v``, so ``git flow release finish <version>``
-  tags the release ``v<version>``
-
-The script is safe to run multiple times.
-
-
-Running the Setup Script
-------------------------
-
-From the repository root, run:
+From a clone of the repository, install the project with its development and
+documentation extras, then run the setup script:
 
 .. code-block:: bash
 
+   pip install -e ".[dev,docs]"
    python scripts/setup_hooks.py
 
-This command installs both the pre-commit and post-merge hooks locally, and sets the
-git flow release tag prefix.
+``[dev]`` adds the test and lint tools and ``[docs]`` adds Sphinx, which the post-merge
+hook uses. The setup script, which is safe to run more than once:
+
+- installs the ``pre-commit`` package if it is missing, and reinstalls its hooks from the
+  repository configuration;
+- copies the project's post-merge hook into ``.git/hooks/`` and marks it executable;
+- sets ``gitflow.prefix.versiontag`` to ``v``, so ``git flow release finish <version>``
+  tags the release ``v<version>``.
 
 .. note::
 
@@ -56,51 +33,34 @@ git flow release tag prefix.
    (``.github/workflows/release.yml``) triggers on tags matching ``v*``. git flow leaves
    ``gitflow.prefix.versiontag`` empty by default, which would tag a release
    ``1.7.0`` rather than ``v1.7.0`` and so miss that trigger. Like git hooks, git config
-   is local to each clone, which is why the setup script sets it rather than the
-   repository carrying it.
-
-.. note::
-
-   Git hooks are local to each clone and are not version-controlled.
-   Each developer must run this setup script at least once.
+   is local to each clone, which is why every developer runs the setup script once rather
+   than the repository carrying it.
 
 
-Quality Control via Pre-commit
-------------------------------
+What the Hooks Do
+-----------------
 
-After installation, the following checks run automatically on every commit: ``ruff``
-(strict, no auto-fix), ``ruff-plugin-security``, ``mypy``, ``pydoclint``,
-``plugin-module-level``, ``settings-schema``, ``text-encoding`` and
-``check-added-large-files``. **Black** and ``ruff --fix`` run only when you ask for them,
-with ``pre-commit run --all-files --hook-stage manual``.
-
-If any check fails, the commit is blocked.
-
-For full details, see:
-
-:doc:`quality_control`
-
-
-Post-merge Automation
----------------------
-
-After a successful ``git pull`` or ``git merge``, the post-merge hook runs automatically.
-
-It performs tasks such as:
-
-- Updating Python dependencies when ``requirements.txt`` changes
-- Regenerating autodoc and Sphinx documentation
-
-For a detailed explanation of this automation, see:
-
-:doc:`post_merge_automation`
+- **pre-commit** runs the validation hooks on every commit and blocks the commit if any
+  fails; formatting runs only when you ask for it. See :doc:`quality_control`.
+- **post-merge** refreshes dependencies when ``requirements.txt`` changes and regenerates
+  the documentation after every ``git pull`` or ``git merge``. See
+  :doc:`post_merge_automation`.
 
 
 Using GitHub Desktop
 --------------------
 
-If a pre-commit check fails, GitHub Desktop blocks the commit and displays the error
-output.
+GitHub Desktop enforces the pre-commit hooks when configured to use **System Git**: a
+failing check blocks the commit and shows its output. To confirm the hooks are active,
+temporarily add a type error to any tracked Python file under ``poriscope/``:
+
+.. code-block:: python
+
+   def _pre_commit_test() -> int:
+       return "not an int"
+
+If the commit is blocked, the hooks work; if not, re-run the setup script. Revert the
+change afterwards.
 
 
 Troubleshooting
@@ -111,17 +71,6 @@ If hooks do not appear to run:
 - Re-run the setup script
 - Verify that ``.git/hooks/pre-commit`` and ``.git/hooks/post-merge`` exist
 - Confirm that Python is available in your PATH
-
-
-Summary
--------
-
-- Run the setup script once per clone
-- Pre-commit enforces quality before commits
-- Post-merge keeps environments synchronized
-- Both hooks improve reliability and onboarding
-
-This setup is strongly recommended for all Poriscope developers.
 
 
 Extra: Disabling Git Hooks

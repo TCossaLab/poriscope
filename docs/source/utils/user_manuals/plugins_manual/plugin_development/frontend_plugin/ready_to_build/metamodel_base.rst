@@ -1,10 +1,8 @@
 MetaModel as a Base Class
 =========================
 
-:ref:`MetaModel`  is the abstract base class for all analysis tab models in Poriscope.
-It handles the logic, processing, and backend operations that power your tab — things like running calculations, managing worker threads, and storing cached data.
-
-This class does a lot of the heavy lifting behind the scenes, so you can focus on implementing just the part that makes your model unique.
+:ref:`MetaModel` is the abstract base class for all analysis tab models in Poriscope: it
+runs calculations, manages worker threads and caches plot data.
 
 **The Model is where computation and data access belong.** A tab's View draws; anything
 that turns data into other data — filtering, scaling, binning, fitting, building an axis,
@@ -26,11 +24,8 @@ You don’t have to manually manage threads or signals. ``MetaModel`` handles:
   channels may overlap is decided by the plugin itself, not here - see
   :ref:`serial_channel_operations`
 
-**Signals and communication**
+**Signals**
 
-Built-in signals allow your model to communicate with the view, controller, or even other plugins:
-
-- ``call()`` for reaching a data plugin and using its answer directly
 - ``update_progressbar`` to visually track long computations
 - ``add_text_to_display`` to send log output or feedback to the interface
 - ``run_finished(channel, key)``, emitted once a plugin's run on a channel has ended and its
@@ -38,18 +33,17 @@ Built-in signals allow your model to communicate with the view, controller, or e
 
 **Calling a data plugin**
 
-``call(metaclass, key, method, *args, **kwargs)`` runs a method on a data plugin — a
-reader, a loader, a fitter — and returns its result. Use it wherever your tab needs data
-from a plugin:
+``call(metaclass, key, method, *args, **kwargs)`` runs a method on a data plugin - a
+reader, a loader, a fitter - and returns its result:
 
 .. code-block:: python
 
    rows = self.call("MetaDatabaseLoader", loader_name, "load_metadata", columns)
 
-**Failures raise at the call site** rather than being logged somewhere else, so a
-``try``/``except`` around the call is a working guard and the Controller can report what
-went wrong. A Controller slot reaches a plugin through its Model, with
-``self.model.call(...)``; neither the View nor the Controller should reach one any other way.
+Failures raise at the call site, so a ``try``/``except`` around the call is a working
+guard. ``call()`` is on the Model only: a Controller slot uses ``self.model.call(...)``,
+and neither the View nor the Controller should reach a plugin any other way. See
+:ref:`CallingAPlugin`.
 
 **Computation you inherit**
 
@@ -69,7 +63,7 @@ import ``numpy`` to get them:
 
 - Store intermediate data with ``cache_plot_data()``
 - Format and return a cached ``DataFrame`` with ``format_cache_data()``
-- Automatically generate final reports after threads finish
+- Put each plugin's status report on the status panel when its run on a channel finishes
 
 **Helper functions you don’t need to write yourself**
 
@@ -80,9 +74,5 @@ import ``numpy`` to get them:
 What You Need to Implement
 --------------------------
 
-Only one method is abstract, and that’s ``_init()``. This is where you set up any plugin-specific logic or configuration. It’s automatically called at the end of the base class constructor.
-
-.. note::
-
-   Want the technical breakdown?  
-   Check the :ref:`MetaModel` section of this manual — it walks through each method’s purpose and parameters.
+Only ``_init()`` is abstract. Set up your Model's own state there; the base constructor
+calls it at the end. Each method's contract is on the :ref:`MetaModel` reference page.
