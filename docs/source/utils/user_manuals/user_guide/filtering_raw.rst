@@ -135,19 +135,8 @@ To see how the 5 rows split between the pairs, run:
    SELECT experiment_id, channel_id, COUNT(*) FROM events
    WHERE duration > 150 GROUP BY experiment_id, channel_id;
 
-**The bottom line, for each case:**
-
-* **Both placeholders:** each pair is plotted with *its own* rows. The three datasets split the 5
-  rows between them. This is what you want.
-* **Neither:** the Scope selection has no effect. The query runs on the whole database, and every
-  ticked pair is plotted with the *whole result*, all 5 rows, instead of only its own. This is
-  **not** the same as running the filter for each ticked pair: that gives 1, 2 and 2 (the first
-  case), while here every pair gets all 5. The three datasets are identical and overlap exactly.
-* **Only** ``:channel_id``: each pair is plotted with its channel number from *every experiment*.
-  Experiment 1 channel 2 holds experiment 2's channel 2 events as well, 4 rows instead of its own 2.
-* **Only** ``:experiment_id``: each pair is plotted with *every channel* of its experiment, not
-  only the one ticked. Experiment 1 channel 2 holds experiment 1's channel 1 event as well, 3 rows
-  instead of its own 2.
+Only the first case plots each pair with *its own* rows. With neither placeholder every pair gets
+the whole result, so the three datasets are identical and overlap exactly.
 
 In the last three cases the status panel warns, and the legend entry of a column plot ends with
 ``(rows not limited to this experiment and channel)``, so the plot cannot be read as the channel it
@@ -186,12 +175,6 @@ What matters is whether **each row of the result is one event**:
    query only for column plots. Poriscope does not add ``event_id`` to such a query for you, and it
    warns about a ``GROUP BY`` or an aggregate that returns it.
 
-.. important::
-
-   Again, if you trust that your query does what you want it to, go ahead. Poriscope's warnings are
-   automatic, cautious checks and cannot know what you meant; they are there to help you notice a
-   mistake, not to overrule your query.
-
 If a plot needs ``event_id`` and the filter does not return it, and the query is a plain
 ``SELECT`` from ``events`` or ``sublevels``, Poriscope **asks** whether to start its column list with
 ``event_id``, showing the new text. **Yes** changes the filter and the plot carries on; if the new
@@ -203,14 +186,9 @@ also update your filters file.
 
 For any other query, nothing is offered or changed, because adding ``event_id`` could change its rows
 or break it. The panel names the word it found (``GROUP BY``, ``DISTINCT``, an aggregate, ``UNION``
-or a join) and why Poriscope left the query alone, with an example of the fix for a join or a grouped
-query, and a ``GROUP BY`` that returns
-``event_id`` without grouping by the event is warned about, and so is an aggregate that returns it.
-The check is automatic and cautious: if
-you know adding ``event_id`` is right for your query, add it yourself.
+or a join), with an example of the fix for a join or a grouped query. If you know adding
+``event_id`` is right for your query, add it yourself.
 
-The event overlays, all-points histograms, the Protein distribution plots, Plot Events, the arrows
-and the Protein tab's Plot Histogram work on whole events, so the query must return ``event_id``.
 A query that does not scope itself must return ``experiment_id``, ``channel_id`` and ``event_id``
 together, since an event number repeats from channel to channel. These three mean the same thing in
 every table that has them (a sublevel's are its parent event's), so a query on ``sublevels`` or a
@@ -241,9 +219,7 @@ panel also shows the join:
 
 A query that returns the same column name twice (a join's ``SELECT *``) is refused if the plot
 reads it; name the one you mean, for example ``SELECT e.duration AS duration, s.sublevel_duration,
-...``. The axis menus list only the database's own columns, so a computed column such as
-``max_blockage - min_blockage AS blockage_range`` is returned by the query but cannot be chosen on
-an axis yet.
+...``. A computed column cannot be chosen on an axis yet; see Example 6.
 
 Examples
 --------
@@ -364,8 +340,8 @@ Only in Assisted, or only in Raw
      - Aggregates and grouping as the plotted result (``GROUP BY``, ``DISTINCT``): one row per group
    * - Any column of any table can go on an axis, and a condition on it joins the table by itself
        (``sublevel_duration``, ``voltage``)
-     - Computed columns in the result (``max_blockage - min_blockage AS blockage_range``); the axis
-       menus do not list them, so they cannot be plotted yet
+     - Computed columns in the result (``max_blockage - min_blockage AS blockage_range``; see
+       Example 6 for plotting them)
    * - An ``OR`` or a ``--`` comment cannot widen the scope
      - ``ORDER BY``, ``LIMIT`` and ``OFFSET`` on the plotted rows, applied within each pair
    * - Every plot can use it: Poriscope chooses the columns and the event ids
@@ -426,8 +402,8 @@ Large databases
 ---------------
 
 A raw filter that names events (Plot Events, the arrows, the event plots, the Protein tab) checks
-that every ``event_id`` it returns exists, so its first read is slower than an Assisted filter's,
-by less than a factor of three: a couple of seconds with 300,000 events per channel. It is paid once
+that every ``event_id`` it returns exists, so its first read is slower than an Assisted filter's:
+a couple of seconds with 300,000 events per channel. It is paid once
 for a filter and channel; moving through the events afterwards uses the list already read. Reading
 the columns of one channel for a histogram is not slower than Assisted. Narrowing the query (a
 condition, or ``LIMIT``) shortens it.

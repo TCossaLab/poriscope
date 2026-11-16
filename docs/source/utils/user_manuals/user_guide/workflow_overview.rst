@@ -4,13 +4,8 @@ Workflow Overview
 =================
 
 
-For in-depth information, visit the following sections:
-
-- :ref:`rawdata-tab`
-- :ref:`eventAnalysis-tab`
-- :ref:`metadata-tab`
-- :ref:`clustering-tab`
-- :ref:`protein-tab`
+Each tab has its own page with the details: :ref:`rawdata-tab`, :ref:`eventAnalysis-tab`,
+:ref:`metadata-tab`, :ref:`clustering-tab`, :ref:`protein-tab` and :ref:`conditioning-tab`.
 
 1. Raw Data
 -----------
@@ -42,18 +37,24 @@ For in-depth information, visit the following sections:
 4. Clustering
 -------------
 
-- Users can group events into clusters based on selected metadata features.
-- Two clustering algorithms are supported:
+- Users group events into clusters over up to 8 metadata columns, with **HDBSCAN** or
+  **Gaussian Mixtures**, optionally restricted by an SQL-like filter.
+- Clusters are shown in 2D or 3D, can be merged by hand, and are committed back to the
+  database as new columns (``cluster_label``, ``cluster_confidence``).
 
-  - **HDBSCAN**:
-    - Requires ``Cluster Size`` (minimum cluster size to form a group),``Min Points`` (minimum samples to define a core point), and ``Sensitivity`` (controls how aggressively clusters are split).
-  
-  - **Gaussian Mixtures**:
-    - Requires only ``Number of Clusters`` to define how many Gaussian components will be used.
+5. Protein
+----------
 
-- Every column row in the settings dialog is used; two are provided and **Add Column** adds more, up to 8.
-- Optional filters can be applied to restrict the input data using SQL-like syntax.
-- Users can visualize clusters in 2D or 3D, merge selected clusters manually, and commit results back to the database as new columns (``cluster_label``, ``cluster_confidence``).
+- From a database of fitted events and the pore's diameter and length, users estimate a
+  translocating protein's volume and shape factor, one event at a time (**Individual**) or
+  over the distribution of many events (**Ensemble**).
+
+Pore conditioning
+-----------------
+
+- Separately from the event workflow, the Conditioning tab follows a pore conditioning
+  experiment cycle by cycle: each channel's pore size against its target band, and the
+  noise of the PSD recordings taken along the way.
 
 .. admonition:: Need a visual guide through Poriscope? 
 

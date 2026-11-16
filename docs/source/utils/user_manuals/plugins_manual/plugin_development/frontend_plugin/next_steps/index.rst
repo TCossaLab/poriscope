@@ -1,19 +1,17 @@
 What's next ?
 =============
 
-Congratulations! You've successfully built your first MVC Plugin.
+Once your tab works, these are the usual next steps:
 
-Here are some suggested next steps to level up your plugin:
+- **A guided walkthrough** for **Help → Tutorial**, below.
+- **Background work with progress bars:** stage one generator per channel and run them on
+  worker threads through the Model - see :doc:`../ready_to_build/metamodel_base`.
+- **Session save and replay:** record your Controller's actions with
+  ``@register_action``, and persist any View-only state - see
+  :doc:`../ready_to_build/metacontroller_base`.
 
 .. toctree::
    :maxdepth: 1
 
    adding_walkthrough
    walkthrough_mixin
-
-- Enable multithreaded analysis for long-running tasks.
-- Implement progress bars and dynamic status updates.
-- Explore how to integrate your plugin with the session manager.
-
-.. note::
-   To learn more about PySide6, check out https://www.pythonguis.com/pyside6/

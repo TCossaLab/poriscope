@@ -1,7 +1,9 @@
 .. _user_installation:
 
-User Installation
-=================
+.. _getting_started_general_user:
+
+Installation
+============
 
 Prerequisites
 -------------
@@ -53,24 +55,17 @@ To upgrade to the latest release:
 Latest Unreleased Version (Advanced)
 -------------------------------------
 
-To install directly from the latest commit on GitHub (does not track future updates unless reinstalled manually):
+To get changes that have not been released yet, install the ``develop`` branch from GitHub
+(this needs `Git <https://git-scm.com/downloads>`_, and does not track later updates unless
+you run it again):
 
 .. code-block:: bash
 
-   python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"
+   python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@develop"
 
-.. note::
-
-   The latest commit on ``main`` should always reflect the latest PyPI release.
-   This is an alternative for users who wish to install directly from the repository or 
-   to get a bugfix that has not been cut into a release yet.
-   To install from a specific branch, replace ``@main`` with the desired branch name.
-
-.. note::
-
-   This installs the package from source but does **not** give you an editable codebase.
-   If you want to browse or modify the code locally, refer to :ref:`getting_started`
-   for the full developer setup using ``git clone`` and ``pip install -e ".[dev,docs]"``.
+``main`` holds the latest release, the same code as PyPI; replace ``@develop`` with any
+other branch name to install that branch. This does **not** give you an editable codebase:
+to browse or modify the code, follow the developer setup in :ref:`getting_started`.
 
 Launching Poriscope
 -------------------
@@ -81,7 +76,10 @@ Once everything is installed, run the application from any terminal:
 
    poriscope
 
-.. seealso::
+If the command is not found, your Python environment's ``Scripts/`` (Windows) or ``bin/``
+(Linux/macOS) folder is not on your ``PATH``. You can still start Poriscope, and import it
+in your own scripts, with the same interpreter you installed it into:
 
-   For details on how to install Poriscope as a developer, including editable mode,
-   pre-commit hooks, and working with the codebase, refer to :ref:`getting_started`.
+.. code-block:: bash
+
+   python -m poriscope.main_app

@@ -6,7 +6,7 @@ Welcome to Poriscope's documentation!
 
 If you are interested in contributing to :mod:`poriscope`, `fork the repository <https://github.com/TCossaLab/poriscope/fork>`_ and use the guides below to get started. 
 
-:mod:`poriscope` is an actively developed community project. If you find bugs, or if you have questions that are not anwered in this guide, feel free to reach out to the `TCossaLab <https://www.tcossalab.net/contact_us/>`_ or `submit an issue <https://github.com/TCossaLab/poriscope/issues>`_ with the details. 
+:mod:`poriscope` is an actively developed community project. If you find bugs, or if you have questions that are not answered in this guide, feel free to reach out to the `TCossaLab <https://www.tcossalab.net/contact_us/>`_ or `submit an issue <https://github.com/TCossaLab/poriscope/issues>`_ with the details. 
 
 .. toctree::
 	:maxdepth: 2

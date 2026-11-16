@@ -3,49 +3,13 @@
 Understanding Base Classes
 ==========================
 
-One of the reasons Poriscope is so easy to extend is thanks to base classes.
+Every plugin, whether a data plugin or an analysis tab, subclasses one of Poriscope's
+``Meta*`` base classes. A base class is not a working plugin on its own: it defines what
+every plugin of its kind must provide, and it already carries most of the machinery that
+runs one. Methods marked ``@abstractmethod`` are the ones you implement, and Python
+refuses to instantiate a subclass that leaves any of them out. The rest come ready to use,
+and you override them only when you need to.
 
-What Is a Base Class?
----------------------
-
-In object-oriented programming, a base class (also called a superclass) defines common structure and behavior that other classes can inherit from. It's super useful for keeping your code consistent and avoiding repetition.
-
-Imagine a House Blueprint
---------------------------
-
-You're an architect designing all sorts of houses. No matter the style, every house needs a few basic things:
-
-Some things come included, so you don’t need to think about them:
-
-- Walls
-- A front door
-- A roof
-
-Other things, you do need to decide for yourself:
-
-- Paint color
-- Accessories
-- Furniture
-
-But the point is, every house still needs all of them.
-
-So, you create a blueprint called ``HousePlan``. It doesn’t build the house — it just tells you what’s absolutely required.
-
-This is exactly what our ``MetaXXXX`` classes do. They are a base structure. On their own they are not a working plugin — but they define what must exist for a real plugin, a data plugin or an analysis tab, to work, and they already carry much of the machinery that runs it. Some methods come ready to use, and others are left for you to customize — those are marked with ``@abstractmethod``.
-
-Now Let’s Build a Real House
------------------------------
-
-Let’s say you decide to build a Modern Smart House. It has:
-
-- A front door and a roof (as required by the blueprint)
-- But also, solar panels, smart lighting, and an Alexa
-
-You build this house using the ``HousePlan`` blueprint and call it ``SmartHouse``. It follows the rules, but adds its own unique features.
-
-So, in Programmer Talk:
-
-.. code-block:: text
-
-   MetaXXXX = HousePlan → defines what every plugin of its kind must have (but doesn’t build one)
-   CustomXXX = SmartHouse → follows the rules, but creates a fully functional, unique plugin
+``scripts/new_plugin.py`` writes a subclass with every abstract method already stubbed;
+see :ref:`build_frontend_plugin` for an analysis tab and :ref:`build_data_plugin` for a
+data plugin.

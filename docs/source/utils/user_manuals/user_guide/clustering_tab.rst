@@ -12,7 +12,7 @@ The **Clustering Tab** allows you to group similar events based on selected meta
 Step 1: Load Metadata Database
 ------------------------------
 
-1. Click the **➕ DB Loader** button to select your metadata SQLite database file.
+1. Click the **➕** beside **DB LOADER** to select your fitted events database.
 2. If you have previously loaded DB files, they will automatically appear. 
 
 Step 2: Configure Clustering Settings
@@ -24,38 +24,25 @@ Step 2: Configure Clustering Settings
 
    - **Select Method**: Choose one of the following:
      
-   - **HDBSCAN**:
-     
-     HDBSCAN stands for **Hierarchical Density-Based Spatial Clustering of Applications with Noise**. It groups data points based on density and can automatically find clusters of varying shapes and sizes. It also labels low-confidence points as noise.
+   - **HDBSCAN** groups points by density, finds the number of clusters itself, and labels
+     low-confidence points as noise:
 
-     It requires the following parameters:
+     - ``Cluster Size``: the minimum number of points a cluster must contain. Larger
+       values give fewer, larger clusters.
+     - ``Min Points``: how dense a region must be to form a cluster. Higher values are
+       more conservative.
+     - ``Sensitivity``: a distance, in the units of the clustered columns after **LOG**
+       and **NORM**, below which clusters are merged (HDBSCAN's
+       ``cluster_selection_epsilon``). 0 merges nothing; higher values give fewer, larger
+       clusters.
 
-     - ``Cluster Size``:
-       The **minimum number of points** a group must contain to be considered a cluster. Larger values result in fewer, larger clusters.
+   - **Gaussian Mixtures** fits a mixture of Gaussian distributions:
 
-     - ``Min Points``:
-       Determines how conservative the algorithm is when defining cluster boundaries. A higher value increases the density required to form a cluster.
+     - ``Number of Clusters``: how many Gaussian components to fit.
 
-     - ``Sensitivity``:
-       Adjusts how strict the algorithm is when identifying core cluster regions. Lower values make it easier to form clusters; higher values tighten the definition.
-
-     HDBSCAN is great for discovering natural groupings in your event data **without needing to pre-specify the number of clusters**.
-
-   - **Gaussian Mixtures**:
-     
-     Gaussian Mixture Models (GMMs) assume that the data is generated from a combination of several **Gaussian (normal) distributions**.
-
-     It requires the following parameter:
-
-     - ``Number of Clusters``:
-       The number of Gaussian components (clusters) to fit to the data. You must specify this number manually.
-
-     GMMs work well when your data fits the assumption of normally distributed clusters and you have an idea of how many groups to expect.
-
-
-   - **Apply Filter** *(optional)*: Narrow down which events are included by writing a simplified SQL-like condition.
-     
-     Example: ``duration > 200 and max_blockage < 800``
+   - **FILTER** *(optional)*: an Assisted SQL condition (see :ref:`filtering-assisted`)
+     that narrows which events are clustered, applied to the whole database - there is no
+     scope here. Example: ``duration > 200 and max_blockage < 800``
 
    - **Select Columns**: Choose a metadata column to use for clustering.
      
@@ -81,11 +68,8 @@ Step 2: Configure Clustering Settings
 
 .. note::
 
-   Anything that stops a clustering run is reported on the status panel: a filter the
-   database rejects is shown with the database's own message — an unknown column, a
-   syntax error, a complete ``SELECT`` pasted into the filter box — a query that matches
-   no rows says so, and a column the loader did not return is named rather than failing
-   somewhere inside the clustering algorithm.
+   Anything that stops a clustering run is reported on the status panel - a filter the
+   database rejects is shown with the database's own message.
 
 Step 3: Merge Clusters (Optional)
 ---------------------------------

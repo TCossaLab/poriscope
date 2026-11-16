@@ -3,8 +3,8 @@
 Keeping It Minimal: HelloWorld Tutorial
 =======================================
 
-If you just want to get started and make sure everything works, the :ref:`HelloWorld` tab is
-a good place to begin. It is the smallest analysis tab that is still a *real* one: it loads,
+If you just want to get started and make sure everything works, the HelloWorld tab is a
+good place to begin. It is the smallest analysis tab that is still a *real* one: it loads,
 it appears in the Analysis menu, it draws a plot canvas, and its single button travels the
 whole path a real control takes and reports that it got there.
 
@@ -90,9 +90,11 @@ The ``else`` matters more than it looks. Renaming an action in the panel and for
 rename it here is the one mistake this dispatch shape invites, and without the ``else`` the
 press would simply do nothing.
 
-The remaining View methods — ``_init``, ``_reset_actions``, ``update_available_plugins`` and
-``notify_plugin_state_changed`` — are stubs marked ``# TODO``, each carrying the contract it
-has to satisfy. See :doc:`ready_to_build/metaview_base` for what each one is for.
+``update_available_plugins`` calls ``super()`` before its ``# TODO``, because the base
+implementation is what records the available plugins on the View. The remaining View
+methods - ``_init``, ``_reset_actions`` and ``notify_plugin_state_changed`` - are stubs
+marked ``# TODO``, each carrying the contract it has to satisfy. See
+:doc:`ready_to_build/metaview_base` for what each one is for.
 
 The controls panel
 ------------------

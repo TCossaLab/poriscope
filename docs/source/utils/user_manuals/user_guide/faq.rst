@@ -10,18 +10,13 @@ I loaded a file, but nothing appeared. What happened?
   Make sure you clicked :guilabel:`OK` (not :guilabel:`Cancel`) after selecting your file and settings.
 - Confirm you’ve selected a valid **channel** and clicked :guilabel:`Update Trace` to display the signal.
 
-I'm fitting my events, but it shows the fit from a previous dataset.
----------------------------------------------------------------------
+Fitting says "Fitting not started", or shows another dataset's events.
+------------------------------------------------------------------------
 
-This usually means the wrong **reader** or **event fitter** plugin is selected.
-
-Make sure that:
-
-- The event fitter **instance you just created** is selected in the dropdown.
-- The **reader** you want to apply the events to is **active**.
-- You aren’t mixing configurations from a different session.
-
-Otherwise you may apply one dataset’s events to another, leading to mismatched results.
+An event fitter only ever reads the **event loader** it was created on. If the loader
+selected in the Event Analysis tab is a different one, **Fit Events** is refused with a
+message naming both. Select the fitter you created on that loader, or the loader that
+fitter uses.
 
 I clicked :menuselection:`Analysis -> New Analysis Tab -> EventAnalysisController` or :menuselection:`RawDataController`, but nothing changes.
 ----------------------------------------------------------------------------------------------------------------------------------------------
@@ -31,29 +26,24 @@ After it’s opened, switch back to any analysis view from the left sidebar:
 
 :menuselection:`All Analysis Tabs` → select the tab you want.
 
-I'm trying to load a database into Metadata View or Event Analysis View, but it says the format is unsupported.
----------------------------------------------------------------------------------------------------------------
+A database will not load into the Metadata or Event Analysis tab.
+-----------------------------------------------------------------
 
-You may be loading the **wrong type** of ``.db`` file for that tab. Both databases use ``.db`` but serve different purposes:
+You may be loading the **wrong type** of database for that tab. Both kinds are SQLite files,
+and both writers offer the same extensions (``.sqlite3``, ``.db``, ``.sqlite``):
 
-- **Raw Event database** — created in **Raw Data View** via :guilabel:`Commit Events`.  
-  Contains **unfitted** events. Load this **in Event Analysis View** for fitting.
-- **Fitted Event database** — created in **Event Analysis View** via :guilabel:`Commit Events`.  
-  Contains **fitted events and metadata**. Load this **in Metadata View** or **Clustering View**.
-
-**In short:**
-
-- Use **Raw Event ``.db``** → **Event Analysis**  
-- Use **Fitted Event ``.db``** → **Metadata / Clustering**
+- **Raw event database** - created in the **Raw Data** tab with :guilabel:`Commit Events`.
+  Contains **unfitted** events. Load it in the **Event Analysis** tab for fitting.
+- **Fitted event database** - created in the **Event Analysis** tab with
+  :guilabel:`Commit Events`. Contains **fitted events and metadata**. Load it in the
+  **Metadata**, **Clustering** or **Protein** tab.
 
 .. tip::
 
-   Name databases clearly to avoid confusion, e.g.::
+   Name databases so the two kinds cannot be confused, e.g.::
 
-      my_sample_events_raw.db      # created in Raw Data View
-      my_sample_events_fitted.db   # created in Event Analysis View
-
-   You can also adopt a suffix system that matches your workflow (e.g., ``.db`` for raw, ``.sqlite`` for metadata).
+      my_sample_events_raw.sqlite3      # created in the Raw Data tab
+      my_sample_events_fitted.sqlite3   # created in the Event Analysis tab
 
 Is Linux supported?
 -------------------
@@ -61,6 +51,8 @@ Is Linux supported?
 Poriscope is currently beta tested on Linux through an Ubuntu VM. As a result, certain UI behaviors may differ from the native Windows experience, particularly around popup windows, which rely on compositor effects that virtual GPU drivers handle inconsistently.
 
 Functionality is in place, and Linux-specific fixes will continue to be refined as support matures.
+
+.. _tutorial_dataset:
 
 Where can I find the data used in the tutorials?
 -------------------------------------------------

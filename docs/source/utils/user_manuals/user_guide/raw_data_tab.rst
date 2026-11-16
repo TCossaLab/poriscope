@@ -26,15 +26,12 @@ Step 1: Loading Your Data
 
 .. note:: Don't have a file to try this with?
 
-   The dataset used in the YouTube tutorial series is archived on the Federated
-   Research Data Repository (FRDR), and its ``.log`` files work with
-   ``ChimeraReader20240501``:
-
-   `DOI: 10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
+   The ``.log`` files of the tutorial dataset (:ref:`tutorial_dataset`) work with
+   ``ChimeraReader20240501``.
 
 3. A plugin settings dialog will prompt you to:
 
-   - Enter a **name** for the reader instance (e.g., ``TCossaLabABFReader_1``).
+   - Enter a **name** for the reader instance; it is prefilled (e.g., ``TCossaLabABFReader_0``).
    - Select the **input file** using the **Select Input File** button.
 
 4. After loading the file, **select a channel** from the **Channel** dropdown menu.
@@ -66,23 +63,17 @@ Step 2: Applying a Filter
 
 **For ``BesselFilter``:**
 
-- ``Name``: Identifier for the filter instance (e.g., ``BesselFilter_1``).
+- ``Name``: Identifier for the filter instance (prefilled, e.g. ``BesselFilter_0``).
 - ``Cutoff`` (Hz): Frequency above which signals are attenuated.
 - ``Samplerate`` (Hz): Sampling rate of the signal.
 - ``Poles``: Number of poles in the filter; higher values give a steeper roll-off.
 
 **For ``WaveletFilter``:**
 
-- ``Name``: Identifier for the filter instance (e.g., ``WaveletFilter_1``).
+- ``Name``: Identifier for the filter instance (prefilled, e.g. ``WaveletFilter_0``).
 - ``Wavelet``: Wavelet basis, ``bior1.3`` or ``bior1.5`` (the default).
 
-.. note::
-
-   Filters help improve event detection by removing baseline drift or noise. Choose the one that best suits your data characteristics.
-
 4. After configuration, confirm by clicking **OK**.
-
-5. *(Optional)* Adjust the **Time Range** using the **⏱ Timer button** to limit the region of interest.
 
 
 Step 3: Finding Events
@@ -94,40 +85,35 @@ Step 3: Finding Events
 
    - ``ClassicBlockageFinder`` — detects events based on a current threshold.
    - ``ThresholdBlockageFinder`` — the same, with the threshold given in baseline standard deviations.
-   - ``BoundedBlockageFinder`` — detects events constrained within user-defined amplitude and baseline bounds.
+   - ``BoundedBlockageFinder`` — the same as ``ClassicBlockageFinder``, with the baseline fit restricted to a window you set.
 
-.. note::
-
-   Choose the event finder based on the expected characteristics of your signal. All three share the parameters below but differ in flexibility.
-
-3. A settings window will appear with the following configurable parameters:
+3. A settings window will appear. All three finders share these parameters:
 
 **Shared Parameters:**
 
 - ``Threshold``: How far below the fitted baseline the signal must fall for an event to be detected - in pA for ``ClassicBlockageFinder`` and ``BoundedBlockageFinder``, in σ for ``ThresholdBlockageFinder``. The threshold decides *whether* there is an event; where it begins and ends is judged against the baseline itself (see the note below).
 - ``Min Duration`` (µs): Minimum allowed duration for an event.
 - ``Max Duration`` (µs): Maximum allowed duration for an event.
-- ``Min Separation`` (µs): Minimum time between consecutive events to treat them as distinct.
+- ``Min Separation`` (µs): An event that starts closer than this to the end of the previous one is rejected, not merged.
 
 .. note::
 
-   An event's recorded start is the point where the signal leaves the baseline - the first sample of a run of at least three samples more than three baseline standard deviations from the fitted mean before the threshold crossing - and its recorded end is where the signal rejoins the baseline, the first run of three samples back within that band after the return crossing. A single noisy sample is never taken for an edge, so on heavily filtered data the boundaries sit at the tops of the edges rather than wandering into the baseline. The padding stored around each event is baseline from these points outward.
+   The threshold decides *whether* there is an event. Its recorded start and end are where
+   the signal leaves and rejoins the baseline band (three samples in a row within three
+   baseline standard deviations), not the threshold crossings, and the padding stored
+   around each event is baseline from those points outward.
 
 **BoundedBlockageFinder-only:**
 
 - ``Min Baseline`` / ``Max Baseline`` (pA), required: The window the baseline fit is restricted to; a fitted baseline outside it is refused.
 
-.. note::
+4. *(Optional)* To limit detection to part of the recording, **click** the **⏱** button beside
+   **Find Events**. It sets the time ranges for the selected event finder, one field per
+   channel, as comma-separated start-end ranges in seconds (e.g. ``0.0-2.5, 3.0-6.0``).
+   ``0-0`` means the whole signal, and an end of ``0`` or no end at all means "to the end",
+   so ``9-0`` and ``9-`` both run from 9 seconds to the end.
 
-   For `ClassicBlockageFinder`, only a fixed threshold is required. For `BoundedBlockageFinder`, both the threshold and the baseline limits are needed.
-
-4. **Click** the **Find Events** button to run the detection process. With **No Filter** selected you are asked to confirm first, since finding events on unfiltered data is rarely intended.
-
-5. *(Optional)* Adjust the **Time Range** using the **⏱ Timer button** to limit the detection to specific intervals.
-
-.. note::
-
-   A range like ``0-0`` means “start to end” of the loaded signal. You can also specify ranges such as ``0-4``, ``6-7``, or open-ended intervals like ``9-0`` (9 seconds to the end). An omitted end has the same meaning as an end of ``0``, so ``3.0-`` and ``3.0-0`` both run from 3 seconds to the end of the signal.
+5. **Click** the **Find Events** button to run the detection process. With **No Filter** selected you are asked to confirm first, since finding events on unfiltered data is rarely intended.
 
 .. note::
 
@@ -149,15 +135,11 @@ Step 4: Writing Events
 
 2. A configuration dialog will appear. If you're using ``SQLiteEventWriter``, you'll be prompted to fill in the following fields:
 
-   - ``Output File``: Path where the SQLite `.db` file will be saved.
+   - ``Output File``: Path where the SQLite database will be saved (``.sqlite3``, ``.db`` or ``.sqlite``).
    - ``Experiment Name``: A short label to identify this experiment in the database.
    - ``Voltage`` (mV): The applied transmembrane potential during the experiment.
    - ``Membrane Thickness`` (nm): Thickness of the nanopore membrane.
    - ``Conductivity`` (S/m): Conductivity of the solution during the experiment.
-
-.. note::
-
-   The results generated during the eventfinding process are stored in a **SQLite database**, allowing for efficient access, export, and integration with downstream tools.
 
 3. After confirming the settings, **click** the **Commit Events** button to write the selected events to the database.
    If the database already holds events for a channel, you are asked before they are replaced, and the question

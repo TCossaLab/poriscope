@@ -1,3 +1,0 @@
-make build/ folder
-make source/_static/ folder
-mingw32-make.exe html

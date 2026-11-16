@@ -23,9 +23,10 @@ A clear and concise description of what you expected to happen.
 **Screenshots**
 If applicable, add screenshots to help explain your problem.
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Version [e.g. 22]
+**Environment (please complete the following information):**
+ - OS: [e.g. Windows 11, Ubuntu 24.04, macOS 15]
+ - Poriscope version: [shown in the window title, or run `pip show poriscope`]
+ - Python version: [run `python --version`]
 
 
 **Additional context**

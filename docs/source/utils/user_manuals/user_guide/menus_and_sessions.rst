@@ -84,6 +84,7 @@ The *Data* menu provides quick access to the same loaders as the "+" buttons in 
 - Load Timeseries
 - Load Events
 - Load Event Database
+- Load Conditioning Experiment
 - Load Writer
 - Load Database Writer
 

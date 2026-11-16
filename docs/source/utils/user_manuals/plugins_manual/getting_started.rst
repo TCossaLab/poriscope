@@ -3,39 +3,15 @@
 Getting Started
 ===============
 
-Welcome to Poriscope! This section helps you get up and running with the application.
-
-Alright, ready to dive in? Here’s everything you need to get Poriscope installed and running smoothly.
+This page sets up a development checkout. To install Poriscope only to use it, see
+:ref:`user_installation`.
 
 Prerequisites
 -------------
 
-Before installing Poriscope, make sure you have the following installed:
+1. **Python >=3.12**, set up as described in :ref:`user_installation`.
 
-1. **Git**
-
-   Check by running::
-
-      git --version
-
-   If Git is not installed, download it here: https://git-scm.com/downloads
-
-2. **Python >=3.12**
-
-   Required version. Check by running::
-
-      python --version
-
-   If not installed, download it here: https://www.python.org/downloads/
-
-   .. important::
-
-      During installation, **make sure to check** the box that says **"Add Python to PATH"**.
-
-   .. note::
-
-      **Conda is not supported.** You can make it work, but you're on your own.  
-      Poriscope is built for standard ``pip`` environments.
+2. **Git** (``git --version`` to check): https://git-scm.com/downloads
 
 3. **MSYS2 (Optional)**
 
@@ -69,46 +45,5 @@ and ``[docs]`` adds Sphinx, which the post-merge hook uses to rebuild the docume
 
       pip uninstall poriscope
 
-Installing the Stable Version
------------------------------
-
-To install the **latest stable version** (recommended for general users — **does not track future updates unless reinstalled manually**) see :ref:`stable_release`.
-
-Launching Poriscope
--------------------
-
-Once everything is installed, run the application using:
-
-From **any terminal**::
-
-   poriscope
-
-Or through Python directly::
-
-   python -m poriscope.main_app
-
-If the command is not found, make sure your Python environment's ``Scripts/``
-(Windows) or ``bin/`` (Linux/macOS) folder is added to your system ``PATH``.
-
-.. warning::
-
-   **Installation vs PATH**
-
-   - If you **don’t install** Poriscope (skip ``python -m pip install -e ".[dev,docs]"`` or the GitHub install),
-     it won’t be importable and you can’t launch it.
-   - If Python is **not on PATH**, only the convenience command ``poriscope`` will fail.
-     You can still run ``python -m poriscope.main_app`` and import Poriscope in your scripts,
-     as long as it’s installed in the **same Python interpreter** you use.
-
-.. tip::
-
-   To keep things in sync, if you have multiple python versions, make sure you always use the same interpreter for install and run.
-
-Documentation
--------------
-
-The official documentation is available at:
-
-   https://tcossalab.github.io/poriscope/
-
-You're all set — time to explore Poriscope!
+Launch it with ``poriscope``, or ``python -m poriscope.main_app`` from the interpreter
+you installed into; see :ref:`user_installation` if the command is not found.

@@ -3,41 +3,14 @@
 Adding a Walkthrough to Your Custom MVC Plugin
 ================================================
 
-This guide explains how to integrate a step-by-step walkthrough into your custom MVC plugin for Poriscope. The walkthrough system helps users understand how to interact with your plugin's interface.
+A walkthrough is a sequence of popups that highlight your tab's widgets one at a time when
+the user chooses **Help → Tutorial**. An analysis-tab View inherits ``WalkthroughMixin``
+through ``MetaView``, which also initialises it, so a View only implements two methods.
 
-Overview
---------
+1. **Implement get_current_view()**
 
-To enable walkthrough support in your plugin, you'll:
-
-1. For an analysis-tab `View`, nothing to inherit: `MetaView` already inherits
-   `WalkthroughMixin` and initialises it. A `Dialog` or other widget inherits it
-   directly.
-2. Implement two key methods:
-
-   * `get_current_view()`
-   * `get_walkthrough_steps()`
-
-Step-by-Step Instructions
---------------------------
-
-1. **Inherit from WalkthroughMixin - dialogs only**
-
-   An analysis-tab View already has it through `MetaView`, which also calls
-   `_init_walkthrough()` in its constructor, so skip to step 2. A dialog or other
-   widget inherits it and initialises it itself:
-
-.. code-block:: python
-
-    class MyDialog(QDialog, WalkthroughMixin):
-        def __init__(self, ...):
-            super().__init__(...)
-            self._init_walkthrough()
-            self.init_ui()
-
-2. **Implement get_current_view()**
-
-   This should return a unique identifier string for your view. Make sure it matches the convention needed for the file to get detected my the app (MyCustomView)
+   Return your View's class name (``MyCustomView``), the name the application uses for
+   the page.
 
 .. code-block:: python
 
@@ -45,7 +18,7 @@ Step-by-Step Instructions
         return "MyCustomView"
 
 
-3. **Implement get_walkthrough_steps()**
+2. **Implement get_walkthrough_steps()**
 
    This method returns a list of tuples, each describing a walkthrough step:
 
@@ -61,12 +34,11 @@ Each tuple contains:
 
    * A label (str)
    * A description (str)
-   * The view name (str, must match `get_current_view()`)
+   * The view name (str, must match ``get_current_view()``)
    * A lambda returning a list of widgets to highlight
 
-4. **Trigger the Walkthrough**
-
-Once you have followed the steps outlined above, Poriscope will automatically detect your walkthough and run it whenever you are in that view and click Help->Tutorial.
+That is all: Poriscope runs your walkthrough whenever your tab is showing and the user
+chooses **Help → Tutorial**.
 
 .. note::
 
@@ -79,23 +51,16 @@ Once you have followed the steps outlined above, Poriscope will automatically de
    walkthrough dialog. Esc does not dismiss it.
 
 
-Best Practices
---------------------------
+Keep steps short, and use ``QTimer.singleShot(0, ...)`` if a dialog needs to be shown
+before its step.
 
-* Keep steps short and descriptive.
-* Use `QTimer.singleShot(0, ...)` if needed to delay `dialog.show()` for smoother transitions.
+Adding a walkthrough to a dialog
+--------------------------------
 
-
-Adding Walkthrough to Dialogs (Optional)
------------------------------------------
-
-Although walkthroughs were designed with views primarily in mind, you can extend walkthrough support to dialogs like custom configuration windows.
-
-.. note::
-
-   This pattern is **not recommended** unless the dialog plays a critical role in your plugin's setup workflow. Prefer walkthroughs inside main views for consistency.
-
-To enable walkthrough support in a dialog:
+Do this only when the dialog plays a critical role in your tab's workflow; prefer
+walkthrough steps on the View. A dialog is not a ``MetaView``, so it inherits
+``WalkthroughMixin`` itself and calls ``_init_walkthrough()`` in its constructor, as
+Poriscope's own clustering settings dialog does:
 
 .. code-block:: python
 
@@ -114,7 +79,8 @@ To enable walkthrough support in a dialog:
                ...
            ]
 
-Then, from your view (e.g., `ClusteringView`), you can trigger the walkthrough once the dialog is shown:
+Then, from your View (``ClusteringView`` here), launch it when the dialog opens during a
+walkthrough:
 
 .. code-block:: python
 

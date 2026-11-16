@@ -1,15 +1,17 @@
 .. _settings:
 
-Settings Tab
-============
+Settings
+========
 
-The **Settings Tab** allows users to customize their experience in Poriscope. It provides access to general preferences, advanced configurations, and information about the application version and contributors.
+The **Settings** window holds general preferences, advanced tools, and the application
+version and contributors.
 
 .. image:: /_static/images/settings_icon.png
    :alt: Settings Icon Location
    :align: center
 
-To open the settings, click the **gear icon** located on the bottom-left corner of the side menu.
+To open it, click the **gear icon** at the bottom-left of the side menu, or choose
+**File → Settings**.
 
 General Tab
 -----------
@@ -24,7 +26,7 @@ Under the **General** section, you can configure the following:
   Use the dropdown to select your preferred interface language. (Currently only English is available.)
 
 - **Set Data Server**:  
-  Click the “Change Data Server Location” button to specify where Poriscope should look for your data files.
+  Click the **Change Data Server Location** button to choose the folder that file dialogs open in, which is also the default for a plugin's ``Folder`` setting. It starts as your home folder.
 
 - **Set User Plugin Folder**:  
   Click the **Change User Plugin Location** button to specify a custom directory where Poriscope should look for plugins at runtime.
@@ -55,16 +57,10 @@ Advanced Settings Tab
 The **Advanced Settings** section provides power users and developers with the following tools:
 
 - **Logging Level**:
-  Adjust the verbosity of internal logging. Use the dropdown to select a level such as `None`, `Info`, `Debug`, etc.
-  This controls what is written to the console and to the log file. It does **not** control
-  which problems pop up a dialog: error dialogs are shown for errors regardless of the level
-  you choose here, and never for warnings, so turning the level up to `Debug` will not start
-  interrupting you with dialogs about routine states. Messages meant for you, rather than for
-  the log, appear in the message panel on the right-hand side of the main window.
-  This level applies to the whole application; there is deliberately no way to turn up
-  the logging for a single plugin from here. If you need that, run the plugin from a
-  script, where each module's logger can be raised on its own - see
-  :ref:`scripting`.
+  How much is written to the console and the log file: ``None``, ``Debug``, ``Info``,
+  ``Warning`` (the default), ``Error`` or ``Critical``, for the whole application. It does
+  not change which problems open a dialog - errors always do, warnings never do. To raise
+  the logging of a single plugin, run it from a script; see :ref:`scripting`.
 
 - **Clear Cache**:  
   Click this red button to empty the application log file. Past diagnostic output cannot be recovered.
@@ -88,9 +84,3 @@ The **About** section contains important information about Poriscope:
 
   - Kyle Briggs  
   - Alejandra Carolina González González
-
-----
-
-.. tip::
-
-   You can access the Settings at any time from the sidebar. Adjusting logging or clearing cache can help resolve runtime issues during plugin development.

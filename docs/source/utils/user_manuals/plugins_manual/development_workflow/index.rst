@@ -11,6 +11,7 @@ which parts of the codebase. If you're preparing to submit a pull request, go st
    
    developer_setup
    quality_control
+   conformance_recipes
    post_merge_automation
    code_ownership
     

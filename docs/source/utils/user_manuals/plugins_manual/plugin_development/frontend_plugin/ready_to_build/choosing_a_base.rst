@@ -13,8 +13,8 @@ and inherit what it inherits.** The rest of this page is how to tell.
 Two shapes of tab
 -----------------
 
-The five tabs Poriscope ships fall into two families, and each family has its own set of
-bases holding the code its members share.
+Four of the six tabs Poriscope ships fall into two families, and each family has its own
+set of bases holding the code its members share.
 
 **Subset tabs** work from a database of *results*. The user picks an experiment and some
 channels, builds a named subset filter over the columns in that database, and plots or
@@ -24,9 +24,10 @@ exports the rows that come back. Metadata and Protein are these.
 and a channel, and the tab finds or fits events in the time series itself. Raw Data and
 Event Analysis are these.
 
-Clustering is neither. It reads a database like a subset tab but has no subset filtering,
-no experiment selection and no event navigation, so it inherits the common bases
-directly — which is a perfectly normal thing for a tab to do.
+Clustering and Conditioning are neither, so they inherit the common bases directly -
+which is a perfectly normal thing for a tab to do. Clustering reads a database like a
+subset tab but has no subset filtering, no experiment selection and no event navigation;
+Conditioning reads a conditioning experiment through its own loader family.
 
 The View
 --------
@@ -46,7 +47,7 @@ The View
    * - ``MetaView``
      - is neither of the other two
      - ``_init``, ``_reset_actions``, ``handle_parameter_change``, ``notify_plugin_state_changed``, ``update_available_plugins``
-     - ClusteringView
+     - ClusteringView, ConditioningView
    * - ``MetaSubsetTabView``
      - queries a results database with user-defined subset filters
      - the five above, ``_replot_after_shift``, plus the ``_subset_controls`` property
@@ -64,27 +65,13 @@ filtering is a contract of its own, but it is one this base implements entirely 
 manages the filters, the dialogs that edit them and the combobox that shows them,
 reaching your panel through that property.
 
-What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query setters
-(``set_query``, ``set_event_query``), subset-filter management (``_save_filter``,
-``_delete_filter_by_name``, ``_show_filter_info_dialog``,
-``get_selected_filters``, ``_show_add_filter_dialog``,
-``show_edit_filter_dialog``, ``_load_filter``, ``set_loaded_filters``,
-``_delete_filter``, ``replace_filter_item``, ``update_filter_name``,
-``on_raw_filter_validated``, ``restore_subset_filters``, ``commit_filter``,
-``get_subset_filters``), the
-filtered-event cache
-(``_rebuild_event_id_cache``, ``set_event_id_rows``), event navigation through it
-(``_shift_range_and_update_plot``, ``_snap_to_filtered``), an event plot's click
-(``_resolve_events``, ``_refuse_scope``), write-back's filter selection
-(``_write_back_filters``), scatterplot drawing
-(``set_scatterplot``), the experiment-selection tree (``show_selection_tree``,
-``request_experiment_structure``) and ``get_save_filename``.
-
-What ``MetaEventTabView`` gives you: the navigation arrows' handler
-(``_shift_range_and_update_plot``, ``_get_event_index_text``) and the event-index range
-helpers it uses (``_parse_event_indices``, ``_expand_event_indices``, ``_shift_ranges``,
-``_merge_ranges``, ``_format_ranges``), plus ``validate_single_channel``,
-``_extract_commit_event_parameters`` and ``confirm_unfiltered_run``, the modal that asks before a run with no filter selected.
+``MetaSubsetTabView`` adds, on top of ``MetaView``, the query setters, subset-filter
+management and its dialogs, the filtered-event cache and event navigation through it, an
+event plot's click, scatterplot drawing and the experiment-selection tree.
+``MetaEventTabView`` adds the navigation arrows and their event-index range helpers,
+single-channel validation, and the modal that asks before a run with no filter selected.
+The reference pages :ref:`MetaSubsetTabView` and :ref:`MetaEventTabView` list every
+method.
 
 The Controller
 --------------
@@ -99,15 +86,17 @@ The same split, and you normally match it to whichever View you chose.
      - What it adds
      - Shipped tabs
    * - ``MetaController``
-     - ``call()`` for data plugins, the typed plugin signals, session state, worker management
-     - ClusteringController
+     - the typed plugin signals, the action history and replay, session state, worker
+       management (a data plugin is reached through the Model's ``call()``)
+     - ClusteringController, ConditioningController
    * - ``MetaSubsetTabController``
      - the experiment and channel scope, units, filter validation and
        query results, the event-plot chain, the filter file's load and save, and session
        state
      - MetadataController, ProteinController
    * - ``MetaEventTabController``
-     - ``update_available_plugins`` and ``_resolve_callable_filter``
+     - ``update_available_plugins``, ``_resolve_callable_filter`` and
+       ``_verify_filter_samplerate``
      - RawDataController, EventAnalysisController
 
 ``MetaController`` and ``MetaEventTabController`` ask for ``_init`` and
@@ -131,7 +120,7 @@ data access belong — see :doc:`metamodel_base`.
    * - ``MetaModel``
      - the plugin call, worker management, the logscale filter, the plot time base,
        plot-data caching
-     - ClusteringModel, RawDataModel, EventAnalysisModel
+     - ClusteringModel, ConditioningModel, RawDataModel, EventAnalysisModel
    * - ``MetaSubsetTabModel``
      - the events-table lookups behind an event plot, and the subset filter file's JSON
      - MetadataModel, ProteinModel
@@ -173,27 +162,11 @@ are declared on the base as annotations — read the base's class docstring for 
 Building your control area
 --------------------------
 
-You do not write ``_set_control_area`` any more. ``MetaView`` implements it: it calls
-``_build_controls()``, connects the four signals every controls panel carries, and
-places the widget. So the usual thing to write is three lines:
-
-.. code-block:: python
-
-   def _build_controls(self) -> MyTabControls:
-       self.mytabcontrols = MyTabControls()
-       return self.mytabcontrols
-
-The hook returns the widget rather than just assigning it, so that your tab can keep it
-under whatever name suits — the shipped tabs use ``self.metadatacontrols``,
-``self.rawdatacontrols`` and so on.
-
-If your panel carries signals beyond the four shared ones, override
-``_connect_control_signals``. ``MetaSubsetTabView`` does exactly that, for the two
-filter signals only ``MetaSubsetTabControls`` declares.
-
-If your tab lays out its own control area and uses no ``MetaControls`` panel at all,
-override ``_set_control_area`` instead and ignore ``_build_controls``. That is what the
-SimpleCalc example does.
+You override ``_build_controls`` to return your panel, and ``MetaView`` places it and
+connects the four signals every controls panel carries; :doc:`metaview_base` shows the
+three lines. If your panel carries signals beyond the four shared ones, override
+``_connect_control_signals``, as ``MetaSubsetTabView`` does for the two filter signals
+only ``MetaSubsetTabControls`` declares.
 
 If you only want part of one
 ----------------------------
