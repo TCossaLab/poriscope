@@ -32,8 +32,8 @@ repos:
       # across all of poriscope/, which is why it needs no per-file-ignores.
       #
       # Note --select REPLACES the configured selection for this invocation, so I,
-      # B006 and B020 are not re-run here; the strict hook covers them. S608 and
-      # S101/S110/S112 are deliberately absent - both are settled in DECISIONS.md.
+      # B006, B020 and S110 are not re-run here; the strict hook covers them. S608
+      # and S101/S112 are deliberately absent - both are settled in DECISIONS.md.
       - id: ruff
         alias: ruff-plugin-security
         name: ruff (plugin security rules)
@@ -69,7 +69,7 @@ repos:
 
       # Module-level code in a plugin runs at discovery, before any compliance
       # check reflects on the class, so the rule is that module-level assignment
-      # is fine but module-level invocation is not. Scoped to the eight
+      # is fine but module-level invocation is not. Scoped to the nine
       # data-plugin families - what an outside contribution actually adds.
       # analysistabs/ is excluded because its six module-level statements are
       # benign (warnings filters, an os.environ guard, __main__ demo blocks) and
@@ -80,7 +80,7 @@ repos:
         entry: python scripts/check_plugin_module_level.py
         language: system
         types: [python]
-        files: ^poriscope/plugins/(datareaders|datawriters|db_loaders|dbwriters|eventfinders|eventfitters|eventloaders|filters)/
+        files: ^poriscope/plugins/(conditioningloaders|datareaders|datawriters|db_loaders|dbwriters|eventfinders|eventfitters|eventloaders|filters)/
 
       # Plugin settings-schema self-consistency (runs during default commit stage).
       # Scoped to poriscope/plugins/** rather than all of poriscope/: this only needs

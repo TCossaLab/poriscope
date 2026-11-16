@@ -86,8 +86,10 @@ src = ["poriscope", "tests"]
 # B006/B020 = the two flake8-bugbear rules whose backlog is zero, so they are
 #   enforced rather than baselined: mutable data structures as argument
 #   defaults, and a loop control variable shadowing the iterable it iterates.
-#   The rest of bugbear is not adopted yet - see future_fixes.md.
-extend-select = ["I", "B006", "B020"]
+#   The rest of bugbear is not adopted - see DECISIONS.md, 2026-08-25.
+# S110 = try-except-pass, enforced once its last site was gone (zero findings
+#   across every tracked file with ruff 0.12.11, 2026-11-16).
+extend-select = ["I", "B006", "B020", "S110"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["poriscope", "tests"]
