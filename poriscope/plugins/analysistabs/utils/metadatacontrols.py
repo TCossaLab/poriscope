@@ -899,7 +899,7 @@ class MetadataControls(MetaSubsetTabControls):
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
         is_export_subset_valid = True
-        # When "Sizes" is checked, bins are explicit decimal bin edges (parsed
+        # When "Sizes" is checked, bins are decimal bin widths (parsed
         # with float() in collect_parameters); otherwise they are whole bin
         # counts (parsed with int()). Validate against whichever format is
         # actually expected instead of always requiring digits.

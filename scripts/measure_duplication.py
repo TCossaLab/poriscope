@@ -134,8 +134,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: brought base-to-base copies already present: abstract declarations repeated with the
 #: same docstring in sibling bases (``validate_inputs``, several ``_init``), a floor like
 #: ``MetaModel._init`` above, and two loader bases' shared ``get_empty_settings`` and
-#: ``force_serial_channel_operations``, queued in ``future_fixes.md``. ``BaseDataPlugin``
-#: is left out: it underlies every data family, so it would sit in all of them.
+#: ``force_serial_channel_operations``, an accepted floor (``DECISIONS.md``).
+#: ``BaseDataPlugin`` is left out: it underlies every data family, so it would sit in all of them.
 #:
 #: ``ThresholdBlockageFinder`` is in the family although it shares nothing today,
 #: because a family is a set of files that *may* copy from each other, not a set that

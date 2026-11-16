@@ -438,7 +438,7 @@ class MainModel(QObject):
         """
         Name the plugin family a class belongs to.
 
-        First match wins. The eleven families are disjoint in practice, so the
+        First match wins. The families are disjoint in practice, so the
         order of `ALLOWED_BASE_CLASSES` does not decide anything today.
 
         :param plugin_class: The class to classify.

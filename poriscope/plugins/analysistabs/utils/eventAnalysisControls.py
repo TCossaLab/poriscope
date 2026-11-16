@@ -261,7 +261,7 @@ class EventAnalysisControls(MetaEventTabControls):
         self.writers_delete_button = self.create_delete_button(
             self.groupBox,
             self.writers_comboBox,
-            "Add eventwriter",
+            "Delete eventwriter",
             "MetaDatabaseWriter",
         )
 
