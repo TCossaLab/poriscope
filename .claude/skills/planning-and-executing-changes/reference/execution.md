@@ -23,6 +23,7 @@ what does this edit cost that the diff does not show?*
 - E30 A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 - E31 A new dependency is checked against the interpreter floor and the existing pins before it goes in
 - E32 An edit script applies all of its edits or none
+- E33 When a set gains a member, grep for the old count and for a sibling's name
 
 ## E3 · Measure a "no-op" before promoting it, and read the comment as a claim
 
@@ -42,9 +43,8 @@ not, look for the project's existing answer before inventing one.
 *Cases:* `@abstractmethod` is inert on a class whose metaclass is not `ABCMeta` (a Qt widget's is the
 binding's own), so a subclass that forgets the method is never told; the project already had a combined
 metaclass for this. A `try/except ... else:` around a signal emit could never fire, because a slot's
-exception does not propagate to the emitter. A nested function hid a docstring linter's violation in
-its parent; hoisting the nested def made the linter fail on a method the commit never touched -
-bisect, do not revert.
+exception does not propagate to the emitter. (A nested function hiding a linter's violation is
+V14's case.)
 
 ## E5 · Showing a mechanism has an effect is not showing the effect is wanted
 
@@ -145,17 +145,14 @@ took that to 0 of 600.
 
 ## E29 · One value, many readers: map the pipeline from input to outcome at every entry point
 
-When one piece of state, or one rule about it, is used in several places - a selection, a scope, a
-setting, a guard - consistency means every entry point runs the same pipeline: the actual order of
-steps from input to outcome. Inventory every place that writes it and every place that reads it
-(search for each name it travels under), then write down the pipeline each entry point really
-follows, **all the way** from the widget to the query or the file, and record what each step does
-with an empty value, a missing value and more than one entry. Compare the pipelines step by step. Two
-failures follow from skipping this. A guard added to one entry point is missing from another that
-reaches the same action, so they disagree. And a conclusion drawn from one end of a path - the
-handler, or the bottom layer - describes a path the value never takes, because something in between
-rewrites it. When the readers disagree, prefer a fix that makes the troublesome value unreachable
-(refuse to store it) over patching each reader, and test that directly.
+When one piece of state or one rule about it - a selection, a scope, a setting, a guard - is used in
+several places, inventory every writer and reader (search each name it travels under), then write the
+pipeline each entry point really follows **all the way** from the widget to the query or file, with
+what each step does for an empty value, a missing value and more than one entry. Compare them step by
+step. Skipping this leaves a guard on one entry point missing from another that reaches the same
+action, and a conclusion drawn from one end of a path describing a path the value never takes. When
+readers disagree, prefer making the troublesome value unreachable (refuse to store it) over patching
+each reader, and test that directly.
 
 *Case:* a plot button refused a scope with more than one experiment, channel or filter; the arrows that
 re-plot the same events read only the first of each, moved the Event ID field and then had every plot
@@ -173,15 +170,11 @@ bottom, including the lines between the hits. If you cannot yet, say the claim i
 option's reason needs this most: a reason you want to be true is the one you check least, and a wrong one
 outlives the conversation in the decision log.
 
-*Case:* an event finder left a channel unfinished when a run found no events, and the options were to leave
-that flag alone or to mark such a channel finished. Grep showed the writer's event-count read on one line
-and its finished check seven lines later. The rejected option was written up as "the writer could commit a
-channel with no events". The zero-events check sits between those two lines and runs first, so the writer
-skips an empty channel either way; the decision-log entry, and the answer given in the conversation, had
-to be corrected when the user asked whether an empty channel could be committed. The same fault was
-already recorded three times in that project's corrections log (a behaviour stated from partial reading),
-and recording it did not stop a repeat: the log is read after a mistake, and nothing required reading the
-function before the claim.
+*Case:* a rejected option was written up as "the writer could commit a channel with no events", from two
+grep hits seven lines apart. The zero-events check between them runs first, so it cannot; the
+decision-log entry and the answer in the conversation had to be corrected. The same fault was already in
+that project's corrections log three times: the log is read after a mistake, and nothing required reading
+the function before the claim.
 
 ## E31 · A new dependency is checked against the interpreter floor and the existing pins before it goes in
 
@@ -194,14 +187,11 @@ inherits it as a requirement. The same check applies to a pin placed in a shared
 docs or tooling package pinned beside the runtime ones raises the floor of everything installed from
 that file.
 
-*Case:* 2026-11-04, a desktop application whose packaging floor read `>=3.12.10`. The figure came from a
-README note, "use 3.12.10 to avoid dependency compatibility issues", that named no dependency; a later
-commit raised `requires-python` to match it, and when the CI runner image moved to one with no 3.12.10
-build, every Linux job was pinned to the older image to keep installing that patch. Measured that day:
-the code needed 3.12.0 (one typing feature in 40 files), every runtime dependency allowed 3.10, and the
-only package needing 3.11 was the docs builder, pinned in the shared requirements file so that the
-whole file refused to install on 3.10 although the application ran there. Three months of an exact
-patch pin, and a CI image pin, rested on a dependency nobody had looked up.
+*Case:* 2026-11-04, a `requires-python >=3.12.10` floor came from a README note that named no
+dependency, and every Linux CI job was pinned to an older runner image to keep that patch. Measured: the
+code needed 3.12.0 (one typing feature in 40 files), every runtime dependency allowed 3.10, and only the
+docs builder needed 3.11 - pinned in the shared requirements file, so the whole file refused 3.10
+although the application ran there.
 
 ## E32 · An edit script applies all of its edits or none
 
@@ -215,3 +205,19 @@ re-wraps the very lines they match (see also E23).
 asserted each file's anchor in turn half-applied twice, and its reruns failed on the files already
 changed; inline scripts lost backslashes; and anchors copied before the formatter ran no longer matched
 the lines it had re-wrapped.
+
+## E33 · When a set gains a member, grep for the old count and for a sibling's name
+
+Adding a plugin family, a tab, a reader or a CI leg leaves every hand-written enumeration of that set one
+short: a config regex listing the folders, a docstring's "the eleven families", a user guide's menu list,
+a table of shipped members. The registry the code reads is updated, so every test passes. Before calling
+the addition done, grep the whole repository (config, docs, records, skills, comments) for the old count
+in words and digits and for the name of an existing sibling, and update or delete each hit. Where an
+enumeration guards something (a lint scope, a CI matrix), derive it from the registry or test it against
+the registry.
+
+*Case:* 2026-11-16, a ninth data-plugin family and a sixth analysis tab had landed the week before. A
+pre-commit hook's `files:` regex still listed eight plugin folders, so the new family was never linted on
+commit, and its comment said eight. Elsewhere: a docstring said eleven families where there were twelve,
+three docs pages said five tabs, the user guide's Data menu omitted the new entry, and two skills listed
+the old members. Grepping for the name of a sibling folder finds the regex in one command.

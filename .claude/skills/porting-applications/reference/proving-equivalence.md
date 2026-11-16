@@ -46,7 +46,5 @@ lesson V19). Time both while you are there, more than once: a first run that dis
 second is usually the machine, not the code (general lesson V13).
 
 *Case:* 71 cycles x 16 channels x 2 biases = 2,272 values agreed, the worst relative difference 3.0e-14,
-the cycle lists identical, and the short recording noted. The first timing put the port at 397 s against
-the original's 18.5 s, 21 times slower; one channel profiled at 1.8 s, and a repeat of the whole comparison
-gave 15.1 s against 21.7 s. The slow run had started minutes after 71 recordings (900 MB) were renamed
-in a cloud-synced folder.
+the cycle lists identical, and the short recording noted. The first timing put the port 21 times slower
+than the original and a repeat reversed it - a cloud-sync artefact, V13's case.

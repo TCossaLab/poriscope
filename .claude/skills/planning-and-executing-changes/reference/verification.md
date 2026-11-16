@@ -106,12 +106,10 @@ Then pause at commit boundaries that move application code. Rules for the checkl
 
 *Also:* have each checklist item name the code it exercises, so a pass that finds nothing still says what ran.
 
-*Case:* an event finder that found no events left its channel unfinished, and the pass told the user to click
-Plot Events on that channel and expect a "not finished" message. The button is disabled there (it needs a
-reader, a selected channel and a valid event index), so the step could not be performed and the message was
-reachable only in a state the pass never described. An earlier pass in the same series told the user to change
-an axis and overlay a second plot, which resets the figure instead; both were steps written from the call
-path without checking what the interface allows.
+*Case:* a pass told the user to click Plot Events on an unfinished channel and expect a "not finished"
+message; the button is disabled there (it needs a reader, a selected channel and a valid event index).
+An earlier pass said to change an axis and overlay a second plot, which resets the figure instead. Both
+steps were written from the call path without checking what the interface allows.
 
 ## V5 · Assert on the surface the user reads, not the call that writes to it
 

@@ -38,8 +38,8 @@ refactor (September 2026) and are generalised; the rules do not depend on refact
 
 Add a general lesson to the reference file for its activity, in the same shape (rule, why, case), under
 the next free ID in its letter series - IDs are unique across this skill, `refactoring-codebases`,
-`porting-applications` and `auditing-test-suites`, so check every index. Then update this skill's index and the copy of it in
-`refactoring-codebases`' index, by hand; `check_skill.py --siblings` confirms they agree.
+`porting-applications`, `auditing-test-suites` and `building-skills`, so check every index. Then add it
+to this skill's index by hand; the sibling skills point to this index rather than copying it.
 If a lesson must hold in every session, add it to the standing rules' first five and copy it into the
 repository instructions that need it. Keep `SKILL.md` under 500 lines, and the description within the
 1,024 characters a claude.ai upload accepts (972 on 2026-10-24).

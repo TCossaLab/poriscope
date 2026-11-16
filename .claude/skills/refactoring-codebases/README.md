@@ -28,8 +28,8 @@ for moving code while preserving behaviour.
 | Path | What |
 |---|---|
 | `SKILL.md` | The procedure, standing rules, red flags, and a map to everything else |
-| `reference/` | One file per phase, each lesson with the case that produced it; `lesson-index.md` lists all by ID |
-| `templates/` | Plan, commit series, manual-pass map, decision entry, exit review, handoff |
+| `reference/` | One file per phase, each lesson with the case that produced it; `lesson-index.md` lists this skill's lessons and points to the general index |
+| `templates/` | Plan, commit series, exit review (the manual-pass map, decision entry and handoff are in the general skill) |
 | `scripts/` | Stdlib-only Python instruments (run with `--help`) |
 
 ## Provenance
@@ -52,10 +52,5 @@ that. Judge changes to this skill by how the next real refactor goes.
 
 A lesson that applies beyond refactoring goes in `planning-and-executing-changes`, not here. Add a
 refactor-specific lesson to the reference file for its phase, in the same shape (rule, why, case),
-under the next free ID - IDs are unique across both skills. Keep `SKILL.md` under 500 lines.
-
-**The build tools are behind the split (2026-09-24).** `tools/build_lesson_index.py` in the skill
-source folder still expects all seven reference files to hold lessons and would drop the general
-section from `lesson-index.md`; `tools/build_guide.py` and the field manual artifact
-(https://claude.ai/artifact/1jHTUzqZUo5UqA7Vbk1YvR) still describe the pre-split skill. Update them
-to read both skills before regenerating either.
+under the next free ID - IDs are unique across the sibling skills - and add it to
+`reference/lesson-index.md` by hand. Keep `SKILL.md` under 500 lines.

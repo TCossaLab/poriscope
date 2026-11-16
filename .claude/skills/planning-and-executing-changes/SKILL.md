@@ -1,6 +1,6 @@
 ---
 name: planning-and-executing-changes
-description: The default method for planning, executing and verifying any non-trivial software change - a bug fix, feature, review, investigation, migration or release step - from the first design discussion on, even before any plan or code is wanted. Restates a rough request and confirms use cases before planning, re-derives inherited claims, gets approval before logic changes, writes tests that can fail, verifies beyond the suite, and closes findings rather than filing them; over a hundred field-tested lessons on how plans, handoffs, tests, gates and green CI mislead. Use whenever you are about to discuss a design or a rough feature request, write or check a plan, accept a claim from a handoff, subagent, comment or earlier session, fix a reported defect, write or edit tests, interpret a test or gate run, decide that something is done or has landed, or write a handoff - even for a one-site fix. For a refactor, also load refactoring-codebases, which builds on this one.
+description: The default method for planning, executing and verifying any non-trivial software change - a bug fix, feature, review, investigation, migration, release step or pre-release records and docs cleanup - from the first design discussion on, even before any plan or code is wanted. Restates a rough request and confirms use cases before planning, re-derives inherited claims, gets approval before logic changes, writes tests that can fail, verifies beyond the suite, and closes findings rather than filing them; over a hundred field-tested lessons on how plans, handoffs, tests, gates and green CI mislead. Use whenever you are about to discuss a design or a rough feature request, write or check a plan, accept a claim from a handoff, subagent, comment or earlier session, fix a reported defect, write or edit tests, interpret a test or gate run, decide that something is done or has landed, or write a handoff - even for a one-site fix. For a refactor, also load refactoring-codebases, which builds on this one.
 ---
 
 # Planning and executing changes
@@ -128,7 +128,8 @@ A review that only files findings has not finished (X1); a sweep is finished onl
 instrument looked (X2); a flake is fixed, not re-run (X8). Update the changelog, the work queue and the
 decision log, each with only its kind of information (C6); write the handoff (C5,
 `templates/handoff.md`); finish the branch (C3); and report the outcome faithfully, including any
-damage (C12). [finishing.md](reference/finishing.md) has the checklist.
+damage (C12). [finishing.md](reference/finishing.md) has the checklist. Before every release, on the
+release branch, audit the records and docs for drift and bloat (C14).
 
 ## Standing rules
 
@@ -148,16 +149,12 @@ that file does not travel between repositories.
 5. **Code, comments and tests never cite a plan document** that will be deleted; describe the
    mechanism and the reason, naming the old mechanism where that helps findability.
 
-Also standing, with evidence in the reference files:
+Also standing, with steps 3, 4 and 6 above (N6, N7, E25, C3, C6):
 
 - **Logic changes need an approved plan**; read-only investigation does not (C1). Design discussion is
   not "read-only investigation": it decides what the plan will be, so discovery applies (D1-D3).
-- **Tests for a mechanism you add are yours** (N6, N7).
-- **Prefer fixing the contract at the call sites over runtime guessing** and fallback chains (E25).
 - **Replace documentation for a removed mechanism; do not delete it** (C8).
-- **One branch per piece of work**, finished before the next starts (C3).
 - **Separate environment artefacts from measurements** and report which is which (V13).
-- **Put each kind of information in exactly one place**, tersely (C6).
 
 ## Red flags - stop and check
 
@@ -165,8 +162,7 @@ Also standing, with evidence in the reference files:
 |---|---|---|
 | Your summary of a request uses different words from the request | Restate it literally and ask which reading is meant | D1 |
 | You are designing in an area the decision log or work queue may already cover | Grep both for the topic first | D2 |
-| You are about to answer a question the user's request asked | Is it theirs to decide? List it as a ruling | D3 |
-| You are about to hand over a design, use case, plan or mock-up | Audit it: every element cites a source; anything resting on an open ruling is conditional; anything unsourced is removed or raised as a ruling | D3 |
+| You are about to answer a question the user's request asked, or hand over a design, use case, plan or mock-up | Is it theirs to decide? List it as a ruling. Audit the hand-over: every element cites a source; anything on an open ruling is conditional; anything unsourced is removed or raised | D3 |
 | A design document describes the current code | Label each claim today or planned; give `file:line` for today | D4 |
 | A design or use case says "every tab", "all plugins" or "per tab" | Build the per-member table first: what each member has today | P15 |
 | You are writing use cases from your own plan | Write them from the request instead, and check the plan against them | D8 |
@@ -191,13 +187,15 @@ Also standing, with evidence in the reference files:
 | A targeted, per-commit or clean-copy run is green | Read the skipped count against a known-good run; were the generated artefacts built in that copy? | V18 |
 | You are gating or comparing from a second worktree | Run with `python -m` from its root, and print the imported module's path | V19 |
 | A test asserts a property of every current member of a set | Assert the invariant; keep a special case with "at least one" | N16 |
-| A test file is much slower in the full run than alone, or its time is in setup or teardown | A leak from earlier tests: compare full-run and alone, count what is still alive | N17 |
-| You fix a leak or add a cleanup in one directory's fixtures, or add a test harness that builds windows | Is the resource process-wide? Clean up at root scope and guard the count | N17 |
+| A test file is much slower in the full run than alone, or its time is in setup or teardown; or you add a cleanup in one directory's fixtures or a harness that builds windows | A leak from earlier tests: compare full-run and alone, count what is alive; clean up a process-wide resource at root scope and guard the count | N17 |
 | You are writing a manual-pass step or an expected message | Is the control enabled in that state, and did you see the message in a run of the app? Read its enable condition or try it | V4 |
 | You are about to say what a function does, or what a change would cause, from a grep hit or a diff hunk | Open the whole function and read it top to bottom, or say the claim is unverified | E30 |
 | Every gate is green after changing app code | Launch the app | V3 |
 | A probe will construct the real app | Redirect its user-data paths first | V10 |
 | You are about to record something as landed | Check what it does, and the date of what you found | V12 |
+| A release branch has been started | Audit the records and docs on it before the preparation commit | C14 |
+| You added a member to a set (a family, a tab, a CI leg) | Grep the repo for the old count and a sibling's name | E33 |
+| A checker compares a copy with its source | Does it check both directions? Better, delete the copy | I18 |
 | A sweep reports zero remaining | Does the command cover every artefact type the rule names? | X2 |
 | A test failed once and passed on re-run | Find the race | X8 |
 | You are about to execute detail approved only at a coarser level | Review and approve it at its own level | P22 |

@@ -21,12 +21,9 @@ findings flowing upward and re-verifying every claim - are in the general skill'
 
 ## The recursive plan-review-execute loop
 
-Planning is not a phase that ends when the plan is approved. The same three-part loop - **plan**
-at some grain, **review** that plan against the code and get it approved, **execute** - runs at
-four levels of detail, and "execute" at every level except the last means *descend one level and
-run the loop again*, at the moment that piece of work comes up. By the time any code moves, it
-has been reviewed at the plan, the step, the sub-step and the commit-series level, each time at a
-finer resolution and each time asking a question the coarser review could not.
+The general skill's loop runs at four levels in a refactor, so by the time any code moves it has
+been reviewed at the plan, step, sub-step and commit-series level, each asking a question the
+coarser review could not.
 
 | Level | Written when | The review asks | Approved artefact |
 |---|---|---|---|
@@ -36,32 +33,15 @@ finer resolution and each time asking a question the coarser review could not.
 | **Commit series** | Before the branch is cut | Does every commit bank a measurable win and leave the full suite green? Has each commit's metric been simulated (I4)? Is the order forced by dependencies, and which gates are expected *not* to move and why? Which tests will break and how will they be rewritten? What is each commit's app risk and manual check? | `templates/commit-series.md`, approved and recorded in the plan before the first commit |
 | **Commit** (execute) | One at a time | The per-commit loop: change, baselines that must move, full suite, read the summary line, manual pass if app code moved | The commit, and its gate values recorded in the plan's live table |
 
-Each review is a real review: re-measure at HEAD, present it, wait for approval, record what was
-approved - in the repository plan and its shared page - before descending. A step that "looks
-mechanical" gets the same treatment; that is where P5 and P14 bite hardest.
+A step that "looks mechanical" gets the same review; that is where P5 and P14 bite hardest.
 
-**What the recursion bought on the source refactor.** The plan was approved and re-verified at the
-start. Then, at each level, review changed the work before anything moved:
-
-- *Step level.* Step 2 (the safety net) was re-verified when it was planned in detail, just before it began;
-  three claims moved and two changed what the work was: the duplication baseline turned out to be unreproducible,
-  so building the instrument became the job, and the golden targets were the wrong methods. Step 5
-  was re-derived on the day it started and most of its entry did not survive; its sub-steps were
-  agreed only then. Step 7 was mapped into commits against a re-measure because two of its four
-  bullets had moved.
-- *Sub-step level.* One sub-step was taken apart on the morning it was to be worked and stopped
-  being a step at all: its "pure" helper was not pure, and 7 of its 8 callers belonged to a later
-  step, so it was folded into that step. Another sub-step's four figures were all exact and its
-  conclusions wrong, so it was re-scoped from line counts to cyclomatic complexity, with the
-  instrument built first. A third, recorded as "blocked" on a later step, was re-derived and turned
-  out to be the one that should go first.
-- *Commit-series level.* A five-commit promotion series was simulated before the branch was cut -
-  every figure in the table was written in advance and every one matched when the commits landed.
-  A later branch's series narrowed its own scope mid-review when two methods turned out to share
-  state and had to convert together.
-
-None of these was visible from the level above. Each was cheap to find at its own level and would
-have been expensive to find in a diff.
+*Case:* on the source refactor each of these was invisible from the level above. *Step:* re-verifying
+the safety-net step showed the duplication baseline could not be reproduced (building the instrument
+became the job) and the golden targets were the wrong methods; another step's entry mostly failed its
+first-day re-derive. *Sub-step:* one dissolved into a later step (its "pure" helper was not, and 7 of
+8 callers belonged to the later step); one with four exact figures was re-scoped from line counts to
+complexity; one recorded "blocked" turned out to go first. *Commit series:* a five-commit promotion
+was simulated before the branch was cut, and every figure matched on landing.
 
 ## Framing procedure
 

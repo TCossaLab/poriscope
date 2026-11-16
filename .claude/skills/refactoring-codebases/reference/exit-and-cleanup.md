@@ -51,12 +51,11 @@ Cleanup progress:
 - [ ] 11. Record it
 ```
 
-1. **Plan against reality.** Re-check every claim the plan makes about the current tree. Credit
-   nothing from a docstring example or a signature that predates the refactor.
+1. **Plan against reality** - the exit review's first part, above. Credit nothing from a docstring
+   example or a signature that predates the refactor (V12).
 2. **Code against docs.** Audit the hand-written documentation (generated docs regenerate
-   themselves) for mechanisms that moved, pages describing a replaced design, and dead
-   cross-references. Rewrite a page for a removed mechanism to explain its replacement - naming the
-   old mechanism so searches still land there - rather than deleting it.
+   themselves) for moved mechanisms, replaced designs and dead cross-references; rewrite, never
+   delete, a page for a removed mechanism (C8).
 3. **Dead production code.** Methods with no production caller, write-only attributes, unused
    imports. Check each for dynamic dispatch (`getattr`, string-named signals, registries,
    serialized action names) before deleting. A test that exists only to call a dead method goes with
@@ -66,24 +65,19 @@ Cleanup progress:
    is not refactor residue.
 5. **Orphaned assets.** Check every file under the docs' static/asset directories by basename against
    the whole repository.
-6. **Plan citations out of prose.** Grep code, tests, scripts *and* docs of every file type for step
-   numbers, decision letters and method-rule numbers (`scripts/find_plan_citations.py`); rewrite each as
-   the mechanism it stood for. Fan out across agents on disjoint file sets, then prove with an AST diff
-   that only prose changed (the general skill's `scripts/structural_diff.py prose`). Keep a tool's own data keys if the tool
-   is itself plan-bound and is being retired.
-7. **Retire refactor-only tooling.** Sort every gate the refactor built into "guards the refactor"
-   (delete it, its tests, its CI steps, and any CI cost it alone justified) and "guards the result"
-   (keep, and strip its plan citations).
+6. **Plan citations out of prose** (X4). Grep every file type (`scripts/find_plan_citations.py`), fan
+   out across agents on disjoint file sets, then prove only prose changed (the general skill's
+   `scripts/structural_diff.py prose`). Keep a tool's own data keys if the tool is itself plan-bound
+   and is being retired.
+7. **Retire refactor-only tooling** (I17, X6).
 8. **Suite-time check.** Record per-test setup/call/teardown durations; compare against the
    pre-refactor commit in a worktree outside any synced folder; re-run outliers alone on both commits
    before calling anything a regression. Growth that is new coverage stays.
-9. **Exit review.** Before/after with one committed instrument per metric.
-10. **Changelog regroup, last.** Group the release section by theme with breaking changes first; map
-    entries by script and verify every entry appears once and every breaking entry sits under Breaking.
-    Re-run after burn-in adds entries, before the version bump.
+9. **Exit review** - the before/after above, one committed instrument per metric.
+10. **Changelog regroup, last** (X7); re-run it after burn-in adds entries, before the version bump.
 11. **Record it.** Update the plan and its shared page with what each step found; keep the decision log,
-    work queue, contributor docs and agent instructions in sync; delete the plan when the release ships
-    (which is why nothing that ships may cite it).
+    work queue, contributor docs and agent instructions in sync; move the plan's method notes into the
+    skills, then delete the plan when the release ships (X4).
 
 ## Instruments for dead test code
 

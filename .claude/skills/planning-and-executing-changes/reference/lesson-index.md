@@ -2,8 +2,8 @@
 
 Every lesson in this skill, by ID. Grep this file for a symptom or keyword, then open
 the linked file and read the lesson in full - the case matters as much as the rule.
-The refactoring-codebases skill adds refactor-specific lessons under the same ID scheme;
-IDs are unique across the two skills.
+The sibling skills (refactoring-codebases, porting-applications, auditing-test-suites,
+building-skills) add their own lessons under the same ID scheme; IDs are unique across all six.
 
 ## Discovery (D) - [discovery.md](discovery.md)
 
@@ -67,6 +67,7 @@ IDs are unique across the two skills.
 - **I14** Changing a metric's definition kills every figure recorded under the old one
 - **I15** A gate that runs on one path is never asked if your work takes another
 - **I16** A cached artefact needs a staleness check
+- **I18** A check between a copy and its source must run in both directions
 
 ## Execution (E) - [execution.md](execution.md)
 
@@ -88,6 +89,7 @@ IDs are unique across the two skills.
 - **E30** A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 - **E31** A new dependency is checked against the interpreter floor and the existing pins before it goes in
 - **E32** An edit script applies all of its edits or none
+- **E33** When a set gains a member, grep for the old count and for a sibling's name
 
 ## Verification (V) - [verification.md](verification.md)
 
@@ -133,3 +135,6 @@ IDs are unique across the two skills.
 - **C11** Stay out of the repository while someone else is driving it
 - **C12** Report outcomes faithfully, including the damage
 - **C13** Split a finished tree into the plan's commits by rebuilding each step
+- **C14** Before every release, audit the records and docs on the release branch
+- **C15** A line number in a long-lived record is a measurement with a date
+- **C16** An approval page must hand its decisions back through a channel you can read

@@ -35,8 +35,9 @@ Location decides who sees it: `~/.claude/skills/<name>/` for every project on th
 `<repo>/.claude/skills/<name>/` for one repository (committed, so collaborators get it). `SKILL.md`
 must sit exactly one level below the skills root (S13). The folder name is the skill's name.
 
-A small project skill can be `SKILL.md` alone - one repository's architecture skill is 107 lines with no
-reference files, because it is a map of one codebase, not a catalogue of lessons. Add the rest when the content
+A small project skill can be nearly `SKILL.md` alone - one repository's architecture skill is a `SKILL.md`
+of under 200 lines with one reference file and no lessons, because it is a map of one codebase, not a catalogue of
+lessons. Add the rest when the content
 needs it, not to match the shape.
 
 ## Frontmatter

@@ -29,12 +29,10 @@ names, the API, the CLI) and assert on outcomes. Arrange state the way the app a
 registering a plugin by the call that announces the registration, not by writing into a registry.
 Tear down through the app's shutdown path too.
 
-*Case:* five outcome flows went through one dispatch method's action names and survived three steps
-of restructuring by construction. A later net registered its stub directly into the registry the
-old mechanism resolved against; the replacement resolved against a different registry, so the net
-would have failed for a setup reason mid-change. Separately, a harness that closed data plugins but
-not worker threads (the app did both) produced an interpreter abort *after* "8 passed" on slow CI
-machines - recorded for weeks as unexplained flakiness.
+*Case:* five outcome flows driven through action names survived three steps of restructuring by
+construction. A later net registered its stub directly into a registry the replacement no longer read,
+so it would have failed for a setup reason mid-change. A harness that closed data plugins but not worker
+threads (the app did both) aborted the interpreter *after* "8 passed" on slow CI - weeks of "flakiness".
 
 *Also:* a stub that borrows real methods off a class the test cannot construct should name each borrowed method explicitly, so a new helper the real class starts calling fails loudly instead of being quietly absent. *Case:* sixteen tests calling an app-setup method on a logger-only stub broke when the method gained a helper; the stub now borrows the named real methods.
 
@@ -220,14 +218,10 @@ When adding tests, apply it as a check: does a new helper or directory build any
 it covered by a root-level cleanup, and is the count back to zero after its teardown? Run the new file
 both alone and in its full-run position, and compare.
 
-*Case:* the same leak cost a GUI test suite twice. In August 2026 per-test teardown in the view tests
-grew from 0.09 s to 9-13 s, about 90% of the suite's wall-clock, because closed widgets were never
-destroyed; a destroy-and-flush teardown fixed it, but only in that directory's fixtures, and no lesson
-was recorded. In November 2026 an integration harness added later in another directory closed its
-windows without destroying them. By the time the view tests ran, about 9,300 top-level windows and 2.47
-million objects were alive. Each leaked line edit was an application-wide event filter, so every later
-event made one call per leaked widget: building one controller took 52 ms with none live and 11.6 s
-with 1,000. A full collection took 2.5 s against 0.1 s alone. The worst symptom was a 127 s teardown in
-the first view-test file, which was the victim, not the cause. The suite took 1,650 s. One root-level
-teardown that destroys every top-level window after every test, with no assertion changed, brought it
-to 493 s.
+*Case:* the same leak cost a GUI test suite twice. In August 2026 closed-but-undestroyed widgets took
+view-test teardown from 0.09 s to 9-13 s per test; the fix went into that directory's fixtures only. In
+November an integration harness written elsewhere leaked about 9,300 windows. Each leaked line edit was
+an application-wide event filter, so building one controller took 52 ms with none alive and 11.6 s with
+1,000, and a full collection 2.5 s against 0.1 s alone. The worst symptom, a 127 s teardown, sat in the
+victim file. One root-level teardown destroying every top-level window took the suite from 1,650 s to
+493 s with no assertion changed.

@@ -1,8 +1,8 @@
 # Lesson index
 
 Every lesson in this skill, by ID. Grep this file for a symptom or keyword, then open the linked file and
-read the lesson in full - the case matters as much as the rule. The S series is this skill's; the method
-skills use C, D, E, I, N, P, V and X.
+read the lesson in full - the case matters as much as the rule. The S series is this skill's; the series
+the sibling skills use are listed in [anatomy.md](anatomy.md), "Lesson IDs and the index".
 
 ## Recognising (S) - [recognizing.md](recognizing.md)
 

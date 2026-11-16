@@ -8,10 +8,10 @@ what does this move cost that the diff does not show?*
 - Sequencing and commit series
 - Before promoting or merging copies: E1, E2
 - Designing the destination: E7-E10
-- After a move: E11, E12
-- Converting calls into requests: E14, E15, E18, E19
+- After a move: E11, E12, E28
+- Converting calls into requests: E14, E15, E18, E19, E27
 
-The general execution lessons - E3-E6, E13, E16, E17 and E20-E25, including measuring a "no-op"
+The general execution lessons - E3-E6, E13, E16, E17, E20-E26 and E29-E32, including measuring a "no-op"
 before relying on it, structural checks on deletions and splices, keeping fixes minimal and fixing
 contracts at the call sites - are in the general skill's [execution.md](../../planning-and-executing-changes/reference/execution.md). This
 file adds the hazards of moving, promoting and converting code.

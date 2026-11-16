@@ -53,9 +53,8 @@ what?"
    - the correction;
    - whether it's a lesson candidate (yes/no).
 
-   *Case:* a session logged all ten of the user's corrections as they came, but not its own premature "Nothing
-   is left open on what the feature should do", a wrong count, or a reversed recommendation. The first became
-   a lesson only because the session remembered it.
+   *Case:* a session logged all ten of the user's corrections but none of its own errors; one became a
+   lesson only because the session remembered it.
 4. **Overview:** what exists today, each claim with `file:line` (D4, D5). Where the request names a category
    ("every tab", "all operations"), tabulate each member: what it records, which controls it has (P15). If
    the project's architecture notes list trap questions for the area, answer each one here, from the code.
@@ -122,15 +121,13 @@ reverses the decision or only extends it. Findings you were handed and reports f
 claims too: re-derive them before building on them (P4).
 
 *Case:* three sessions designed action replay. The two that never opened the decision log asserted that
-session load already replays, and were corrected. The decision log recorded, with evidence, that
-"`MainController.load_session` never replays", and the work queue had already posed the dedup-key and
-replacement-position questions. The session that grepped both got those facts right unprompted. It then
-declared that the decision's revisit condition "is now met" and framed its design as a reversal. Asked, it
-conceded that a per-tab choice at load only extends the decision; only automatic replay of everything would
-reverse it.
+session load already replays, and were corrected: the log recorded, with evidence, that it never did, and
+the work queue had already posed the dedup-key and replacement-position questions. The session that
+grepped both got those facts right unprompted - then declared the decision's revisit condition "now met"
+and framed its design as a reversal. Asked, it conceded a per-tab choice at load only extends the decision.
 
-A second case, for inherited findings: a session re-checked the findings it was handed at its branch's HEAD.
-It caught a subagent report that cited `MetaEventTabView.py:296` for a widget read that is at `:249`.
+A second case, for inherited findings: re-checking handed-over findings at the branch's HEAD caught a
+subagent report citing the wrong line for a widget read.
 
 ## D3 · A question in the request is the requester's until they answer it
 
@@ -155,7 +152,8 @@ What counts as a breaking change is defined in
 
 Record each ruling in the rulings register with status "open". The register is a section of the design
 document, with one row per ruling: its ID, the question, its status (open or decided), the decision, and the
-date it was decided. A ruling stays open everywhere until the user decides it. A use case, plan step or
+date it was decided (a session that kept later rulings in a second table with no decision or date column
+left one there as a consequence nobody had ruled on). A ruling stays open everywhere until the user decides it. A use case, plan step or
 mock-up that assumes an answer has settled it as surely as saying so.
 
 When the user delegates rulings to you, record who delegated, which ruling IDs it covers, and the date. A
@@ -177,22 +175,17 @@ Before handing over any design, use case, plan or mock-up, audit it:
 - an example is an element too: a sample log, a dialog's wording, a file's contents. Build it from what the
   code shows today and what the user stated; any format beyond that was invented.
 
-*Case:* one session's design document titled a section "Open questions, answered" and put a restore button
-on every tab's base class. Another listed the same choice as a ruling (one session dialog or a button per
-tab). It then wrote use cases in which that dialog already existed, with a checkbox per tab and two toggles
-nobody had asked for, and in which load replayed every tab automatically. The user asked where the ticking
-had come from. Both designs had settled the question: one openly, one inside its use cases.
+*Case:* one design titled a section "Open questions, answered" and put a restore button on every tab's
+base class. Another listed the choice as a ruling, then wrote use cases in which one answer (a dialog
+with a checkbox per tab and two unrequested toggles) already existed. The user asked where the ticking had
+come from. Both had settled the question: one openly, one inside its use cases.
 
-A second case, for an example: asked what the status panel would show, a session drew a sample with a
-summary format it had made up, a "replay finished (2 actions)" header over numbered lines. The requester
-answered: "Panel log should show only what a running fitter, finder or specific plot usually shows… those
-things should accumulate until it's done, so it's not a mix of finder, histogram, fitter, histogram,
-scatterplot etc."
+A second case, for an example: a sample status panel with an invented "replay finished (2 actions)"
+format drew "Panel log should show only what a running fitter, finder or specific plot usually shows".
 
-A third case, for the register: one answer said display-only steps are replayed only if they lead to the
-final view, and that messages from skipped steps are not shown. A later answer kept only the last view per
-tab, so the saved history held no intermediate steps to skip. The use cases still said "skipped steps show
-no messages". The requester asked: "Such as? What skipped steps are is not clear."
+A third case, for the register: a later answer kept only the last view per tab, emptying an earlier
+answer's "skipped steps"; the use cases still said "skipped steps show no messages", and the requester
+asked "What skipped steps are is not clear."
 
 ## D4 · Label every claim about the system "today" or "planned"
 
@@ -200,11 +193,10 @@ Design documents describe a system that does not exist yet in the same tense as 
 or the next session, cannot tell which is which. Write the "today" part first, each claim with `file:line`
 read this session, and keep the design apart from it.
 
-*Case:* a design note stated that replay calls the method by name, "bypassing `register_action`'s wrapper
-entirely (deliberately: replaying mustn't re-record)". The code calls the decorated wrapper by name, so
-replay re-records, and Undo depends on that to rebuild its history (`MetaView.py:425-430`,
-`MetaController.py:451-452`). A later session built its argument that rollback was not feasible on the
-claim. The session that wrote "Today:" first, with line numbers, planned a probe for exactly this instead.
+*Case:* a design note stated that replay calls the method by name, "bypassing the recording decorator's
+wrapper entirely (deliberately: replaying mustn't re-record)". The code called the decorated wrapper, so
+replay re-recorded, and Undo depended on that to rebuild its history. A later session built its argument
+that rollback was not feasible on the claim. The session that wrote "Today:" first, with line numbers, planned a probe for exactly this instead.
 
 ## D5 · Check both halves of a lifecycle verb or a persisted file
 
@@ -232,11 +224,10 @@ discovery, next to its layout; don't leave them to the plan.
 per-tab close exists (only a full workspace reset clears tabs). The action history is autosaved on every
 action but never read back on load, and the session-load reader explicitly refuses that file.
 
-A second case, for record without replay: three analysis tabs record actions, but only one can replay them.
-Protein and Clustering methods carry the recording decorator (`ProteinView.py:666`, `:1795`;
-`ClusteringView.py:142`, its reset only), yet Save Actions, Load Actions and Undo are wired only on Metadata
-(`MetadataView.py:1996-2000`, `metadatacontrols.py:481`). The replay logic sits on the shared base classes,
-so reading the bases suggests every tab can replay; reading each tab's controls shows that only one can.
+A second case, for record without replay: three analysis tabs carried the recording decorator, but only
+one wired Save Actions, Load Actions and Undo to its controls. The replay logic sits on the shared base
+classes, so reading the bases suggested every tab could replay; reading each tab's controls showed only
+one could.
 
 A third case, for a file the design adds: a design split a saved session into two files, one for plugins and
 one for actions, and recorded the layout as decided. It had checked the writer and reader of every existing

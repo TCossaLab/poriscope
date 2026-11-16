@@ -6,6 +6,7 @@ do you know the copy you changed is the one that loads?*
 ## Contents
 
 - Adding a lesson
+- Using skill-creator
 - S13 A skill is installed only once you have seen it load
 - S14 One editable source per skill; copies drift
 - S15 Restructuring a skill strands its tooling
@@ -24,6 +25,27 @@ do you know the copy you changed is the one that loads?*
 5. If a symptom would tell the reader to look for it, add a red-flag row to `SKILL.md`. If it changes the
    procedure or must hold throughout, cite it there. If it adds a stage, update the description (S8).
 6. Run `scripts/check_skill.py` on the skill, then report the ID and file to the user.
+
+## Using skill-creator
+
+Anthropic ships `skill-creator` (on claude.ai as `anthropic-skills:skill-creator`; in Claude Code as the
+`skill-creator@claude-plugins-official` plugin). It measures skills; it does not decide where a lesson
+belongs or keep a catalogue of them. Load it for these, and keep this skill for the rest:
+
+| Need | Use | Notes |
+|---|---|---|
+| Does the skill improve outputs that can be checked in one turn? | `skill-creator` test cases, with-skill vs. baseline runs, grader, benchmark, review viewer | Right for transforms, fixed workflows, generators; wrong as the main judge of a long-horizon method skill (S17) |
+| Does the description trigger on the right requests and not the near-misses? | `skill-creator` description optimization (`scripts/run_loop.py`) | Needs `claude -p`, so Claude Code only; run it after the body is settled; keep the result within 1,024 characters and naming every stage (S8, S18) |
+| Is version B of a skill better than version A on one narrow question? | `skill-creator` blind comparison (`agents/comparator.md`) | A narrow comparison is how the "keep each level reviewable" lesson was found (S17) |
+| Will it pass an upload? | `skill-creator` `scripts/quick_validate.py`; `scripts/package_skill.py` builds a `.skill` file | Complements `check_skill.py`, which checks install depth, synced copies and the lesson index |
+| Should this be a skill at all, and where does each lesson go? | This skill | Recognising, the placement table, proposals |
+| Lesson shape, IDs, index, red flags, provenance, splits, copies | This skill | The house shape and its maintenance |
+
+Two conventions differ. `skill-creator` writes test cases into an `evals/` folder inside the skill and runs
+into a `<name>-workspace/` folder beside it: put that workspace outside the skills root, or it is one more
+folder there with no `SKILL.md`. Its writing advice - explain the why instead of capital-letter MUSTs, keep
+the prompt lean, bundle a script that every test run rewrote - agrees with this skill's and is worth
+applying when drafting.
 
 ## S13 · A skill is installed only once you have seen it load
 
@@ -75,7 +97,7 @@ one that lost a paragraph. IDs are unique across sibling skills, so a citation n
 
 *Case:* the split moved 84 lessons verbatim with their IDs; five cross-references were re-pointed at the
 refactoring skill's templates and scripts, and a script compared every lesson body against the pre-split
-copy. Both READMEs record that this was done and how.
+copy. The planning skill's README records that this was done and how.
 
 ## S17 · Judge a long-horizon skill by the next real piece of work
 

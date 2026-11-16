@@ -56,38 +56,15 @@ Port progress:
 - [ ] 4. Real data: every value, port against original, from a clean copy; timings warm and cold (A11)
 ```
 
-### 0 · Inventory
+What the checklist does not say:
 
-- List capabilities **per entry point** - a script, its GUI wrapper and its notebook each add their own (A1).
-- Derive each format from the sample files: size divided by channels and sample width is a frame count,
-  to be checked against the code and the file names (A2).
-- List what the sample data holds that the original never reads, and ask whether it is in scope (A4).
-
-### 1 · Run the original
-
-- Import it headlessly (non-interactive plotting backend, module constants set from the script) and call
-  its functions on the real data: the run time decides whether the port needs background work, and the
-  harness is reused for goldens (A3).
-
-### 2 · Map
-
-- Fill in `templates/capability-map.md`: each capability, its host mechanism, the measured equivalence,
-  and the ruling it needs (A5).
-- Every "the host already does this" gets the same input through both and a number compared (A6); every
-  unit crosses the host's contract explicitly (A7).
-- Each defect in the original, and each default that would refuse the users' real input, is listed as a
-  ruling with options - not decided in the plan (A4, A8).
-
-### 3 · Goldens
-
-- A deterministic generator in the repository, the original run on it once per setting that matters,
-  saved; the port compared at a stated tolerance with the reason for it (A9).
-- For each defect the port fixes, a probe that puts the original's behaviour back must fail a test (A10).
-
-### 4 · Real data
-
-- Every value, not a sample, from a clean copy whose import path you have printed; time both programs
-  more than once and separate the environment from the code (A11, V13).
+- **0:** a binary file's size divided by channels times sample width is its frame count - check it
+  against the code and the file names, for every file (A2).
+- **1:** import the original as a library - non-interactive plotting backend, module constants set from
+  the harness - so the same harness later captures goldens (A3).
+- **2:** defects and defaults that refuse the users' real input are rulings with options, not decided in
+  the plan (A4, A8).
+- **4:** print the import path the comparison used, and time both programs more than once (A11, V19, V13).
 
 ## Standing rules
 

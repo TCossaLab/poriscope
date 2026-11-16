@@ -3,9 +3,6 @@ Status: open | decided <date>, by <who>, as <option>
 Who decides: the user | <named person>. If delegated: delegated by <who>, on <date>, covering <ruling IDs>
 (D3).
 
-*Case:* answering one ruling, a requester said a colleague had let them make the decisions. The session asked
-whether that covered the other rulings before treating them as the requester's.
-
 When this ruling opens, add its row to the design document's rulings register (`templates/design-document.md`,
 D3): ID, question, status "open". When the user decides it, update the row with the decision and the date.
 

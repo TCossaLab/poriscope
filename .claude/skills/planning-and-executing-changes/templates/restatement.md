@@ -45,9 +45,6 @@ Use cases cite these IDs.
 |---|---|---|---|
 | A1 | | | |
 
-*Case:* a session kept every answer as a numbered row and cited it in each use-case step, so the audit could
-check each step against what the user actually said.
-
 ## Open what-questions
 Every question from the note or brief goes here at the start, then each one raised during discovery.
 Discovery's completion check runs on this table (discovery.md, "Completion check").
@@ -55,6 +52,3 @@ Discovery's completion check runs on this table (discovery.md, "Completion check
 | ID | Question | Status: answered by A-n / open / deferred to <name> | Source: note / brief / discovery |
 |---|---|---|---|
 | Q1 | | | |
-
-*Case:* a brief listed five open questions that were never tracked as rows; one was still unanswered when the
-session declared every question answered.

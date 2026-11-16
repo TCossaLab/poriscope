@@ -34,9 +34,6 @@ table: who delegated, which IDs, the date.
 |---|---|---|---|---|
 | R1 | | open | | |
 
-*Case:* a session kept its later rulings in a second table with no decision or date column. One ruling sat
-there as a consequence nobody had ruled on.
-
 ## 5. Rulings (step 6)
 One `templates/ruling.md` per ruling, in register order. A later explanation or revision goes under its own
 ruling, dated, not in a new section.

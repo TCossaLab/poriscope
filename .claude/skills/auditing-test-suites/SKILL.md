@@ -19,11 +19,8 @@ for every change. Every lesson carries the case that produced it.
 **Load `planning-and-executing-changes` first**; its testing and verification lessons (N4, N8, N17, V2,
 P1) are the ground this stands on. Lesson IDs are unique across the sibling skills.
 
-## When to run it
-
-- **Before every major release**, as part of release preparation.
-- **Whenever the user asks** to audit, prune or speed up the tests or CI.
-- A smaller version - T1 and T2 only - whenever one file or one CI leg gets noticeably slower.
+Run it before every major release and whenever asked; run a smaller version - T1 and T2 only -
+whenever one file or one CI leg gets noticeably slower.
 
 ## The stance, in six sentences
 
@@ -71,12 +68,6 @@ totals and, given a second log of files run alone, the full-run-to-alone ratio p
 time in setup and teardown, means look upstream (T2). Log live objects and windows per file to find the
 leaker (T3). Check for the amplifiers: global registration per instance, explicit full collections,
 per-test fixtures whose cost grows with the run (T4).
-
-### 2-3 · Fix, then parallelise
-
-The cleanup for a process-wide resource goes at the root of the test tree, and fails the test when
-something survives (N17). Parallelise only after a full serial run proves the fix (T5). Whole files per
-worker, worker count from cores and free memory, an override, the serial run kept, collection sorted (T6).
 
 ### 4-7 · Audit value, then act on it
 

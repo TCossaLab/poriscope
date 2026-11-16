@@ -11,7 +11,8 @@ it is written somewhere that never loads. This skill is the method for avoiding 
 house shape the existing skills (`planning-and-executing-changes`, `refactoring-codebases`, and a
 repository's own architecture skill) were built in. Anthropic's `skill-creator` skill is the companion for
 measuring a skill - evals, benchmarks, description tuning, packaging; this one decides whether a skill
-should exist, what goes in it and where, and how it is kept loading (see "Using skill-creator" below).
+should exist, what goes in it and where, and how it is kept loading (see "Using skill-creator" in
+[maintaining.md](reference/maintaining.md)).
 
 Every lesson carries the case that produced it. The cases come from building and maintaining those
 skills (September-October 2026).
@@ -34,7 +35,7 @@ skills (September-October 2026).
 |---|---|
 | [reference/recognizing.md](reference/recognizing.md) | Something surprised you; first-of-a-kind work is ending; deciding whether a lesson goes to memory, CLAUDE.md, an existing skill or a new one; whether to split a skill |
 | [reference/anatomy.md](reference/anatomy.md) | Writing a new skill or a new section: the house layout, frontmatter, description, lesson shape, IDs, index, templates, scripts, README |
-| [reference/maintaining.md](reference/maintaining.md) | Adding or moving a lesson; renaming, splitting or merging a skill; installing, syncing or uploading one; deciding how to evaluate a change |
+| [reference/maintaining.md](reference/maintaining.md) | Adding or moving a lesson; renaming, splitting or merging a skill; installing, syncing or uploading one; deciding how to evaluate a change; what `skill-creator` is for |
 | [reference/lesson-index.md](reference/lesson-index.md) | Looking up a lesson by ID or symptom (grep it) |
 
 Templates are in `templates/`; `scripts/check_skill.py` checks a skill or a whole skills root.
@@ -102,7 +103,7 @@ the top of `SKILL.md`, because compaction keeps only the first 5,000 tokens (S10
 standing rules, not one-time steps, because a loaded skill is not re-read (S12).
 
 Where triggering is contested - several skills share vocabulary, or the skill keeps loading for the
-wrong requests - offer `skill-creator`'s description optimization once the body is settled (below).
+wrong requests - offer `skill-creator`'s description optimization once the body is settled.
 
 ### 5-6 · Wire and verify
 
@@ -117,27 +118,6 @@ stale synced copy, passes every content check and never loads (S13, S14).
 Say what was recorded where - each lesson's ID and file, each memory, each `CLAUDE.md` line - and what
 you chose not to record and why. The user is the reviewer of a skill change; they cannot review what
 they were not told about.
-
-## Using skill-creator
-
-Anthropic ships `skill-creator` (on claude.ai as `anthropic-skills:skill-creator`; in Claude Code as the
-`skill-creator@claude-plugins-official` plugin). It measures skills; it does not decide where a lesson
-belongs or keep a catalogue of them. Load it for these, and keep this skill for the rest:
-
-| Need | Use | Notes |
-|---|---|---|
-| Does the skill improve outputs that can be checked in one turn? | `skill-creator` test cases, with-skill vs. baseline runs, grader, benchmark, review viewer | Right for transforms, fixed workflows, generators; wrong as the main judge of a long-horizon method skill (S17) |
-| Does the description trigger on the right requests and not the near-misses? | `skill-creator` description optimization (`scripts/run_loop.py`) | Needs `claude -p`, so Claude Code only; run it after the body is settled; keep the result within 1,024 characters and naming every stage (S8, S18) |
-| Is version B of a skill better than version A on one narrow question? | `skill-creator` blind comparison (`agents/comparator.md`) | A narrow comparison is how the "keep each level reviewable" lesson was found (S17) |
-| Will it pass an upload? | `skill-creator` `scripts/quick_validate.py`; `scripts/package_skill.py` builds a `.skill` file | Complements `check_skill.py`, which checks install depth, synced copies and the lesson index |
-| Should this be a skill at all, and where does each lesson go? | This skill | Recognising, the placement table, proposals |
-| Lesson shape, IDs, index, red flags, provenance, splits, copies | This skill | The house shape and its maintenance |
-
-Two conventions differ. `skill-creator` writes test cases into an `evals/` folder inside the skill and runs
-into a `<name>-workspace/` folder beside it: put that workspace outside the skills root, or it is one more
-folder there with no `SKILL.md`. Its writing advice - explain the why instead of capital-letter MUSTs, keep
-the prompt lean, bundle a script that every test run rewrote - agrees with this skill's and is worth
-applying when drafting.
 
 ## Standing rules
 

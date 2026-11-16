@@ -45,8 +45,7 @@ every test of another. Neither was visible from "the suite is slow".
 
 Time each slow file alone and compare it with its time in the full run. A file far slower in the full
 run, or one whose time sits in setup and teardown rather than its bodies, is paying for state earlier
-tests left behind. It is the victim: fixing it is wasted work, and it will be slow again. The general
-lesson behind this is N17 in `planning-and-executing-changes`.
+tests left behind. It is the victim: fixing it is wasted work, and it will be slow again (N17).
 
 *Case:* a conformance file took 27.3 s in the full run and 4.7 s alone; an integration directory took
 588 s in the full run and the same alone, so the leak was inside it. The 127 s single teardown belonged
@@ -55,22 +54,19 @@ to the first file of the next directory, which happened to destroy 9,300 windows
 ## T3 · Count what is alive to find the leaker
 
 A census - live top-level windows, live objects by type, heap size - logged after every file, located in
-one run what reading could not. Count after cleanup, not after the call you trust to clean up: a closed
-window is hidden, not destroyed, and a scheduled deletion is not a deletion until its event is delivered.
+one run what reading could not. Count after cleanup, not after the call you trust (N17).
 
 *Case:* a heap census plugin (objects by type, per file) showed 2.47 million live objects and 9,306
-top-level windows when the view tests started, and named the integration flows as the leakers: about 880
-widgets per test harness, held alive through signal connections the collector cannot see. One root-level
-fixture that deleted every top-level window after every test took the suite from 1,650 s to 493 s with
-no assertion changed.
+top-level windows when the view tests started, and named the integration flows as the leakers behind
+N17's case: about 880 widgets per test harness, held alive through signal connections the collector
+cannot see.
 
 ## T4 · Know the amplifiers that turn a small leak into minutes
 
 A leak costs little until something multiplies it. Three did, all measured:
 
-- **Per-instance registration on a global object.** Each leaked line edit stayed an application-wide event
-  filter, so every later event made one Python call per leaked widget: building one controller took 52 ms
-  with none alive, 11.6 s with 1,000.
+- **Per-instance registration on a global object** - N17's case: each leaked line edit stayed an
+  application-wide event filter.
 - **Explicit full garbage collection.** Its cost scales with everything alive: 0.1 s alone, about 2.4 s in
   the full run. A fixture collecting twice per test cost 321 s, and no file-lock retry it existed for ever
   fired. Collect only on the failure path that needs it.
@@ -84,9 +80,8 @@ which registered one filter per field; one shared filter replaced them.
 ## T5 · Fix harness defects before parallelising
 
 Parallel workers divide a leak's cost without removing it, so they hide it and the next leak with it.
-Fix what the census found, prove the fix with one full serial run, then parallelise. Put cleanup of a
-process-wide resource at process scope and make it fail the test when something survives (N17), so the
-next helper that leaks fails at once.
+Fix what the census found at the scope of the resource, with a guard (N17), prove the fix with one full
+serial run, then parallelise.
 
 *Case:* the leak fix alone took the serial run from 1,650 s to 493 s; parallelising afterwards took it to
 128 s on 4 workers. The same leak had been fixed once before in one directory only, and came back through

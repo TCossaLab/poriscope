@@ -61,7 +61,7 @@ cleanup, the coordinator's gates chose 5 workers instead of 6 because the agents
 
 ## O4 · Re-derive the claims that decide something
 
-Agents' reports are claims (P1). Before acting on a headline, re-read the test and re-run its mutation.
+Agents' reports are claims (P1, C10). Before acting on a headline, re-read the test and re-run its mutation.
 Expect small disagreements in counts and treat them as information, not noise.
 
 *Case:* re-running two vacuity mutations confirmed both. Workers corrected the audit twice (19 copies,
@@ -88,7 +88,7 @@ shared scratchpad; each agent recovered by moving into its own subfolder.
 ## O7 · Check every merged file for corruption the edit tools introduced
 
 Edits scripted through a shell can turn escapes into control bytes and break line endings, and nothing
-fails loudly. After each merge, scan changed files for NUL, backspace and conflict markers
+fails loudly (E32). After each merge, scan changed files for NUL, backspace and conflict markers
 (`scripts/scan_files.py`). Mutation tools matching multi-line anchors need the file's real line endings.
 
 *Case:* a heredoc-scripted edit wrote a NUL byte into a test file (collection failed) and another wrote
@@ -100,8 +100,7 @@ anchors LF.
 
 Run the full suite after each worker's commits land, read the summary line, and reconcile the test count:
 previous passed, minus removed, plus added, must equal the new figure (skipped tests counted
-separately). End with a gate on a clean copy of the exact tip with generated artefacts built, so no test
-skips for a missing file.
+separately). End with a gate on a clean copy of the exact tip with generated artefacts built (V18).
 
 *Case:* 5,843 to 5,805 (41 removed, 3 added), then 5,635 (175 removed of which 2 were skipped, 3 added),
 each reconciled; the final clean-copy gate on the tip ran the documentation tests that skip in a fresh

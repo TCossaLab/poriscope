@@ -17,15 +17,13 @@ rules are language- and framework-neutral.
 **Load `planning-and-executing-changes` first.** Most of what that refactor taught applies to any
 change, so it lives in that skill: re-deriving inherited claims, the plan-review-execute loop,
 tests that can fail, gates that are blind, verification beyond the suite, finishing, and records.
-This skill adds what is specific to a refactor. Lesson IDs are unique across the two skills; an ID
-cited here that is not in this skill's reference files is in the general one, and
-[lesson-index.md](reference/lesson-index.md) lists both.
+This skill adds what is specific to a refactor. Lesson IDs are unique across the sibling skills; an
+ID cited here that is not in this skill's reference files is in the general one, whose
+lesson-index lists it.
 
 ## The stance
 
-The general stance - every claim is a dated measurement, check the mechanism not its name, every
-gate is blind somewhere, record the wrong turns - is in `planning-and-executing-changes`. A refactor
-adds two:
+The general stance applies. A refactor adds two:
 
 1. **Pin what moves before moving it**, scoped by what the refactor touches, not by what looks
    under-tested.
@@ -36,26 +34,19 @@ adds two:
 
 | File | Read when |
 |---|---|
-| `planning-and-executing-changes` (the general skill) | Always, first: its planning, testing, measurement, execution, verification, finishing and records files hold most of the lessons |
 | [reference/planning.md](reference/planning.md) | Writing or re-verifying a refactor plan; sizing or sequencing a step; a step "looks cheap" |
 | [reference/safety-net.md](reference/safety-net.md) | Deciding what to pin before a move; building characterization tests, goldens, equivalence tables, flows |
 | [reference/instruments.md](reference/instruments.md) | Building or reading a ratchet, allowlist, coverage audit or any progress metric |
 | [reference/execution.md](reference/execution.md) | Moving, promoting, deduplicating, converting calls, deleting code, editing tests after a move |
-| [reference/verification.md](reference/verification.md) | What a refactor adds to the general verification routine |
 | [reference/exit-and-cleanup.md](reference/exit-and-cleanup.md) | The last structural change has landed: exit review, cleanup procedure, release readiness |
-| [reference/collaboration-and-records.md](reference/collaboration-and-records.md) | What a refactor adds to the general records lessons: the plan document's shape |
 | [reference/lesson-index.md](reference/lesson-index.md) | Looking up a lesson by ID or by symptom (grep it) |
 
 Templates live in `templates/`; deterministic helpers in `scripts/` (see the end of this file).
-The general skill has the rest: `run_logged.py`, `mutation_probe.py`, `structural_diff.py`, and the
-manual-pass map, decision-entry, handoff and change-plan templates.
+The general skill holds the manual-pass map, decision-entry, handoff and change-plan templates.
 
 ## The shape: plan, review, execute - recursively, at every level of detail
 
-The whole refactor runs one loop at four levels of detail. At each level you **plan** at that
-grain, **review** the plan against the code and get it approved, and only then **execute** -
-where "execute" at every level but the last means *descend and run the same loop one level down*,
-at the moment that piece of work comes up:
+The general skill's plan-review-execute loop (P20-P23) runs at four levels in a refactor:
 
 ```
 Plan      the refactor: diagnosis, decisions, ordered steps      -> review -> approve
@@ -65,17 +56,10 @@ Plan      the refactor: diagnosis, decisions, ordered steps      -> review -> ap
                      tests, manual check                         -> review -> approve -> execute
 ```
 
-So nothing moves until it has been reviewed at least three times at increasing resolution, each
-review asking the question that only that level can answer. Two rules make the recursion work:
-
-- **Detail just in time.** Plan the next level down only when its work comes up. Detail written
-  weeks ahead decays before it is used (P1); a coarse plan kept coarse cannot.
-- **Findings flow upward.** A review at a lower level can void the level above - a sub-step whose
-  premise fails, a step that dissolves into another. Rewrite the parent plan and re-approve it;
-  never quietly work around it below.
-
-The level-by-level questions, the approval artefact at each level, and the cases are in
-[planning.md](reference/planning.md) under "The recursive plan-review-execute loop".
+Each level is planned, reviewed and approved when its work comes up, never before (P20), and a
+lower-level finding that voids the level above sends you back up (P21). The per-level questions,
+artefacts and cases are in [planning.md](reference/planning.md), "The recursive plan-review-execute
+loop".
 
 ## The procedure
 
@@ -107,28 +91,22 @@ Refactor progress:
   nobody relies on may be broken deliberately if that frees the design; say so explicitly.
 - **Open ownership conversations now**, each with measurements attached and a stated exit if
   the owner does not engage. A critical path ending in "blocked on a person" with no exit is
-  how a gate sits idle. See [collaboration-and-records.md](reference/collaboration-and-records.md).
+  how a gate sits idle (C2).
 - **Get the plan approved before any logic change.** Present blast radius, not just the diff.
 - **Publish the plan** in the repository and, where the tooling allows, as a shareable page
   kept in sync with it (`templates/plan.md`).
 
 ### 1 · Re-verify the plan against the code
 
-Re-measure every claim immediately before working the step it belongs to, not when the plan
-is written. On the source refactor, passes moved 9, 5, 9-of-13 and 3 claims - most of one pass
-was not code drift at all, just figures measured wrong the first time. Checks that pay every
-time ([planning.md](reference/planning.md) has the evidence):
+Re-measure every claim immediately before working the step it belongs to (P1). Checks that pay
+every time:
 
-- Grep the plan for its own repeated figures. Two sections that disagree mean neither was checked.
-- For each move: count the call sites and check the destination is reachable from them.
-  "It already lives on the base" answers where code is defined, not who calls it.
-- For each step: which other step already rewrites the same callers? The cheap one rides the
-  expensive one.
-- For each category-plus-verb bullet ("omit privates", "delete dead code"): sample what the
-  category actually contains before executing the verb.
-- For each recorded blocker or "X is impossible": re-derive it. Unexamined blocks stop work.
-- Ask what the step counts as success and whether the recorded metric moves when that
-  happens. Right numbers can describe the wrong problem.
+- Grep the plan for its own repeated figures (P2).
+- For each move: count the call sites and check the destination is reachable from them (P5).
+- For each step: which other step already rewrites the same callers (P6)?
+- For each category-plus-verb bullet: sample what the category contains first (P15).
+- For each recorded blocker or "X is impossible": re-derive it (P4, P8).
+- Does the recorded metric move when the step succeeds (P14, P16)?
 
 ### 2 · Baseline, and a prep release
 
@@ -136,30 +114,17 @@ time ([planning.md](reference/planning.md) has the evidence):
   figure nobody can re-derive, and a baseline is only a baseline if its instrument survives.
 - **Ship a prep release first** containing: defects in code the refactor will move (so goldens
   pin correct behaviour, not bugs), zero-risk deletions, and CI/tooling fixes. Seed or remove
-  nondeterminism before goldens exist. **Defer pure-duplication findings into the refactor -
-  do not fix twice.**
+  nondeterminism before goldens exist.
 - **Re-baseline after the prep release lands**, or the ratchet credits prep work to the refactor.
 - Record the baseline commit, date and command beside every figure.
 
 ### 3 · The safety net (a hard gate)
 
-Build it before anything moves; see [safety-net.md](reference/safety-net.md) and
-[instruments.md](reference/instruments.md). Typical components:
-
-1. **Harness prerequisites** - test dependencies declared in *every* source each CI workflow
-   installs from, markers registered, imports independent of collection order.
-2. **Structural ratchets** - duplication (exact-match, both directions), layer-boundary
-   allowlist keyed by file and symbol (not line), complexity where it is the right measure.
-   Implemented as tests so every CI path enforces them.
-3. **Characterization tests and goldens** over the behaviour that moves and has no assertion
-   today - executed-but-unasserted lines count as unpinned.
-4. **A refactor-coverage audit**: every method the refactor moves or deduplicates is pinned by
-   a behavioural test - target list *derived* from the move and dedup lists, never curated.
-5. **Outcome-level flows** through the application's public entry points, asserting on
-   artefacts (files, rows, exports), so they survive the refactor by construction.
-6. **An exit review of the net itself**, and a test that fails loudly if the net is not armed.
-
-Every pin is proven to discriminate by mutation (the general skill's `scripts/mutation_probe.py`).
+Build it before anything moves, in the order of [safety-net.md](reference/safety-net.md)'s build
+procedure: harness, structural ratchets ([instruments.md](reference/instruments.md)),
+characterization tests and goldens, a refactor-coverage audit derived from the move and dedup lists
+(N1), outcome flows, and a review of the net with a test that fails if it is not armed (N14). Every
+pin is proven to discriminate by mutation (N4).
 
 ### 4 · Execute, step by step
 
@@ -192,42 +157,26 @@ calls into requests, deletion mechanics - are in [execution.md](reference/execut
 
 ### 5 · Verify beyond the suite
 
-The routine and its lessons (V1-V15) are in the general skill: full suite in natural order, read
-this run's summary line and sentinel (its `scripts/run_logged.py`), attribute defects to a
-revision, bisect instead of arguing. The refactor-specific emphasis: **launch the application at
-every commit boundary that moves application code.** In the source refactor 4,287 tests, eight
-hooks, a complexity ratchet and a coverage audit were green over an app that could not start; one
-launch caught it. See [verification.md](reference/verification.md).
+The general routine applies. A refactor adds: **launch the application at every commit boundary
+that moves application code** (V3), mapping each branch's manual pass from the call sites of what
+moves; and run **one full-scope manual pass before the first structural change and one at exit** -
+the first makes a later failure attributable, and without the last nothing checks the finished whole.
 
 ### 6 · Exit review
 
-Walk the plan against what landed - every step, every "done", every gate row - with read-only
-reviewers on disjoint slices and a hand re-check of every finding that carries weight. Verify
-"landed" by behaviour, not by a grep hit or a signature that predates the plan. Re-measure every
-baseline metric at both ends with one committed instrument, and report: before/after, targets
-met / missed / ruled the wrong instrument, starting figures that do not reproduce, and what was
-deferred (`templates/exit-review.md`). **A review that only files findings has not finished** -
-close them; closing them is how you find out whether you understood them.
+Walk the plan against what landed and re-measure every baseline metric at both ends with one
+committed instrument ([exit-and-cleanup.md](reference/exit-and-cleanup.md), `templates/exit-review.md`);
+verify "landed" by behaviour (V12), and close what the review finds (X1).
 
 ### 7 · Post-refactor cleanup and burn-in
 
-The ordered procedure is in [exit-and-cleanup.md](reference/exit-and-cleanup.md): plan against
-reality, code against docs, dead production code, dead test code, orphaned assets, plan citations
-out of prose, retire refactor-only tooling, suite-time check, exit review, changelog regroup
-(last), record it. Then let the result burn in with real users before cutting the release;
-defects returning from burn-in are the point of the exercise, not its failure. Before the cut, install
-the real built artefact in a clean environment, build what depends on you, keep externally observable
-names (loggers, metrics, CLI flags, config keys) stable or call them out as breaking, remove the
-refactor's temporary shims, and list mechanical mass-change commits in `.git-blame-ignore-revs`.
+Run the ordered cleanup procedure in [exit-and-cleanup.md](reference/exit-and-cleanup.md), then let
+the result burn in with real users before cutting the release, and work through its release-readiness
+list (install the built artefact cleanly, build dependants, stable external names, shims removed).
 
 ## Standing rules
 
-The general skill's standing rules apply in every phase: re-derive inherited claims; green means
-you read this run's summary line; never reshape production code to keep a test passing, and stub
-collaborators as they really behave; the smallest fix, closed where it was found; code never cites
-the plan; approved plans for logic changes; tests for a mechanism you add are yours; fix contracts
-at the call sites; replace documentation for a removed mechanism; one branch per piece of work;
-separate environment artefacts from measurements. A refactor adds:
+The general skill's standing rules apply in every phase. A refactor adds:
 
 - **Nothing moves before the safety net is built, audited and armed** - scoped by the move and
   dedup lists, not by what looks under-tested (N1).
@@ -235,7 +184,6 @@ separate environment artefacts from measurements. A refactor adds:
   tell which one changed the outcome.
 - **Every commit banks a measured win and runs green**, simulated before the branch is cut (I4).
 - **Defer pure duplication into the refactor** rather than fixing it twice in a prep release.
-- **A conversion owes tests to its destination** - a stubbed new method is covered by nothing (N6).
 
 ## Red flags - stop and check
 
@@ -248,9 +196,8 @@ claims, sweeps, splices) are in the general skill. These are specific to moving 
 | Two copies are "the same code" | `diff` them; decide which behaviour survives | E1, E2 |
 | You just converted callers and stubbed the new method | Does the new method have tests of its own? | N6 |
 | You promoted or moved a method | Grep tests for every name its body referenced | E11 |
-| A metric did not move for real work | Record why in the commit and plan | I11 |
+| A metric did not move for real work, or you are about to trim docs to fix a diffstat | Record why in the commit and plan; line count is a proxy for code | I11 |
 | A golden regenerated at a new path | Diff against the pre-move golden first | N11 |
-| You are about to trim docs to fix a diffstat | Do not; line count is a proxy for code | I11 |
 | A move commit also changes the moved code | Split it: verbatim move first, change second | E1, execution sequencing |
 | The release candidate was only ever run from a checkout | Install the built artefact in a clean environment | exit-and-cleanup release readiness |
 

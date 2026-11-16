@@ -32,7 +32,7 @@ before relying on it.
 
 - **A tab never reads input files.** Everything arrives from a data plugin through `MetaModel.call`. If no
   family can supply the input, which family to add is a ruling, not a detail of the tab. *Case:* the
-  Conditioning tab's experiment folder became a new family, `MetaConditioningLoader` (see "Adding a
+  Conditioning tab's experiment folder became a new family, `MetaConditioningLoader` (see "A new
   data-plugin family" in `SKILL.md`), rather than a folder picker in the tab.
 - **A View needs a request/answer pair for a plugin's channels**: the View emits a request carrying the
   plugin key, the Controller asks the Model and calls the View's setter. *Case:* `ConditioningView`'s

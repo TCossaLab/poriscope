@@ -10,7 +10,7 @@ audited and armed.
 - N1 Scope the net by what moves, and derive the list
 - N13 An expected golden diff needs a stated rule
 
-The general testing lessons - N2-N12, N14 and N15, including stubbing collaborators as they really
+The general testing lessons - N2-N12 and N14-N17, including stubbing collaborators as they really
 behave, test-first mechanisms, mutation-proving pins and never reshaping code to keep a test
 passing - are in the general skill's [testing.md](../../planning-and-executing-changes/reference/testing.md). This file adds how to build a
 net before a refactor moves anything.
@@ -45,7 +45,7 @@ Build in this order, each piece its own reviewable commit or branch:
    harness rung exists between mock-only unit tests and click-driven end-to-end tests, build it.
 8. **Review the net** before starting: is every moving method a target? does every gate cover the
    directories the refactor will touch? is anything curated by testability? Close what the review
-   finds before Step 3 starts.
+   finds before anything moves.
 
 ## N1 · Scope the net by what moves, not by what looks thin - and derive the list
 

@@ -19,19 +19,21 @@ interruption costs nothing.
 - C11 Stay out of the repository while someone else is driving it
 - C12 Report outcomes faithfully, including the damage
 - C13 Split a finished tree into the plan's commits by rebuilding each step
+- C14 Before every release, audit the records and docs on the release branch
+- C15 A line number in a long-lived record is a measurement with a date
+- C16 An approval page must hand its decisions back through a channel you can read
 
 ## C1 · Logic changes need an approved plan
 
 Do the read-only work first (measure, read the sites, trace the call paths), then present the plan
 and wait. Being queued in a backlog is not approval, and approval of a plan is not licence to build
-every bullet at full elaboration. A useful plan shape per site: what the defect is, why it is or is
-not a real bug, the fix, what else touches that code, which tests cover it - and flag any site where
-the obvious fix would change behaviour something else depends on. Comments, docstrings and type
+every bullet at full elaboration. The per-site plan shape is in planning.md and
+`templates/change-plan.md`. Comments, docstrings and type
 hints can usually proceed under a standing grant; confirm which grants exist.
 
 For multi-commit work, present the commit series (the refactoring skill's `templates/commit-series.md`
 has a shape for it) with the simulated metric per commit and the manual-pass map, get approval,
-record the approved series in the plan, then execute. For a single change, `templates/change-plan.md`.
+record the approved series in the plan, then execute.
 
 ## C2 · Ownership: ask first, with measurements, and state the exit
 
@@ -47,6 +49,16 @@ needs a stated fallback - what happens and who decides if the owner does not eng
 files (CODEOWNERS) are guidelines, not merge gates. Other owners' domain logic stays out of scope even
 while you touch their files for mechanical reasons (docstrings, formatting), and a shared gate is scoped
 so it cannot fail on their commits (measurement I6).
+
+"Leave X's work alone" has a narrow and a wide reading - their active work, or everything they wrote.
+Measure the boundary (authorship from `git blame`, the tracks they own) and ask which reading is meant,
+with the numbers, before editing anything near it.
+
+*Case:* 2026-11-16, a pre-release docs cleanup was told to skip two colleagues' work. Blame showed one had
+written 908 lines of the decision log and three-quarters of the contributor QA page, so the wide reading
+would have held most of the approved cuts; asked with those figures, the user chose the narrow one (their
+active feature tracks only), and later released one entry the blame rule had held that was not on either
+track.
 
 ## C3 · One branch per piece of work
 
@@ -158,3 +170,49 @@ the branch to it.
 Rebuilding the fifth step with its own run caught a duplication ratchet that pinned a file family at five
 members after a sixth had been moved in - missed in the working tree, where only the moved files' own tests
 had been rerun.
+
+## C14 · Before every release, audit the records and docs on the release branch
+
+Records and hand-written docs rot one true sentence at a time: a queued item lands and stays queued, a
+decision is reversed and both versions stand, a doc keeps the count it had before a new member joined,
+an always-loaded instruction file accretes stories. No single change is to blame, so no single change
+fixes it. Before every release (minor ones too, not only major), after `release start` and before the
+preparation commit, sweep the changelog, decision log, work queue, always-loaded instructions, skills
+and hand-written docs, so that what ships and what gets published say what is true. Split the sweep by
+file across parallel reviewers that check each claim against the code (C10); deliver the proposed cuts
+for approval, with evidence per item; re-verify every "safe to cut" claim again at edit time, not from
+the review; leave other owners' active work alone (C2). Look for: landed or duplicated queue entries,
+superseded or mechanism-gone decisions, stale counts and line references (C15), docs for a removed
+mechanism that were never replaced (C8), copies of one list that have drifted apart (measurement I18),
+and changelog entries that narrate rather than state.
+
+*Case:* 2026-11-16, before a major release: six review passes over about 22,900 lines of records, skills
+and docs proposed about 5,400 lines of cuts. They found 7 work-queue entries that had already landed, 6
+duplicated pairs, 19 decision entries for mechanisms that were gone or reversed, a decision log
+grown to 51,000 words, a README command that no longer ran, a pre-commit hook whose folder list skipped
+the newest plugin family, and user docs that never picked up a tab added the week before. Re-checking at
+edit time turned up one more change: an entry the review called removable still held the only copy of a
+revisit condition, which had to move before the entry could go.
+
+## C15 · A line number in a long-lived record is a measurement with a date
+
+A `file:line` citation is exact the day it is written and drifts with every edit above it; a header
+saying the whole file "was re-verified on <date>" is a claim that expires silently and makes every
+anchor beneath it look fresher than it is. In a decision log, cite the function or class; in a work
+queue, keep the line (it makes the item workable) but re-anchor it when the item is worked, and never
+assert a blanket re-verification.
+
+*Case:* 2026-11-16, a work queue's header said its line numbers had been re-verified on 2026-09-24;
+about 40 of its anchors had moved, and decision-log citations such as a `main_model.py` line range now
+landed inside a different function. Function names in the same entries were all still right.
+
+## C16 · An approval page must hand its decisions back through a channel you can read
+
+A review page with per-item approve/skip controls is only useful if its decisions reach the session.
+State kept in the viewer's own browser storage never does. Use a channel the agent can read: a copy
+button that produces text to paste back, comment threads, or a store the page and the agent share. Say
+on the page how the decisions get back.
+
+*Case:* 2026-11-16, a 75-item cleanup review saved each mark in browser storage. "Proceed as marked"
+arrived with nothing readable: no comments, no shared state. The work waited until the user pasted the
+page's copied summary. The copy button was the one channel that worked.

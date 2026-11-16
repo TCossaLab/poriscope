@@ -20,7 +20,7 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
 ## Two distinct plugin families
 
 - **GUI/analysis-tab plugins** (`poriscope/plugins/analysistabs/`): each tab (RawData,
-  EventAnalysis, Clustering, Metadata, Protein) is its own Controller/Model/View triad
+  EventAnalysis, Clustering, Metadata, Protein, Conditioning) is its own Controller/Model/View triad
   inheriting `MetaController`/`MetaModel`/`MetaView` (`poriscope/utils/Meta*.py`).
   A tab reaches a data plugin by calling `self.call(metaclass, key, method, ...)` on its
   Model (`MetaModel.call`), which raises at the call site on failure and refuses `_private`
@@ -49,10 +49,11 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   importing every `.py` file and keeping only classes matching the module's own
   filename that subclass one of the allowed `Meta*` base classes. A plugin is just a
   Python file dropped in the right subfolder — no registry/manifest to update.
-- Each `Meta*` base uses `QObjectABCMeta` (ABCMeta combined with the Qt metaclass) so
-  abstract methods are enforced *and* the class stays a valid QObject/QWidget. One class
-  serves both hierarchies, because PySide6 gives `QObject` and `QWidget` the same
-  metaclass.
+- The GUI bases (`MetaController`, `MetaModel`, `MetaView` and the controls bases) use
+  `QObjectABCMeta` (ABCMeta combined with the Qt metaclass) so abstract methods are enforced
+  *and* the class stays a valid QObject/QWidget. One class serves both hierarchies, because
+  PySide6 gives `QObject` and `QWidget` the same metaclass. The data-plugin bases are not
+  QObjects: `BaseDataPlugin` is a plain `ABC`.
 - `BaseDataPlugin.__init__` -> `apply_settings()` drives a fixed lifecycle:
   `_validate_param_types` -> `_validate_param_ranges` -> `_validate_settings` (subclass
   hook) -> `_finalize_initialization` (subclass hook). Settings are dicts of
@@ -60,9 +61,9 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   (see `get_empty_settings()` docstring in `BaseDataPlugin`).
 - Data plugins can depend on other data plugins (e.g. an event finder depends on a
   reader). This is tracked explicitly via `register_parent`/`register_dependent`
-  (metaclass, key) pairs on `BaseDataPlugin`, and enforced when
-  `DataPluginController.delete_plugin`/`edit_plugin` refuse to delete/rename a plugin
-  that still has dependents.
+  (metaclass, key) pairs on `BaseDataPlugin`. `DataPluginController.delete_plugin` refuses
+  to delete a plugin that still has dependents; a rename through `edit_plugin` is allowed
+  and re-points every dependent at the new key (`_rename_plugin`).
 - Every plugin instance is keyed by a globally-unique string (`get_key()`/`set_key()`);
   `DataPluginController` enforces uniqueness of that key across *all* metaclasses, not
   just within one.
@@ -92,7 +93,8 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
     `READER_EXTRA_SETTINGS` for a setting with no default, and any format-specific fuzz
     mutation in `MUTATIONS` (the shared ones follow `READER_DATASET_BUILDERS` automatically);
   - `poriscope/exposed.py`'s imports and `__all__`, so scripts can import it;
-  - the user guide's list for its family (readers: `user_guide/raw_data_tab.rst`) and a
+  - the user guide's list for its family (readers:
+    `docs/source/utils/user_manuals/user_guide/raw_data_tab.rst`) and a
     `changelog.md` line. The autodoc page is generated (`docs/source/autodoc/` is gitignored).
 - Draft a plugin outside the tree while a suite is running: `new_plugin.py ... --output-dir`
   writes anywhere, and plugin discovery imports every file in the package.

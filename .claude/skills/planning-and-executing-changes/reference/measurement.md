@@ -17,6 +17,7 @@ can it move for the wrong reason?*
 - I14 Changing a metric's definition kills every figure recorded under the old one
 - I15 A gate that runs on one path is never asked if your work takes another
 - I16 A cached artefact needs a staleness check
+- I18 A check between a copy and its source must run in both directions
 
 ## I1 · The definition is the number
 
@@ -116,3 +117,15 @@ An instrument that reads a cached artefact (coverage data written at the end of 
 confident wrong answers: adding a method and its test failed on the first full run and passed on the
 second, which looked like a flaky regression. Skip or fail unless the artefact postdates every source
 change. If the check cannot be written cheaply, the artefact should not be trusted in that position.
+
+## I18 · A check between a copy and its source must run in both directions
+
+A checker that asks "does every entry in the copy exist in the source?" passes while the copy silently
+loses entries; the reverse question catches it. Check both ways, or better, delete the copy and point
+at the source, so there is nothing to check (collaboration C6). The same applies to any mirrored list:
+an index and its headings, a registry and its docs table, a dependency file and its mirror.
+
+*Case:* 2026-11-16, one skill kept a hand-maintained copy of a sibling skill's lesson index, and the
+sibling's README said a checker "confirms they agree". The checker flagged copy entries with no matching
+lesson, but never lessons missing from the copy, so it passed for weeks while the copy lacked one lesson.
+The copy was replaced by a three-line pointer.
