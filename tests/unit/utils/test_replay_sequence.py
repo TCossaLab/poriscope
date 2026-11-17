@@ -321,7 +321,7 @@ class TestResults:
     def test_a_fit_with_no_good_fits_stops_the_replay(
         self, tab: _Tab, panel: List[str], qtbot: Any
     ) -> None:
-        """A fitter marks the channel fitted even when no fit was good."""
+        """A fitter marks the channel fitted even when no fit was good; the run is not saved."""
         tab.model.counts["F"] = 0  # type: ignore[attr-defined]
         sequence = _replay(tab, [_entry("find", "F", 3)], qtbot)
 
@@ -329,9 +329,11 @@ class TestResults:
         _ended(sequence, qtbot)
 
         assert sequence.failed_at == 0
+        assert list(tab.tab_action_history.values()) == []
         assert panel == [
+            "F did not finish channel 3, so this run is not saved in the tab's history",
             "replay stopped at step 1 of 1: F did not leave a finished run with "
-            "results on channel 3"
+            "results on channel 3",
         ]
 
     def test_a_fit_whose_count_cannot_be_read_stops_the_replay(

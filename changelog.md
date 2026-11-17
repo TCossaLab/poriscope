@@ -278,6 +278,8 @@
 
 * A Conditioning plot whose 1 Hz noise does not finish for every channel is still drawn but is not saved in the tab's history, and in a replay it stops the replay with Go back / Keep; a replot from kept values that cannot read the experiment is refused
 
+* **Fixed a Fit with no good fits being saved in the tab's history:** like a Find that finds no events, it is no longer saved, so a restored session does not replay it, and a replay that fails on one no longer saves it anyway
+
 * Hovering over a Conditioning panel shows, in the toolbar, the nearest cycle's pore size and the 1 Hz noise of each PSD taken at it, instead of a position on the pore-size axis
 
 * **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds

@@ -392,8 +392,10 @@ with 0 good fits is read the same way.
 declared `skip_on_false` returns `False`; or, for a Find or Fit, when its run does not leave a finished channel with
 results: the status method is False (cancelled, failed, 0 events) or, for a Fit, `get_num_events` is 0. A cancel is a
 failure too, for now. An entry that names no action or whose values no longer fit is reported and skipped, as before.
-Live behaviour is unchanged: a 0-good-fits Fit still marks the channel fitted, is recorded and can be written.
-*Extended 2026-11-09: the question is the only dialog a replay opens; every error a dialog would show while a
+*Corrected 2026-11-17: the ruling covers live runs too, which this entry first left out.* A run with 0 results is
+not saved in the tab's history, live or replayed, a Fit with 0 good fits as a Find with 0 events
+(`MetaController._run_finished_channel`); the fitter still marks such a channel fitted, so it can still be plotted
+and written. *Extended 2026-11-09: the question is the only dialog a replay opens; every error a dialog would show while a
 replay runs - its runs' worker threads included - goes to the log file and into the question, under "What the step
 reported".* *Extended 2026-11-12: a step that is not a `result` but starts background runs, Conditioning's plot, fails
 when, once those runs have ended, the tab's `MetaController.background_step_failure` names a reason.* *Extended
@@ -403,7 +405,7 @@ when, once those runs have ended, the tab's `MetaController.background_step_fail
 recorded either way). Making the overlay `skip_on_false`: changes live recording.
 
 **Revisit if** a run with 0 results turns out to be a legitimate outcome, or when the queued outcome tracking lands (a
-cancel could then carry on). The rule is one check in `ReplaySequence._left_results` plus its tests; telling 0 events
+cancel could then carry on). The rule is one check in `MetaController._run_finished_channel` plus its tests; telling 0 events
 from a cancel or an error for Find needs the plugin's outcome (queued in `future_fixes.md`).
 
 ---

@@ -97,21 +97,87 @@ def test_a_launched_run_is_recorded_only_when_it_finishes(tab: _Tab) -> None:
     tab.update_tab_action_history.emit.assert_called_with("_Tab", tab.tab_action_history)  # type: ignore[attr-defined]
 
 
-@pytest.mark.parametrize(
-    "plugin, metaclass, status",
-    [
-        ("A", "MetaEventFinder", "get_eventfinding_status"),
-        ("F", "MetaEventFitter", "get_eventfitting_status"),
-    ],
-)
-def test_the_plugin_is_asked_whether_the_channel_holds_a_finished_run(
-    tab: _Tab, plugin: str, metaclass: str, status: str
+def test_a_finder_is_asked_whether_the_channel_holds_a_finished_run(tab: _Tab) -> None:
+    """A finder marks a channel finished only when it found events, so its status is enough."""
+    tab.find("A", 2, [])
+
+    tab.record_finished_run(2, "A")
+
+    tab.model.call.assert_called_once_with(
+        "MetaEventFinder", "A", "get_eventfinding_status", 2
+    )
+
+
+def test_a_fitter_is_asked_whether_the_channel_is_fitted_and_how_many_fits_are_good(
+    tab: _Tab,
 ) -> None:
-    tab.find(plugin, 2, [])
+    """A fitter marks a channel fitted even when no fit was good, so its count is read too."""
+    tab.find("F", 2, [])
 
-    tab.record_finished_run(2, plugin)
+    tab.record_finished_run(2, "F")
 
-    tab.model.call.assert_called_once_with(metaclass, plugin, status, 2)
+    assert [c.args for c in tab.model.call.call_args_list] == [
+        ("MetaEventFitter", "F", "get_eventfitting_status", 2),
+        ("MetaEventFitter", "F", "get_num_events", 2),
+    ]
+
+
+def _fitter_answers(fitted: bool, count: Any) -> Any:
+    """The fitter's answers: fitted or not, and its count of good fits, or what it raises."""
+
+    def call(metaclass: str, key: str, method: str, *args: Any) -> Any:
+        if method == "get_eventfitting_status":
+            return fitted
+        if method == "get_num_events":
+            if isinstance(count, Exception):
+                raise count
+            return count
+        return True
+
+    return call
+
+
+def test_a_fit_with_no_good_fits_is_not_recorded_as_a_find_with_no_events_is_not(
+    tab: _Tab,
+) -> None:
+    tab.model.call.side_effect = _fitter_answers(True, 0)
+    tab.find("F", 2, [])
+
+    tab.record_finished_run(2, "F")
+
+    assert _history(tab) == []
+    assert _panel(tab) == [
+        "F did not finish channel 2, so this run is not saved in the tab's history"
+    ]
+
+
+def test_a_fit_whose_count_cannot_be_read_is_not_recorded(tab: _Tab) -> None:
+    tab.model.call.side_effect = _fitter_answers(True, RuntimeError("no loader"))
+    tab.find("F", 2, [])
+
+    tab.record_finished_run(2, "F")
+
+    assert _history(tab) == []
+
+
+def test_a_rerun_with_no_good_fits_removes_the_earlier_fit_and_what_was_drawn_from_it(
+    tab: _Tab,
+) -> None:
+    """The rerun cleared the channel as it started, as a Find that found nothing does."""
+    tab.model.call.side_effect = _fitter_answers(True, 12)
+    tab.find("F", 2, [])
+    tab.record_finished_run(2, "F")
+    tab.show("F", 2)
+
+    tab.model.call.side_effect = _fitter_answers(True, 0)
+    tab.find("F", 2, [])
+    tab.record_finished_run(2, "F")
+
+    assert _history(tab) == []
+    assert _panel(tab)[-1].startswith(
+        "F did not finish channel 2, so this run is not saved in the tab's history; its "
+        "earlier run on that channel is removed"
+    )
 
 
 def test_a_run_that_did_not_finish_is_not_recorded_and_the_panel_says_so(
