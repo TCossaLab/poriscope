@@ -505,6 +505,9 @@ or a speed-up should be held:
 
    python scripts/test_durations.py baseline a.xml b.xml c.xml > tests/test_duration_baseline.json
 
+**When a check warns,** act on it before merging: make the test cheaper, or mark it
+``exceeds_time_budget`` with a reason; or say in the pull request why the run was noise.
+
 ``pytest --marker-stats`` prints the number of tests and their mean time per marker, with or
 without ``-n``.
 

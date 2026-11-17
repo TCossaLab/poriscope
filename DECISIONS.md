@@ -86,7 +86,7 @@ per-directory summary; branch CI keeps it 30 days. On the Linux 3.12.0 leg only:
 warns on a test over its tier's budget (unit 5 s, integration 20 s, e2e 60 s; wider fixture setup and
 scope-closing teardown not counted; opt-out `exceeds_time_budget(reason)`), and
 `test_durations.py check` warns above 1.3x the suite's or 1.5x a directory's expected time. Both warn,
-neither fails (Carolina, 2026-11-11). Under xdist the worker attaches each test's own time and markers
+neither fails (Carolina, 2026-11-11). Every warning is acted on before merging: fixed, marked with a reason, or noted as noise (Carolina, 2026-11-17). Under xdist the worker attaches each test's own time and markers
 to its teardown report for the controller (Carolina, 2026-11-16); the alternative, computing from the
 junit file, loses the fixture-time corrections and the opt-out. The baseline is each directory's
 median over several CI runs.
