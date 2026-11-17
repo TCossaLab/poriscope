@@ -7,11 +7,14 @@ which they answer through, is pinned in ``test_protein_controller.py``; a second
 any of these on one tab is the duplication ratchet's to catch.
 """
 
+from typing import Optional
+
 import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
+from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
 from tests.unit.controllers._recording_model import RecordingModel
 
@@ -399,3 +402,45 @@ class TestLoadEventIdCache:
         controller.load_event_id_cache("ldr", "dwell > 999", None, "subset")
 
         controller.view.set_event_id_rows.assert_called_once_with(rows)
+
+
+# ===========================================================================
+# relay_query - a blank filter is stored, on both subset tabs
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "controller_class",
+    [MetadataController, ProteinController],
+    ids=lambda c: c.__name__,
+)
+@pytest.mark.parametrize("old_name", [None, "old_assisted"], ids=["added", "edited"])
+def test_a_blank_filter_is_stored_as_an_empty_string(
+    qapp, controller_class: type, old_name: Optional[str]
+) -> None:
+    """
+    A filter with no text means "all rows", and it is kept under its name like any other.
+
+    Both tabs run the one ``relay_query`` on ``MetaSubsetTabController``, against their
+    real View, so this pins the shared body as each tab reaches it. Skipping the store
+    for blank text would leave an added filter missing and an edited one under its old
+    name, while every message about it still went out.
+
+    :param qapp: pytest-qt's application
+    :type qapp: QApplication
+    :param controller_class: the subset tab under test
+    :type controller_class: type
+    :param old_name: None to add a filter, or the name an edit replaces
+    :type old_name: Optional[str]
+    """
+    controller = controller_class()
+    if old_name is not None:
+        controller.view.commit_filter(old_name, "dwell_time > 1")
+        controller.view.replace_filter_item(old_name)
+    intent = "validate_new_filter" if old_name is None else "validate_edited_filter"
+
+    controller.relay_query(
+        "SELECT * FROM events", "", "events", intent, "all_rows", old_name, ""
+    )
+
+    assert controller.view.get_subset_filters() == {"all_rows_assisted": ""}
