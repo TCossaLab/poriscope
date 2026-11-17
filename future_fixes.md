@@ -497,7 +497,9 @@ The rest are readability only; each is behaviour-preserving and wants the coveri
 - **A contributor cannot run the replay guard on their own tab (2026-11-17).** `test_replay_guard_no_gui.py`
   checks only the six tabs Poriscope ships with (`TABS`). A way to point it at a contributor's tab would check that a
   replay reproduces the action, that no recorded action reads a widget, and that each view names its run in
-  `depends_on`, which a replay now relies on to order a view after its run.
+  `depends_on`, which a replay now relies on to order a view after its run. Left out for now because a contribution
+  is checked as any other is: static checks (the plugin compliance test, mypy, pydoclint, ruff, the module-level code
+  and settings-schema hooks) cover its shape, and nothing runs its logic. The guard would; worth weighing.
 
 ### Docs and records
 
