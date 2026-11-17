@@ -22,6 +22,7 @@ from pathlib import Path
 import psutil
 import pytest
 
+from tests._replay_cleanup import stop_leftover_replays
 from tests._window_cleanup import destroy_leftover_windows
 
 # ===========================================================================
@@ -143,6 +144,22 @@ def destroy_windows_after_each_test():
     survivors = destroy_leftover_windows()
     if survivors:
         pytest.fail(f"Windows still alive after the cleanup: {survivors}")
+
+
+@pytest.fixture(autouse=True)
+def stop_replays_after_each_test():
+    """
+    Stop every replay a test leaves running, and fail the test that left one.
+
+    A running replay takes the errors that would open a dialog, from a set the whole
+    process shares, so one left running swallows the dialogs of the tests after it on the
+    same worker. Root-level and autouse for the reason the window cleanup is: it is torn
+    down after every fixture a test asks for, which stop their own replays first.
+    """
+    yield
+    left = stop_leftover_replays()
+    if left:
+        pytest.fail(f"A replay was still running after the test: {left}")
 
 
 # ===========================================================================

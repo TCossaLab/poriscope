@@ -409,7 +409,11 @@ Beyond ``pytest.ini``, the root ``tests/conftest.py`` deletes every window a tes
 behind once the test ends, and **fails the test if a window survives**. Every test shares
 one ``QApplication``, so a window that is only closed (``close()`` hides it) stays alive and
 makes every later test slower. If your test fails with "Windows still alive after the cleanup",
-something is keeping one of its windows from being deleted.
+something is keeping one of its windows from being deleted. It also stops every replay a test
+leaves running, and **fails the test that left one**: a running replay takes the errors that
+would open a dialog, from a set the whole process shares, so one left running hides the dialogs
+of every later test. If your test fails with "A replay was still running after the test", stop
+the replay in the test's own fixture, as ``tab.replay_sequence.stop(quitting=True)``.
 
 .. note::
 
