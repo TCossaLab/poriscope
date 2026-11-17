@@ -386,8 +386,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         reported = f"What the step reported:\n{details}\n\n" if details else ""
         box.setInformativeText(
             reported + "The status panel shows what the replayed actions reported.\n\n"
-            "Go back returns the tab to how it was before this replay. Keep leaves what "
-            "was replayed, and Replay Actions continues from this step."
+            "Go back stops the runs still going and returns the tab to how it was before "
+            "this replay. Keep lets them finish, and Replay Actions then replays only what "
+            "did not finish."
         )
         back = box.addButton("Go back", QMessageBox.ButtonRole.DestructiveRole)
         keep = box.addButton("Keep", QMessageBox.ButtonRole.AcceptRole)
