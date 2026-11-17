@@ -18,6 +18,31 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-17 - A replay restores the state the actions produced, not their order: independent runs start together
+
+**Context.** A replay ran one entry at a time and waited for each Find or Fit, so a Find clicked once on four channels
+replayed one channel after another: 1.6 s by hand, 2.8 s replayed (four channels of 10 s at 4 MHz, clean copy of
+`3511c2de`, 2026-11-16). The lab's recordings are 1,000 s or more at 5 MHz.
+
+**Decision** (Carolina, 2026-11-16). A replay restores the state the recorded actions produced; the order and timing
+of the steps are not part of that state. Each `result` is launched as soon as nothing earlier holds it back: an earlier
+run of its own key, or a view drawn from that run. Every other entry keeps its place among the entries that are not
+results, and waits for the run its `depends_on` names. When the replay ends, the panel and the history read as in
+recorded order. When an entry fails, nothing new starts and the user is asked at once while the runs already going
+carry on; each later failure is asked about in turn. Go back stops those runs, then clears. Keep lets them end, and the
+next Replay Actions replays only what did not finish. A run must not need another run's output, and a view that shows
+a run's output names it in `depends_on`; this is documented for contributors, not enforced.
+
+**Rejected.** Grouping only neighbouring runs: a plot between two Finds would still serialise them. Recording which
+runs one click launched: every run happens before the user acts, so the grouping tells a restore nothing, and it would
+change the session file. A cap on how many runs start together: a click has none. Carrying on after Keep with the steps
+that don't depend on the failed one: that is "Skip this step" without its button, and the declarations between views
+are incomplete (Clustering's Merge). Leaving the history in the order the runs finished.
+
+**Revisit if** a run needs another run's output, or "Skip this step" lands.
+
+---
+
 ## 2026-11-16 - Two duplication floors stay: the loader bases' 66 lines and CUSUM/NoFitter's 171
 
 **Context.** `measure_duplication.py --verbose` (2026-11-16): `MetaDatabaseLoader` and `MetaEventLoader` carry the
@@ -369,7 +394,8 @@ Live behaviour is unchanged: a 0-good-fits Fit still marks the channel fitted, i
 *Extended 2026-11-09: the question is the only dialog a replay opens; every error a dialog would show while a
 replay runs - its runs' worker threads included - goes to the log file and into the question, under "What the step
 reported".* *Extended 2026-11-12: a step that is not a `result` but starts background runs, Conditioning's plot, fails
-when, once those runs have ended, the tab's `MetaController.background_step_failure` names a reason.*
+when, once those runs have ended, the tab's `MetaController.background_step_failure` names a reason.* *Extended
+2026-11-17: the question is asked as soon as an entry fails, with the runs already going left to go on.*
 
 **Rejected.** Any `False` as a failure: a recorded overlay that drew nothing would fail every replay (`overlay_plot` is
 recorded either way). Making the overlay `skip_on_false`: changes live recording.
@@ -819,7 +845,7 @@ step fails the replay stops and asks Go back or Keep (2026-11-05, 2026-10-17). U
 `MetaController.replay`: it replays only Metadata's plots, which hold no Find or Fit. *Extended 2026-11-12: any
 other step that starts background runs waits for every run it started (not runs already going), and ends a turn of the
 event loop later, so the tab has drawn before the next step. Still runs of its own tab, so the revisit below does not
-apply.*
+apply.* *Superseded 2026-11-17 for runs: independent runs start together; see that entry.*
 
 **Rejected.** `record_finished_run` telling the sequencer when it ends (two jobs in one slot); a sequencer slot on
 `run_finished` that runs the next step inside the emission (depends on connection order); polling `model.workers`

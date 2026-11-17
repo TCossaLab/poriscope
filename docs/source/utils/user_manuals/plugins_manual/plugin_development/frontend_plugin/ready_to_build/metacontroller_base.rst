@@ -36,9 +36,11 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 - Every recorded action declares its ``kind``, which says what a restored session keeps of it.
   The declaration lives on the decorator only; nothing of it is saved in the entry:
 
-  - ``result``: a background run of one plugin on one channel, such as Find or Fit. ``key`` names
-    its plugin parameter, then its channel parameter, ``key=("eventfinder", "channel")``; a
-    newer run with the same values replaces an older one. A result is recorded only once its
+  - ``result``: one run of one plugin on one channel, such as a Find or a Fit. ``key`` names
+    the two parameters that identify the run: the plugin, then the channel,
+    ``key=("eventfinder", "channel")``; a newer run with the same values replaces an older one.
+    A replay starts every run it can at the same time, as one click on several channels does,
+    so a run must not need the output of another run. A result is recorded only once its
     run has **finished**: the click's values are held until ``MetaModel.run_finished`` says the
     run ended, and the plugin is then asked whether the channel holds a finished run
     (``get_eventfinding_status`` or ``get_eventfitting_status``; a run clears its channel as it
@@ -47,10 +49,12 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
     started, so an earlier run of that plugin and channel, and every ``view`` whose
     ``depends_on`` names it, is removed from the history too
   - ``view``: a drawing that replaces what its figure showed, such as a trace. The newest per
-    figure is kept. ``depends_on`` names the parameters whose values are the key of the result
-    it draws from, its plugin then its channel, ``depends_on=("eventfinder", "channel")``; any
-    other number of names fails at import. A view drawn from a result that was
-    run again later is dropped. A view may compute in the background before it draws, as
+    figure is kept. A view that shows a run's output names that run in ``depends_on``, with the
+    same two parameters, ``depends_on=("eventfinder", "channel")``; any other number of names
+    fails at import. With it, a replay draws the view only once that run has finished, and the
+    view leaves the history when the run is repeated or its plugin is edited. Without it, a
+    replay may draw the view before the run has finished. A view may compute in the background
+    before it draws, as
     Conditioning's plot does; a replay waits for it (below)
   - ``additive``: a drawing added to its figure, such as an overlay; kept until a later reset or
     view on that figure
@@ -83,21 +87,30 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   ``kept_actions()`` through the Model (``MetaModel.save_plot_configuration``), in a file that
   names its format, version and tab, and ``load_actions_from_json`` reads it back through
   ``MetaModel.read_plot_configuration``, which refuses an earlier, foreign or other tab's file
-  whole. A loaded file replays through ``start_replay``, one entry at a time on the event loop
-  (``poriscope.utils.replay_sequence``). Each step first shows its recorded values in the panel
-  through the View's ``write_back``, which a tab overrides to write its own widgets;
-  a ``result`` entry waits for its run to end and carries on only if the run finished with
-  results. Any other entry that starts background runs waits until each of them has ended,
+  whole. A loaded file replays through ``start_replay``, on the event loop
+  (``poriscope.utils.replay_sequence``). A replay restores what the actions produced, not the
+  order they ran in: every ``result`` that nothing earlier holds back is launched at once, and
+  waits only for an earlier run of its own key and the views drawn from it; every other entry
+  keeps its place among the entries that are not results, and waits for the run its
+  ``depends_on`` names. When the replay ends the panel and the history read as in recorded
+  order. Each step first shows its recorded values in the panel through the View's
+  ``write_back``, which a tab overrides to write its own widgets; a ``result`` counts as
+  replayed only if its run finished with results. Any other entry that starts background runs
+  waits until each of them has ended,
   then a turn of the event loop more, so the tab has drawn before the next entry or "replay
   done"; it fails if ``background_step_failure()`` then names a reason. The base names none:
   override it when your action's background work can end without its result, and say what is
-  missing (``ConditioningController`` returns its "did not finish" line). The replay stops at
-  the first entry that fails, raises or, for a ``skip_on_false`` action, returns ``False``.
-  The user is then asked to go back or keep (``MetaView.ask_after_replay_failure``);
-  going back calls ``clear_for_replay`` and replays the history from before. Its default clears
+  missing (``ConditioningController`` returns its "did not finish" line). An entry fails when
+  its run does not finish with results, or it raises or, for a ``skip_on_false`` action,
+  returns ``False``. Nothing new starts from then on, and the user is asked at once to go back
+  or keep (``MetaView.ask_after_replay_failure``), while the runs already going carry on; each
+  later failure is asked about in turn. Keeping lets those runs end, and the next
+  ``start_replay()`` replays only the entries that did not finish. Going back stops them, then
+  calls ``clear_for_replay`` and replays the history from before. Its default clears
   the View's figure (``MetaView.clear_figure``); override it if your tab keeps more, such as a
   result on its Model, and record nothing in it. While a tab replays, its status-panel lines
-  are held and shown together when it ends, and ``replay_state_changed`` tells the main window
+  are held and shown together when it ends or a step fails, and ``replay_state_changed`` tells
+  the main window
   whether **Replay Actions** can continue it
 - Undo logic included (with safety checks and filtering): Undo replays the history from
   the last reset onward, and ``discard_last_tab_action`` drops a record without

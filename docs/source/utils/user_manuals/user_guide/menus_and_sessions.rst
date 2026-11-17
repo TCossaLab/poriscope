@@ -127,19 +127,26 @@ Replay Actions
 
 The **Replay Actions** button sits under the message panel. After **Load Session** or
 **Restore Session** it replays the showing tab's saved actions, if the dialog above did not;
-once they have all replayed it is disabled for that tab, until **Go back** or another load. A tab replays its actions one step
-at a time - Metadata's **Load Plot Configuration** does too - and while it does, its messages are
-held back and shown together when it ends, so they do not mix with other tabs' messages. A step
-that waits for an event finder or fitter carries on only if the run finishes with results.
+once they have all replayed it is disabled for that tab, until **Go back** or another load. A replay
+restores what the actions produced, as quickly as it can: **Find Events** and **Fit Events** on
+several channels start together, as one click on several channels starts them, and a plot drawn
+from a channel's events waits only for that channel. The other steps keep their order, and when
+the replay ends the panel and the tab's history read as they did when the actions were saved.
+Metadata's **Load Plot Configuration** replays the same way. While a tab replays, its messages
+are held back and shown together when it ends, so they do not mix with other tabs' messages. A
+Find or Fit counts as replayed only if its run finishes with results.
 
-If a step fails, a dialog names it and asks the question below. It is the only dialog a
-replay opens: an error the step logs - a finder's or fitter's, say - goes to the log file and is
+If a step fails, a dialog names it and asks the question below at once, while the runs already
+going carry on; nothing new starts until you answer, and each later failure asks again. It is
+the only dialog a replay opens: an error the step logs - a finder's or fitter's, say - goes to the log file and is
 shown in this dialog under "What the step reported", not in a dialog of its own, and what the
 step reports is on the message panel.
 
-- **Go back**: the tab is cleared and redrawn as it was before the replay.
-- **Keep**: what was replayed stays. **Replay Actions** is then enabled for that tab, and continues
-  from the step that failed once you have fixed its cause.
+- **Go back**: the runs still going are stopped, then the tab is cleared and redrawn as it was
+  before the replay.
+- **Keep**: what was replayed stays, and the runs still going finish. **Replay Actions** is then
+  enabled for that tab, and replays only the steps that did not finish, once you have fixed the
+  cause.
 
 The autosave holds only what a tab actually ran, so after **Keep** or **Go back** on a session's
 actions the message panel says which steps it does not have: **Replay Actions** still replays

@@ -311,6 +311,11 @@ real; latent today, and the same soft governance as `_get_plugin` staying privat
   replay writes each step's recorded values back into the panel (`ReplaySequence`, through
   `MetaView.write_back`); this is for a tab the user does not replay.
 
+- **Go back replays the live history, not the kept one (2026-11-17).** `ReplaySequence._go_back` replays
+  `_history_before`, the live history, so a Find run twice on a channel is run twice after a Go back, where once gives
+  the same tab. Replaying `build_kept_history` of it instead would avoid that, but would shorten Metadata's Undo after
+  a Go back.
+
 ### Numeric input and widgets
 
 - **A disabled OK or action button never says what to fix** (2026-10-10, by reading).
@@ -488,6 +493,11 @@ The rest are readability only; each is behaviour-preserving and wants the coveri
   One transaction per batch is not the fix: with it open, a Clustering or Protein `SQLiteDBLoader.alter_database`
   commit into the same file raised "database is locked" after 5.5 s. Measure the commits' share of a 10,000-event
   write first; if it matters, commit about once a second, which keeps every wait under sqlite3's 5 s.
+
+- **A contributor cannot run the replay guard on their own tab (2026-11-17).** `test_replay_guard_no_gui.py`
+  checks only the six tabs Poriscope ships with (`TABS`). A way to point it at a contributor's tab would check that a
+  replay reproduces the action, that no recorded action reads a widget, and that each view names its run in
+  `depends_on`, which a replay now relies on to order a view after its run.
 
 ### Docs and records
 

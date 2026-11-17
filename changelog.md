@@ -128,6 +128,10 @@
 
 * The replay guard covers the Conditioning tab: its recorded plot has a replay scenario, as each shipped tab's actions do
 
+* The root `tests/conftest.py` stops every replay a test leaves running and fails that test, since a running replay hides the error dialogs of every later test
+
+* The replay guard has a two-channel Raw Data scenario, whose Finds replay together
+
 * `python scripts/new_plugin.py AnalysisTab` writes the tab's controls panel as `analysistabs/utils/<name>controls.py` (`--user` and `--output-dir` write it beside the triad) and a controller typed to the tab's own View and Model
 
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
@@ -204,6 +208,8 @@
 
 * A replay waits for the background runs any step starts, not only a Find or Fit, and `MetaController.background_step_failure` is new: a tab overrides it to fail such a step whose work did not finish
 
+* `ReplaySequence` launches together every `result` entry nothing earlier holds back, and runs a `view` once the run its `depends_on` names has finished; `ReplaySequence.runs`, `waiting`, `launched` and `holds_panel_text` replace `waiting_for`, and `failed_at` is the first entry that failed
+
 * The Metadata panel's deferred width matching is cancelled when the panel is deleted first, instead of running on deleted widgets
 
 ### User-Facing Behaviour:
@@ -247,6 +253,8 @@
 * After Load or Restore Session, the tab you last worked in is showing, and a dialog lists the tabs with saved actions, all ticked: **Replay** replays the ticked ones at once, and a tab left out keeps its **Replay Actions**; replaying redoes no commit, export or save
 
 * A replay shows each step's recorded values in its tab's panel - plugins, channels, ranges, filters and plot settings - so a restored tab shows what produced its result, and the next click starts from those values
+
+* **A replay starts Find Events and Fit Events on several channels together**, as one click does, instead of one after another, and a plot waits only for the channel it shows; a run that fails asks Go back / Keep at once, Go back stops the runs still going, and after Keep, Replay Actions replays only what did not finish
 
 * **Fixed a Metadata plot that draws nothing after Plot Events leaving the events off the screen but in the history**, so a saved session or plot configuration brought back events you no longer saw; the events are now redrawn
 
