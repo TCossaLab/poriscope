@@ -39,8 +39,10 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   - ``result``: one run of one plugin on one channel, such as a Find or a Fit. ``key`` names
     the two parameters that identify the run: the plugin, then the channel,
     ``key=("eventfinder", "channel")``; a newer run with the same values replaces an older one.
-    A replay starts every run it can at the same time, as one click on several channels does,
-    so a run must not need the output of another run. A result is recorded only once its
+    A replay starts every run it can at the same time, as one click on several channels does.
+    No tab Poriscope ships with has a run that reads another run's output, so a replay has no
+    way yet to start one run only after another has finished; a run that did would read that
+    output unfinished. A result is recorded only once its
     run has **finished**: the click's values are held until ``MetaModel.run_finished`` says the
     run ended, and the plugin is then asked whether the channel holds a finished run
     (``get_eventfinding_status`` or ``get_eventfitting_status``; a run clears its channel as it

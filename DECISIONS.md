@@ -30,8 +30,9 @@ run of its own key, or a view drawn from that run. Every other entry keeps its p
 results, and waits for the run its `depends_on` names. When the replay ends, the panel and the history read as in
 recorded order. When an entry fails, nothing new starts and the user is asked at once while the runs already going
 carry on; each later failure is asked about in turn. Go back stops those runs, then clears. Keep lets them end, and the
-next Replay Actions replays only what did not finish. A run must not need another run's output, and a view that shows
-a run's output names it in `depends_on`; this is documented for contributors, not enforced.
+next Replay Actions replays only what did not finish. No shipped tab has a run that reads another run's output, so a
+replay cannot yet start one run after another; a run that did would read that output unfinished. A view that shows a
+run's output names it in `depends_on`. This is documented for contributors, not enforced.
 
 **Rejected.** Grouping only neighbouring runs: a plot between two Finds would still serialise them. Recording which
 runs one click launched: every run happens before the user acts, so the grouping tells a restore nothing, and it would
@@ -39,7 +40,8 @@ change the session file. A cap on how many runs start together: a click has none
 that don't depend on the failed one: that is "Skip this step" without its button, and the declarations between views
 are incomplete (Clustering's Merge). Leaving the history in the order the runs finished.
 
-**Revisit if** a run needs another run's output, or "Skip this step" lands.
+**Revisit if** a run needs another run's output: a run would name the run it reads, as a view does with `depends_on`,
+and the replay would wait for it. Or if "Skip this step" lands.
 
 ---
 

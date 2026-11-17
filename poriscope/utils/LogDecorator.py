@@ -60,7 +60,8 @@ RESET_ACTION = "reset"
 #:
 #: - ``result``: one run of one plugin on one channel (Find, Fit), recorded only once the
 #:   run finished. The newest entry per ``key`` replaces older ones. A replay starts every
-#:   run it can at the same time, so a run must not need the output of another run.
+#:   run it can at the same time. No shipped tab has a run that reads another run's output,
+#:   so a replay cannot yet wait for one run before starting another.
 #: - ``view``: a drawing that replaces what its figure showed. The newest per figure is
 #:   kept. One that shows a run's output names it in ``depends_on``: a replay draws it only
 #:   once that run has finished, and it is dropped when that run is repeated. One that
