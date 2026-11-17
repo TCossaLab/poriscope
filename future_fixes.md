@@ -206,6 +206,12 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
 
 ### Workers and tests
 
+- **Other flow tests may read a worker's report before it arrives.** `fit_events` and similar
+  helpers wait on `model.workers`, which empties before `generate_report`'s queued slot shows the
+  report; one test read the fit's report as the commit's under load (fixed 2026-11-17). Delaying
+  `generate_report` 1.5 s across `tests/integration` gave 16 failures and 16 errors, but a report
+  that fires after its test ends breaks later tests too, so real races are not yet told apart.
+  A probe that cancels its delayed reports at teardown would separate them.
 - **`EventWorker`/`MetaModel`'s worker lifecycle has no direct tests**, nor does
   `App.configure_logger`; owed by whoever owns test-writing. Scenarios worth encoding:
   - *Generator failure*: happy path, mid-run `TypeError`, abort, empty generator.
