@@ -845,7 +845,9 @@ step fails the replay stops and asks Go back or Keep (2026-11-05, 2026-10-17). U
 `MetaController.replay`: it replays only Metadata's plots, which hold no Find or Fit. *Extended 2026-11-12: any
 other step that starts background runs waits for every run it started (not runs already going), and ends a turn of the
 event loop later, so the tab has drawn before the next step. Still runs of its own tab, so the revisit below does not
-apply.* *Superseded 2026-11-17 for runs: independent runs start together; see that entry.*
+apply.* *Superseded 2026-11-17 for runs: waiting for each run was there so that no step ran before the run it reads
+had finished, not to keep runs apart, but it also made independent runs start one after another, which a click does
+not. Independent runs now start together; see that entry.*
 
 **Rejected.** `record_finished_run` telling the sequencer when it ends (two jobs in one slot); a sequencer slot on
 `run_finished` that runs the next step inside the emission (depends on connection order); polling `model.workers`
