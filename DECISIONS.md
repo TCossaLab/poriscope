@@ -99,6 +99,27 @@ rebuilding the docs.
 
 ---
 
+## 2026-11-12 - The replay-scenario failure of 2026-10-26 stops being tracked, undiagnosed
+
+**Context.** `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`
+failed once on 2026-10-26, in the first run after its second-tab perturbation was made effective. The output was not
+kept, so it was queued as an open failure.
+
+**Decision** (Carolina, 2026-11-11). Delete the queue item. The failure cannot be diagnosed: there is no output, and
+the code it ran is gone. The test then replayed entry by entry through `replay()` with a wait between entries; since
+`0bc10f2b` (2026-11-11) every scenario replays through `start_replay` and waits for the sequence to end, and since
+`282f4c0f` (2026-11-03) `settle` also waits for the held results of a finished run.
+
+**Evidence.** About 110 local runs after the failure, none failing. Of the 51 CI (Branches) runs from 2026-10-26 to
+44134467491 on `a64182ab` (2026-11-17), 8 failed (40261590138, 40965910820, 41516801896, 41521392204, 41541645874,
+43144925224, 43144951706, 44112181488), none in this file. The test as it is now: the whole file 30 times in a row in
+a clean copy of `3511c2de`, 39 passed each time (2026-11-12), and the 20 completed CI runs from 43072520051 on
+`0bc10f2b` to 44134467491 on `a64182ab`.
+
+**Revisit if** a replay scenario fails again: save the full output before any rerun, and diagnose it.
+
+---
+
 ## 2026-11-12 - Protein's reachable fraction is the fit's mass inside the traced region, not an acceptance rate
 
 **Context.** A user asked for a per-event "success rate", the reverse-sampler analogue of their old
@@ -483,8 +504,8 @@ history keeping every entry; only Undo reads that, and no tab with a Find or Fit
 
 **Rejected.** Closing the gap from the plugin side instead: the rerun puts the channel's earlier results back, so the
 earlier run's history entry stays true (built 2026-11-03, `f4cbcc67`). It turned out to be the enabler of a larger
-change, so it was withdrawn and is queued in `future_fixes.md`, Step 9b, "Keep a channel's earlier results when a
-Find/Fit rerun doesn't produce results".
+change, so it was withdrawn and is queued in `future_fixes.md`, 3.1 "Session replay", "Keep a channel's earlier
+results when a Find/Fit rerun doesn't produce results".
 
 **Revisit both together** when that queued work lands. If a rerun keeps the earlier results, decision 2 must go (the
 earlier run's history entry describes what the channel holds again, so it must stay), and decision 1 must ask how the

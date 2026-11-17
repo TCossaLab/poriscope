@@ -25,74 +25,6 @@ updates `.duplication-baseline.json` in the same commit; each track edits only i
 here and its own changelog lines, and rebases onto `develop` before `feature finish`. Step 10 waits
 for both tracks.
 
-### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
-
-- **Keep a channel's earlier results when a Find/Fit rerun doesn't produce results (2026-11-04).** A rerun clears the
-  channel as it starts, so a cancelled, failed or 0-result rerun loses earlier results. A working approach is in
-  history: `f4cbcc67` added it and `312fe6c2` removed it (`git revert 312fe6c2` or `git cherry-pick f4cbcc67`).
-  - How it worked, on `MetaEventFinder` and `MetaEventFitter` each:
-    - Which results belong to a channel: a module tuple naming the per-channel result dicts, `_FINDER_RESULTS` (12:
-      event starts and ends, paddings, baselines, counts, rejections, the finished flags) and `_FITTER_RESULTS` (7:
-      event and sublevel metadata, sublevel starts, event lengths, rejections, applied filters, the fitted flag).
-    - As a run starts, `_set_aside_channel(channel)` `pop`s those entries for the channel into a dict (a move, no
-      copy) instead of clearing them.
-    - In the run's `finally`, `_put_back_channel(channel, aside)` restores them unless the run finished with results;
-      if it did, they are dropped.
-    - PeakFinder overrides both to add its six classification dicts (`_CLASSIFICATION_RESULTS`).
-    - `last_run` (per channel: finished, no events, cancelled, failed) and `last_run_finished(channel)` record how the
-      run ended, since after a put-back the channel reads finished even though the rerun was not.
-  - Measured: one extra copy of the rerun channel's results, only during the run: ~1 MB per 10,000 events for finders,
-    ~37 MB per 10,000 good fits for NoFitter and CUSUM, ~89 MB for PeakFinder (synthetic 200 and 2,000 events and a
-    real 2 kbp recording, `ce836c54` vs `ff3a82a2`, 2026-11-04).
-  - Why it is queued: it was the fix chosen for the gap that recording a Find or Fit only once it finishes opens (see
-    `DECISIONS.md` 2026-11-03), but it turned out to be an enabler for a bigger change, so it was withdrawn and the
-    gap closed in the tab instead. To plan:
-    - Where it lives: potentially one copy of the set-aside and put-back on `BaseDataPlugin` (Kyle, 2026-11-04).
-      Based on a preliminary review of `f4cbcc67`, it would be shared by every family: each family only declares its
-      result fields, and PeakFinder, or any plugin with per-channel results of its own, extends its family's list
-      instead of overriding methods.
-    - Always on, or an opt-in `keep_previous` on `find_events` / `fit_events`, depending on whether scripts rerun a
-      channel on the same plugin instance.
-    - A readable outcome (`last_run_outcome`), so a replay can tell a cancel from a failure.
-    - 0 results handling. Settled input (Kyle, 2026-11-05): during a replay a run with 0 results counts as failed,
-      since it only comes from a settings issue (a Find with 0 events, a Fit with 0 good fits); live, a 0-good-fits Fit
-      still marks the channel fitted, is recorded and can be written.
-    - The writers refusing a run that did not complete before deleting or writing anything.
-    - If earlier results are kept again, keeping the earlier run's history entry instead of removing it.
-    - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
-      history no longer holds them, so a restore does not redraw them.
-
-- **A "Skip this step" choice when a replayed step fails (2026-11-09).** Today a replay stops at the
-  first failed step and asks Go back or Keep (`ReplaySequence._fail`, `MetaView.ask_after_replay_failure`); a later
-  step that does not depend on it (a trace after a failed Find) never runs. A third button would skip the failed step
-  and the steps declared as depending on it, and carry on. Declare first what the declarations miss: Clustering's
-  Merge needs the run before it (both only `additive` on `clusters`), and an Event Analysis fit needs the Raw Data
-  tab's Find (another tab). Changes the replay rule (`DECISIONS.md` 2026-11-05 and 2026-10-17), so it needs a ruling before it is built.
-- **The subset tabs pass a channel as the selection tree's digit string where the loader takes an `int` (2026-10-28,
-  re-measured 2026-11-11).** Six sites: `MetadataController.py:512`, `:734`, `:852`; `ProteinController.py:299`,
-  `:624`, `:770`, each handing `{exp: [channel]}` (typed `Dict[Any, Any]` where named) to methods declaring
-  `Optional[Dict[str, Optional[List[int]]]]` (`DECISIONS.md` 2026-10-09). No wrong output: the loader renders ids
-  with `str()` (`MetaDatabaseLoader._id_tuple`) and the raw path converts with `int()`; `"0"` and `0` gave the same
-  queries, rows and counts (2026-11-11). Fix it with `overlay_plot`'s "nothing selected" sentinel `{None: [None]}`
-  (`MetadataController.py:359`, and Protein's at `ProteinController.py:179`), refused before any fetch, so the annotation can be true; three Protein unit tests
-  pin the string form (`test_protein_controller.py:387`, `:496`, `:901`).
-- **The Ubuntu test job aborted once in native code (2026-11-03).** CI (Branches) run 41721366639 attempt 1 on
-  `a84c70ca`: `free(): invalid pointer`, `Fatal Python error: Aborted`, exit 134, after 954 passing tests; attempt 2
-  on the same commit passed (5,428). The commit changed no runtime code. Test #955 in collection order is the first
-  of `tests/unit/controllers/test_protein_fetch_slots.py`, right after `test_protein_controller.py`, which builds a
-  real `ProteinView`; a Qt widget freed twice at teardown fits, unproven. Not seen in the 30 runs before it, nor in
-  a Linux container matching the job (`python:3.12.10-slim-bookworm`, CI's apt packages, `xvfb-run`, 2026-11-03):
-  the two files together 40 times, and the whole suite with `-v` and faulthandler twice. If it recurs, rerun with
-  `-v` so the crash names its test.
-
-- **A replay scenario failed once and was not diagnosed (2026-10-26).**
-  `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`
-  failed once, in the first run after its second-tab perturbation was made effective; the output was not kept.
-  0 failures in about 110 later runs (14 quiet, 15 parallel, 60 with output saved). If it recurs, save the
-  output and diagnose before going on; `settle` (`test_replay_guard_no_gui.py`) waits on `model.workers`.
-  Look first at `DECISIONS.md` 2026-09-12 (the harness not stopping workers) and the Event Analysis flow's
-  wait note (`test_event_analysis_flow_no_gui.py`).
-
 ### Step 10 - docs dead-link gate and release prep
 
 - **Settle how every saved format is versioned, before 3.0 merges to main (2026-11-09).** One policy for
@@ -178,6 +110,60 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
   Needs a ruling on hiding versus greying out mismatched entries. **Not scheduled: first see how
   the S9a.8-S9a.10 refusals are received, and revisit this if users trip over them or ask for the
   crossing to be prevented instead.**
+
+- **The subset tabs pass a channel as the selection tree's digit string where the loader takes an `int` (2026-10-28,
+  re-measured 2026-11-11, anchors 2026-11-17).** Six sites: `MetadataController.py:512`, `:734`, `:852`; `ProteinController.py:299`,
+  `:627`, `:779`, each handing `{exp: [channel]}` (typed `Dict[Any, Any]` where named) to methods declaring
+  `Optional[Dict[str, Optional[List[int]]]]` (`DECISIONS.md` 2026-10-09). No wrong output: the loader renders ids
+  with `str()` (`MetaDatabaseLoader._id_tuple`) and the raw path converts with `int()`; `"0"` and `0` gave the same
+  queries, rows and counts (2026-11-11). Fix it with `overlay_plot`'s "nothing selected" sentinel `{None: [None]}`
+  (`MetadataController.py:359`, and Protein's at `ProteinController.py:179`), refused before any fetch, so the annotation can be true; three Protein unit tests
+  pin the string form (`test_protein_controller.py:373`, `:482`, `:894`).
+
+### Session replay
+
+- **Keep a channel's earlier results when a Find/Fit rerun doesn't produce results (2026-11-04).** A rerun clears the
+  channel as it starts, so a cancelled, failed or 0-result rerun loses earlier results. A working approach is in
+  history: `f4cbcc67` added it and `312fe6c2` removed it (`git revert 312fe6c2` or `git cherry-pick f4cbcc67`).
+  - How it worked, on `MetaEventFinder` and `MetaEventFitter` each:
+    - Which results belong to a channel: a module tuple naming the per-channel result dicts, `_FINDER_RESULTS` (12:
+      event starts and ends, paddings, baselines, counts, rejections, the finished flags) and `_FITTER_RESULTS` (7:
+      event and sublevel metadata, sublevel starts, event lengths, rejections, applied filters, the fitted flag).
+    - As a run starts, `_set_aside_channel(channel)` `pop`s those entries for the channel into a dict (a move, no
+      copy) instead of clearing them.
+    - In the run's `finally`, `_put_back_channel(channel, aside)` restores them unless the run finished with results;
+      if it did, they are dropped.
+    - PeakFinder overrides both to add its six classification dicts (`_CLASSIFICATION_RESULTS`).
+    - `last_run` (per channel: finished, no events, cancelled, failed) and `last_run_finished(channel)` record how the
+      run ended, since after a put-back the channel reads finished even though the rerun was not.
+  - Measured: one extra copy of the rerun channel's results, only during the run: ~1 MB per 10,000 events for finders,
+    ~37 MB per 10,000 good fits for NoFitter and CUSUM, ~89 MB for PeakFinder (synthetic 200 and 2,000 events and a
+    real 2 kbp recording, `ce836c54` vs `ff3a82a2`, 2026-11-04).
+  - Why it is queued: it was the fix chosen for the gap that recording a Find or Fit only once it finishes opens (see
+    `DECISIONS.md` 2026-11-03), but it turned out to be an enabler for a bigger change, so it was withdrawn and the
+    gap closed in the tab instead. To plan:
+    - Where it lives: potentially one copy of the set-aside and put-back on `BaseDataPlugin` (Kyle, 2026-11-04).
+      Based on a preliminary review of `f4cbcc67`, it would be shared by every family: each family only declares its
+      result fields, and PeakFinder, or any plugin with per-channel results of its own, extends its family's list
+      instead of overriding methods.
+    - Always on, or an opt-in `keep_previous` on `find_events` / `fit_events`, depending on whether scripts rerun a
+      channel on the same plugin instance.
+    - A readable outcome (`last_run_outcome`), so a replay can tell a cancel from a failure.
+    - 0 results handling. Settled input (Kyle, 2026-11-05): during a replay a run with 0 results counts as failed,
+      since it only comes from a settings issue (a Find with 0 events, a Fit with 0 good fits); live, a 0-good-fits Fit
+      still marks the channel fitted, is recorded and can be written.
+    - The writers refusing a run that did not complete before deleting or writing anything.
+    - If earlier results are kept again, keeping the earlier run's history entry instead of removing it.
+    - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
+      history no longer holds them, so a restore does not redraw them.
+
+- **A "Skip this step" choice when a replayed step fails (2026-11-09).** Today a failed step starts
+  nothing new and asks Go back or Keep at once, while runs already going carry on (`ReplaySequence._fail`,
+  `MetaView.ask_after_replay_failure`); a later step that had not started never runs, even one that does not depend
+  on the failed step. A third button would skip the failed step
+  and the steps declared as depending on it, and carry on. Declare first what the declarations miss: Clustering's
+  Merge needs the run before it (both only `additive` on `clusters`), and an Event Analysis fit needs the Raw Data
+  tab's Find (another tab). Changes the replay rule (`DECISIONS.md` 2026-11-05, 2026-10-17 and 2026-11-17), so it needs a ruling before it is built.
 
 ### Fitter performance
 
@@ -500,6 +486,18 @@ The rest are readability only; each is behaviour-preserving and wants the coveri
   `depends_on`, which a replay now relies on to order a view after its run. Left out for now because a contribution
   is checked as any other is: static checks (the plugin compliance test, mypy, pydoclint, ruff, the module-level code
   and settings-schema hooks) cover its shape, and nothing runs its logic. The guard would; worth weighing.
+
+- **The Ubuntu test job aborted once in native code (2026-11-03).** CI (Branches) run 41721366639 attempt 1 on
+  `a84c70ca`: `free(): invalid pointer`, `Fatal Python error: Aborted`, exit 134, after 954 passing tests; attempt 2
+  on the same commit passed (5,428). The commit changed no runtime code. Test #955 in collection order is the first
+  of `tests/unit/controllers/test_protein_fetch_slots.py`, right after `test_protein_controller.py`, which builds a
+  real `ProteinView`; a Qt widget freed twice at teardown fits, unproven. Not seen in the 30 runs before it, nor in
+  a Linux container matching the job (`python:3.12.10-slim-bookworm`, CI's apt packages, `xvfb-run`, 2026-11-03):
+  the two files together 40 times, and the whole suite with `-v` and faulthandler twice. If it recurs, rerun with
+  `-v` so the crash names its test. Not seen since: the 38 CI (Branches) runs after it, 41728161120 on `a84c70ca`
+  (2026-11-03) through 44134467491 on `a64182ab` (2026-11-17), ran 72 Ubuntu test jobs; 67 passed on the first
+  attempt, 4 failed on a test assertion (43142602372, 43144925224, 43144951706, 44112181488), 1 was cancelled, none
+  aborted. Passing runs cannot show it gone, so watch the next runs before deleting this.
 
 ### Docs and records
 
