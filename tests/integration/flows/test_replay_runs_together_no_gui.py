@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+from PySide6.QtCore import QThread
 
 from tests.integration.flows._triad import Triad, build_rawdata_tab
 
@@ -25,17 +26,31 @@ class HeldChunks:
 
     A run reads a stop between chunks, so a run stopped while it is held on the first gate
     ends there once the gate opens, and one still to do its second chunk is going until the
-    second gate opens. The recording spans two chunks.
+    second gate opens. The recording spans two chunks. A channel in ``hold_after_first``
+    finishes its first chunk only once that channel's event is set, so a test can let a
+    stopped run end only after the other has reached its second gate.
     """
 
-    def __init__(self, finder: Any) -> None:
+    def __init__(self, finder: Any, model: Any) -> None:
         self.first = threading.Event()
         self.second = threading.Event()
         self.runs_started = 0
+        self.at_second: List[int] = []
+        self.hold_after_first: Dict[int, threading.Event] = {}
+        self._model = model
         self._lock = threading.Lock()
         self._run = threading.local()
         self._chunk = finder._find_events_in_chunk
         finder._find_events_in_chunk = self
+
+    def _channel(self) -> int:
+        """The channel whose worker thread is calling."""
+        thread = QThread.currentThread()
+        return next(
+            channel
+            for channel, running in self._model.threads[FINDER].items()
+            if running is thread
+        )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         chunks = self._run.chunks = getattr(self._run, "chunks", 0) + 1
@@ -43,13 +58,22 @@ class HeldChunks:
             with self._lock:
                 self.runs_started += 1
             self.first.wait(timeout=60)
-        elif chunks == 2:
+            result = self._chunk(*args, **kwargs)
+            hold = self.hold_after_first.get(self._channel())
+            if hold is not None:
+                hold.wait(timeout=60)
+            return result
+        if chunks == 2:
+            with self._lock:
+                self.at_second.append(self._channel())
             self.second.wait(timeout=60)
         return self._chunk(*args, **kwargs)
 
     def open(self) -> None:
         self.first.set()
         self.second.set()
+        for hold in self.hold_after_first.values():
+            hold.set()
 
 
 def settle(triad: Triad, qtbot: Any) -> None:
@@ -125,7 +149,9 @@ def replaying_tab(
     (tmp_path / "replayed").mkdir()
     triad = build_rawdata_tab(tmp_path / "replayed", two_channel_chimera)
     controller = triad.tab_controller
-    held = HeldChunks(controller.model._plugin_instances["MetaEventFinder"][FINDER])
+    held = HeldChunks(
+        controller.model._plugin_instances["MetaEventFinder"][FINDER], controller.model
+    )
     lines: List[str] = []
     controller.add_text_to_display.connect(lambda text, source: lines.append(text))
     try:
@@ -161,14 +187,20 @@ def _stop_the_first_while_both_are_held(
     """
     Start the replay, see both runs started, stop the first and let it go on to its end.
 
+    The stopped run ends only once the other is held on its second gate, so the other is
+    still going when the question is asked, however fast the machine.
+
     :return: the stopped channel, then the other
     """
     controller = triad.tab_controller
     stopped, other = (entry["kwargs"]["channel"] for entry in recorded)
+    held.hold_after_first[stopped] = threading.Event()
     assert controller.start_replay(recorded)
     qtbot.waitUntil(lambda: held.runs_started == 2, timeout=60_000)
     controller.handle_kill_worker(controller.__class__.__name__, f"{FINDER}/{stopped}")
     held.first.set()
+    qtbot.waitUntil(lambda: other in held.at_second, timeout=60_000)
+    held.hold_after_first[stopped].set()
     return [stopped, other]
 
 
