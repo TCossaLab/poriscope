@@ -133,4 +133,10 @@ jobs:
       # -n auto: workers sized by tests/conftest.py from the runner's cores and memory.
       - name: Run full test suite (headless with GUI support)
         run: |
-          xvfb-run -a pytest -q -n auto
+          xvfb-run -a pytest -q -n auto --junitxml=pytest-junit.xml --durations=25
+
+      - name: Test durations summary
+        if: always() && hashFiles('pytest-junit.xml') != ''
+        run: |
+          echo "### Test durations" >> "$GITHUB_STEP_SUMMARY"
+          python scripts/test_durations.py summary pytest-junit.xml >> "$GITHUB_STEP_SUMMARY"
