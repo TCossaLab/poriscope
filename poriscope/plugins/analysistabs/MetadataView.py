@@ -643,7 +643,9 @@ class MetadataView(MetaSubsetTabView):
         ax = self.axes
 
         # Size and opacity stay matplotlib's 3D defaults; the colours and legend dot are shared.
-        ax.scatter(xdata, ydata, zdata, color=next_scatter_color(ax), label=dataset_label)
+        ax.scatter(
+            xdata, ydata, zdata, color=next_scatter_color(ax), label=dataset_label
+        )
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         ax.set_zlabel(z_label)
