@@ -28,7 +28,8 @@ Session Options Overview
 
 Each tab's **recorded actions** are kept in the session file: the plots and runs a restored
 session needs to show what you had, without the ones a later run or plot replaced. A run that
-is cancelled, fails or finds nothing, and a plot that is refused, is not recorded. The
+is cancelled, fails or finds nothing (a Find with no events, a Fit with no good fits), and a
+plot that is refused, is not recorded. The
 autosave is written whenever a tab's actions change, as well as whenever a plugin changes.
 After **Load Session** or **Restore Session**, each tab holds the actions it was saved with,
 the tab you last worked in is showing, and the **Replay the session** dialog (below) offers to

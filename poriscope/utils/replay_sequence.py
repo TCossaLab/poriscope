@@ -389,7 +389,7 @@ class ReplaySequence:
         position = self.runs.pop(run, None)
         if position is None:
             return
-        if self._left_results(key, channel):
+        if self._controller._run_finished_channel(key, channel):
             metaclass = self._controller.model.reporter_metaclasses.get(key, "")
             self._finished_runs.append((metaclass, key, channel))
             self._done.add(position)
@@ -706,34 +706,6 @@ class ReplaySequence:
         return bool(model.thread_running.get(key, {}).get(channel)) or (
             run in self._controller._held()
         )
-
-    def _left_results(self, key: str, channel: int) -> bool:
-        """
-        Did the run that just ended leave a finished channel with results?
-
-        A finder marks a channel finished only when it found events. A fitter marks it
-        finished even when no fit was good, so its count is read too.
-
-        :param key: the plugin's key
-        :type key: str
-        :param channel: the channel
-        :type channel: int
-        :return: True if the run counts as replayed
-        :rtype: bool
-        """
-        if not self._controller._run_finished_channel(key, channel):
-            return False
-        model = self._controller.model
-        metaclass = model.reporter_metaclasses.get(key)
-        if metaclass != "MetaEventFitter":
-            return True
-        try:
-            return bool(model.call(metaclass, key, "get_num_events", channel))
-        except Exception as e:
-            logger.warning(
-                f"Unable to count the fits of {key} on channel {channel}: {e}"
-            )
-            return False
 
     def _fail(self, position: int, reason: str) -> None:
         """

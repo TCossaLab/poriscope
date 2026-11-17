@@ -152,7 +152,10 @@ what each step does for an empty value, a missing value and more than one entry.
 step. Skipping this leaves a guard on one entry point missing from another that reaches the same
 action, and a conclusion drawn from one end of a path describing a path the value never takes. When
 readers disagree, prefer making the troublesome value unreachable (refuse to store it) over patching
-each reader, and test that directly.
+each reader, and test that directly. The same holds for a decision: before adding a rule that decides an
+outcome - finished or failed, kept or dropped - find every place that already decides it and put the rule
+in the one function they share; a rule added to only one agrees with the others until the one input that
+splits them.
 
 *Case:* a plot button refused a scope with more than one experiment, channel or filter; the arrows that
 re-plot the same events read only the first of each, moved the Event ID field and then had every plot
@@ -160,6 +163,12 @@ refused - found only in a manual pass. While tracing the scope, two claims were 
 reason: one handler was read as the only place the scope is set (another loaded it on plugin creation),
 and the loader was read as plotting everything for an empty scope (the caller replaced it with a
 sentinel that the loader refuses, as an earlier decision entry already recorded).
+
+*Case:* (2026-11-17) a background run was saved to the user's history when its plugin's status said
+finished; a session replay added two days later also failed any run with zero results, in a check of its
+own. For one plugin family the status already meant "has results"; for the other it did not, so a
+zero-result run failed the replay and was saved anyway. Found twelve days later in a manual pass, by the
+first dataset with an empty channel; fixed by moving the count into the shared status check.
 
 ## E30 · A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 

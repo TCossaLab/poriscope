@@ -649,17 +649,21 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     def _run_finished_channel(self, key: str, channel: int) -> bool:
         """
-        Ask the plugin whether the channel holds a finished run.
+        Ask the plugin whether the channel holds a finished run with results.
 
         A run clears its channel as it starts, so right after a run ends this says whether
-        that run finished. Called from a slot, so a status that cannot be read is logged and counts as not
-        finished rather than raised.
+        that run finished with results. A run with none is treated as one that did not
+        finish: a finder marks a channel finished only when it found events, and a fitter
+        marks it fitted even when no fit was good, so a fitter's count of good fits is read
+        too. Called from a slot, so a status or count that cannot be read is logged and
+        counts as not finished rather than raised.
 
         :param key: the plugin's key
         :type key: str
         :param channel: the channel
         :type channel: int
-        :return: True if the run finished, or the plugin's family has no such status
+        :return: True if the run finished with results, or the plugin's family has no such
+            status
         :rtype: bool
         """
         metaclass = self.model.reporter_metaclasses.get(key)
@@ -667,10 +671,20 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         if metaclass is None or method is None:
             return True
         try:
-            return bool(self.model.call(metaclass, key, method, channel))
+            if not self.model.call(metaclass, key, method, channel):
+                return False
         except Exception as e:
             self.logger.error(
                 f"Unable to tell whether {key} finished channel {channel}: {e}"
+            )
+            return False
+        if metaclass != "MetaEventFitter":
+            return True
+        try:
+            return bool(self.model.call(metaclass, key, "get_num_events", channel))
+        except Exception as e:
+            self.logger.warning(
+                f"Unable to count the fits of {key} on channel {channel}: {e}"
             )
             return False
 
