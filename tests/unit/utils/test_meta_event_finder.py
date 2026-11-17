@@ -482,6 +482,31 @@ class TestEventBoundariesFromTheBaseline:
                     offset,
                 )
 
+    # EDGE_RUN_SAMPLES is a class attribute a finder may override. Each slice overlaps
+    # the last by a run less one sample, so a run longer than the first slice would
+    # carry the next slice across the crossing. Each quiet run below straddles the
+    # crossing with fewer than a run's samples on the side being searched, so neither
+    # search may find it.
+    _LONG_RUN = 1500
+
+    def test_a_run_longer_than_the_first_slice_never_starts_after_the_crossing(
+        self, bare_finder
+    ):
+        bare_finder.EDGE_RUN_SAMPLES = self._LONG_RUN
+        data = np.full(9000, 10.0)
+        data[3976:5476] = 0.0  # 1,025 samples up to the crossing, 475 after it
+        assert self._whole_chunk_start(bare_finder, data, 5000, 0) == 0
+        assert bare_finder._event_start_from_the_baseline(data, 5000, 0) == 0
+
+    def test_a_run_longer_than_the_first_slice_never_ends_before_the_crossing(
+        self, bare_finder
+    ):
+        bare_finder.EDGE_RUN_SAMPLES = self._LONG_RUN
+        data = np.full(9000, 10.0)
+        data[4525:6025] = 0.0  # 475 samples before the crossing, 1,025 from it
+        assert self._whole_chunk_end(bare_finder, data, 5000) is None
+        assert bare_finder._event_end_from_the_baseline(data, 5000) is None
+
     def test_both_match_a_whole_chunk_scan_on_noise(self, bare_finder):
         rng = np.random.default_rng(0)
         for size in (1, 2, 3, 50, 1023, 1024, 1025, 5000):

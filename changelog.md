@@ -168,6 +168,8 @@
 
 * `PeakFinder.redefine_padding` now finds edges by the CUSUM family's rules, so it sees the steps after a large edge
 
+* An event finder that overrides `EDGE_RUN_SAMPLES` with a run longer than 1,023 samples no longer places an event's start after its threshold crossing or its end before it
+
 ### Analysis Tabs:
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
