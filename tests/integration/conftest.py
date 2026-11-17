@@ -144,6 +144,43 @@ def sample_chimera(tmp_path, _chimera_template) -> Dict[str, str]:
 
 
 @pytest.fixture
+def two_channel_chimera(tmp_path) -> Dict[str, Any]:
+    """
+    A Chimera recording of channels 1 and 2, one file each, two one-second chunks long.
+
+    The reader finds the second file beside the first.
+
+    :param tmp_path: Pytest-provided temporary directory, unique per test.
+    :type tmp_path: pathlib.Path
+
+    :return: the first channel's ``.log``, that channel, and both channels.
+    :rtype: Dict[str, Any]
+    """
+    folder = tmp_path / "two_channels"
+    folder.mkdir()
+    config = ChimeraRecordingConfig(
+        base_name="synthetic",
+        samplerate=DEFAULT_SAMPLERATE_HZ,
+        duration_s=CHIMERA_DURATION_S,
+        baseline=DEFAULT_BASELINE_PA,
+        noise_std=DEFAULT_NOISE_STD_PA,
+        event_amplitude=DEFAULT_EVENT_AMPLITUDE_PA,
+        event_duration_s=DEFAULT_EVENT_DURATION_S,
+    )
+    datasets = [
+        generate_chimera_dataset(
+            folder, config, channel=channel, num_events=CHIMERA_NUM_EVENTS, seed=channel
+        )
+        for channel in (1, 2)
+    ]
+    return {
+        "log": str(datasets[0].data_path),
+        "channel": 1,
+        "channels": [1, 2],
+    }
+
+
+@pytest.fixture
 def sample_events_db(tmp_path) -> str:
     """
     Generate an events database for analysis-only tests.

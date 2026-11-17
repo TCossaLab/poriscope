@@ -279,6 +279,69 @@ def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
     return build_rawdata_tab(tmp_path, chimera, READER, FINDER)
 
 
+def rawdata_channels_tab(tmp_path: Path, chimera: Dict[str, Any]) -> Triad:
+    """A RawData tab over a recording of two channels, with a finder on it."""
+    triad = build_rawdata_tab(tmp_path, chimera, READER, FINDER)
+    triad.channels = chimera["channels"]  # type: ignore[attr-defined]
+    return triad
+
+
+def rawdata_channels_act(triad: Triad, qtbot: Any) -> None:
+    """Find Events on both channels with one click, then Plot Events on the second."""
+    view = triad.tab_view
+    channels = triad.channels  # type: ignore[attr-defined]
+    view.analysis_time_limits[FINDER] = {
+        channel: {"start": 0.0, "end": 0.0} for channel in channels
+    }
+    view.handle_parameter_change(
+        "rawdatacontrols",
+        "find_events",
+        (
+            {
+                "eventfinder": FINDER,
+                "filter": "No Filter",
+                "channel": [str(channel) for channel in channels],
+            },
+        ),
+    )
+    settle(triad, qtbot)
+    view.handle_parameter_change(
+        "rawdatacontrols",
+        "plot_events",
+        (
+            {
+                "eventfinder": FINDER,
+                "filter": "No Filter",
+                "channel": [str(channels[-1])],
+                "event_index": [0, 1],
+            },
+        ),
+    )
+
+
+def rawdata_channels_perturb(triad: Triad) -> None:
+    """Change the range the panel holds, the channels it has selected and the limits."""
+    controls = triad.tab_view.rawdatacontrols
+    controls.set_range_inputs(1.0, 0.5)
+    controls.channel_comboBox.selectAllToggle(False)
+    triad.tab_view.analysis_time_limits[FINDER] = {
+        channel: {"start": 0.5, "end": 1.0}
+        for channel in triad.channels  # type: ignore[attr-defined]
+    }
+
+
+def found_events_on_channels(triad: Triad) -> Any:
+    """What the finder holds for each channel, read back from the plugin."""
+    model = triad.tab_controller.model
+    return {
+        channel: (
+            model.call("MetaEventFinder", FINDER, "get_num_events_found", channel),
+            model.call("MetaEventFinder", FINDER, "get_eventfinding_status", channel),
+        )
+        for channel in triad.channels  # type: ignore[attr-defined]
+    }
+
+
 def conditioning_tab(tmp_path: Path, experiment: ConditioningDataset) -> Triad:
     """A Conditioning tab with the synthetic experiment loaded, a PSD every second cycle."""
     triad = build_triad("ConditioningController", tmp_path)
@@ -823,6 +886,20 @@ SCENARIOS = [
         # Write-back asks for the reader's channels.
         replay_only_calls=("get_channels",),
         probe=found_events,
+    ),
+    Scenario(
+        tab="RawDataController",
+        name="RawDataController-channels",
+        covers=("find_events", "plot_events"),
+        build=rawdata_channels_tab,
+        act=rawdata_channels_act,
+        perturb=rawdata_channels_perturb,
+        needs="two_channel_chimera",
+        extra=("plot_samplerate",),
+        click_only_calls=("get_eventfinding_status",),
+        probe=found_events_on_channels,
+        # The two channels' runs go on worker threads at once, as by hand.
+        calls_in_any_order=True,
     ),
     Scenario(
         tab="EventAnalysisController",
