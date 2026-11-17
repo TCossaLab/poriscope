@@ -170,13 +170,14 @@ Also standing, with steps 3, 4 and 6 above (N6, N7, E25, C3, C6):
 | A comment, docstring or decision says something can't be done | Re-derive it | P4 |
 | The user or a report names the cause of a defect | Probe it before designing the fix | P9 |
 | A suspicious code shape looks like a bug | Write the input that reaches it | V8 |
-| You add or fix a guard, or reason about a value used in several places | Map each entry point's pipeline, input to outcome; compare step by step | E29 |
+| You add or fix a guard or an outcome rule, or reason about a value used in several places | Map each entry point's pipeline, input to outcome; compare step by step | E29 |
 | A reported regression in code you just changed | Reproduce on the parent revision | V7 |
 | You are about to reason about which commit or test caused a failure | Bisect it instead | V14 |
 | You are adding wiring that did not exist before | Tests first, seen red; assert the invariant | N7 |
 | A correct change broke a test | Rewrite the test; never reshape the code for it | N15 |
 | You stubbed a collaborator with a bare mock | Does it behave like the real one? | N5 |
 | A test passed after a mutation | Confirm the mutation happened | N4 |
+| A test for a rule asserts one surface | Which other surfaces does the outcome reach - state, file, count? | N2 |
 | You are deleting one statement inside a block, or splicing between anchors | Structural before/after check | E21, E22 |
 | The fix is growing well past the size of the bug | Stop and ask | E24 |
 | You are about to add a dependency or raise a pin | Read its `requires-python` and ranges against the project's floor and pins; ask if either would move | E31 |

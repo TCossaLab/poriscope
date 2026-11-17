@@ -40,13 +40,21 @@ threads (the app did both) aborted the interpreter *after* "8 passed" on slow CI
 
 Separate "the body executed" (coverage) from "a test named it" (static scan) from "an assertion
 depends on its output" (mutation). A method needs the last. Count `Mock` replacements separately
-from real calls.
+from real calls. For a rule, list every place its outcome lands - the message, the state in memory, the
+saved file, any count of it - and pin each: a harness that runs the code behind the others executes them
+without pinning them, and a test pinning how often a collaborator is asked hints that the decision has
+gained an input.
 
 *Case:* one filter method had 38 test references and every one replaced it with a mock - it sat on
 every plot path with no behavioural coverage. A naive reference count scored 64 of 66 methods
 covered. Separately, five Views sat at 87-91% line coverage before any characterization test
 existed, and adding them moved the figure at most one point: the end-to-end suite executed the
 lines and nothing asserted the values.
+
+*Case:* (2026-11-17, E29's second case) a replay's zero-results test asserted the stop and the panel line;
+its harness also ran the history recorder, but nothing read the history, and the recorder's own test
+pinned the status as the only question asked. With history assertions added, five tests failed on the
+unchanged code.
 
 ## N4 · Prove every pin discriminates, and confirm the mutation happened
 
