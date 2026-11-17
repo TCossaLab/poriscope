@@ -61,6 +61,11 @@ from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
+from poriscope.utils.scatter_palette import (
+    SCATTER_POINT_SIZE,
+    draw_scatter_legend,
+    next_scatter_color,
+)
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
 )
@@ -749,7 +754,15 @@ class ProteinView(MetaSubsetTabView):
         x_label, y_label = axis_labels
 
         # Plot the scatter points
-        ax.scatter(xdata, ydata, s=4, alpha=0.5, label=dataset_label)
+        color = next_scatter_color(ax)
+        ax.scatter(
+            xdata,
+            ydata,
+            s=SCATTER_POINT_SIZE,
+            color=color,
+            alpha=self.SCATTER_ALPHA,
+            label=dataset_label,
+        )
 
         # Plot the error bars
         # fmt='none' draws only the error bars without adding new markers
@@ -759,6 +772,7 @@ class ProteinView(MetaSubsetTabView):
             xerr=x_err,
             yerr=y_err,
             fmt="none",
+            ecolor=color,
             alpha=0.25,
             capsize=1,  # Adds little caps to the ends of the error bars
             zorder=0,  # Puts the error bars behind the scatter points
@@ -768,7 +782,7 @@ class ProteinView(MetaSubsetTabView):
         ax.set_ylabel(y_label)
 
         self._update_cache((xdata, x_label), (ydata, y_label))
-        ax.legend(loc="best")
+        draw_scatter_legend(ax)
 
     @log(logger=logger)
     @override

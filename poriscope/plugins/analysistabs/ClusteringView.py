@@ -32,11 +32,9 @@ import sys
 import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
-import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
-from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
@@ -48,6 +46,11 @@ from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringCo
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
+from poriscope.utils.scatter_palette import (
+    SCATTER_POINT_SIZE,
+    legend_dot,
+    scatter_color,
+)
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
@@ -756,7 +759,7 @@ class ClusteringView(MetaView):
         ax = self.axes
         unique_clusters = data["cluster_label"].unique()
 
-        palette = [cm.tab20(i % 20) for i in range(len(unique_clusters))]
+        palette = [scatter_color(i) for i in range(len(unique_clusters))]
 
         for i, cluster_value in enumerate(sorted(unique_clusters)):
             subset = data[data["cluster_label"] == cluster_value]
@@ -766,7 +769,7 @@ class ClusteringView(MetaView):
                 ax.scatter(
                     subset[plot_cols[0]],
                     subset[plot_cols[1]],
-                    s=3,
+                    s=SCATTER_POINT_SIZE,
                     alpha=alpha.values,
                     color=color,
                     label=cluster_value,
@@ -788,22 +791,14 @@ class ClusteringView(MetaView):
                     subset[plot_cols[2]],
                     color=base_color,
                     label=cluster_value,
-                    s=3,
+                    s=SCATTER_POINT_SIZE,
                 )
                 ax.set_xlabel(col_labels[plot_cols[0]])
                 ax.set_ylabel(col_labels[plot_cols[1]])
                 ax.set_zlabel(col_labels[plot_cols[2]])
 
         handles = [
-            Line2D(
-                [0],
-                [0],
-                marker="o",
-                color="w",
-                markerfacecolor=palette[i],
-                markersize=8,
-                label=cluster_value,
-            )
+            legend_dot(palette[i], cluster_value)
             for i, cluster_value in enumerate(sorted(unique_clusters))
         ]
         ax.legend(handles=handles, loc="best")

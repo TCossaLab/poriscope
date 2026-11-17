@@ -48,6 +48,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib import colormaps
+from matplotlib.collections import PathCollection
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -439,6 +441,29 @@ class TestFiguresByMode:
         assert len(getattr(real_view, f"ax_vm_{other}").collections) == 0
         assert getattr(real_view, f"ax_vm_{mode}").get_xlabel().startswith("V")
 
+    def test_prolate_and_oblate_are_blue_then_orange_at_50_percent(self, real_view):
+        """tab20's first two dark hues, not two shades of one blue."""
+        tab20 = colormaps["tab20"]
+        real_view.show_solutions("individual", self._columns(), "Prolate Solutions")
+        real_view.show_solutions("individual", self._columns(), "Oblate Solutions")
+
+        prolate, oblate = real_view.ax_vm_individual.collections
+        assert np.allclose(prolate.get_facecolor()[0][:3], tab20(0)[:3])
+        assert np.allclose(oblate.get_facecolor()[0][:3], tab20(2)[:3])
+        assert prolate.get_alpha() == oblate.get_alpha() == 0.5
+
+    def test_peak_fits_are_blue_at_50_percent(self, real_view):
+        """The Individual plot draws one channel's peak fits, so they take the first colour."""
+        real_view.show_peak_fits("individual", self._columns(4), "fits")
+
+        (points,) = [
+            c
+            for c in real_view.ax_hist_individual.collections
+            if isinstance(c, PathCollection)
+        ]
+        assert np.allclose(points.get_facecolor()[0][:3], colormaps["tab20"](0)[:3])
+        assert points.get_alpha() == 0.5
+
     @pytest.mark.parametrize(("mode", "other"), MODES)
     def test_peak_fits_draw_on_their_mode_s_histogram_figure_only(
         self, real_view, mode, other
@@ -452,6 +477,8 @@ class TestFiguresByMode:
 
     def test_each_plot_hands_what_it_drew_to_the_export_cache(self, mock_view):
         mock_view._commit_cache = MagicMock()
+        # A real axis answers with its legend entries; this one has none yet.
+        mock_view.ax_vm_ensemble.get_legend_handles_labels.return_value = ([], [])
 
         mock_view.show_solutions("ensemble", self._columns(), "Oblate Solutions")
 

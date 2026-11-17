@@ -452,6 +452,10 @@
 
 * The Protein tab's Commit Individual writes `prolate_reachable_fraction` and `oblate_reachable_fraction`, the share of each event's fitted blockage distribution that some prolate or oblate spheroid in the pore can produce, and replaces a fit committed before them; Report All shows both for the Ensemble fit
 
+* Clustering, Protein and Metadata scatterplots colour each cluster or overlaid dataset from `tab20`, its ten dark shades before its ten light ones
+
+* Protein and Metadata scatterplots show a size-8 legend dot as Clustering's does, and Protein's peak-fit points are size 3 like the other scatterplots (were 4)
+
 ### Documentation:
 
 * The tutorial guide now says that switching tabs and opening Settings or Help are unavailable while the tutorial runs, and describes the message shown on a page with no tutorial

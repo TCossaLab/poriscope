@@ -44,6 +44,11 @@ from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.ReplayGuard import forbid_while_replaying
+from poriscope.utils.scatter_palette import (
+    SCATTER_POINT_SIZE,
+    draw_scatter_legend,
+    next_scatter_color,
+)
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
@@ -163,6 +168,10 @@ class MetaSubsetTabView(MetaView):
     filters_save_requested = Signal(str, object)
 
     logger = logging.getLogger(__name__)
+
+    #: Opacity of both tabs' 2D scatter points. Metadata's 3D scatter does not use it and
+    #: keeps matplotlib's default opacity.
+    SCATTER_ALPHA = 0.5
 
     #: Where the Controller leaves the ``event_id`` rows :py:meth:`_rebuild_event_id_cache`
     #: asked for, to be read back on the next statement over the direct connection.
@@ -1215,12 +1224,19 @@ class MetaSubsetTabView(MetaView):
         xdata, ydata = columns
         x_label, y_label = axis_labels
 
-        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
+        ax.scatter(
+            xdata,
+            ydata,
+            s=SCATTER_POINT_SIZE,
+            color=next_scatter_color(ax),
+            alpha=self.SCATTER_ALPHA,
+            label=dataset_label,
+        )
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
 
         self._update_cache((xdata, x_label), (ydata, y_label))
-        ax.legend(loc="best")
+        draw_scatter_legend(ax)
 
     @log(logger=logger)
     def _save_filter(self) -> None:

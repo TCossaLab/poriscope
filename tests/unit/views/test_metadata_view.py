@@ -39,6 +39,7 @@ from pytest_mock import MockerFixture
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
+from poriscope.utils.scatter_palette import scatter_color
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 
 # ----------------------------- Fixtures ------------------------------
@@ -72,11 +73,17 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock matplotlib figure and axes
     view_instance.figure = mocker.Mock()
     view_instance.figure.clear = mocker.Mock()
-    view_instance.figure.add_subplot = mocker.Mock(return_value=mocker.Mock())
+    view_instance.figure.add_subplot = mocker.Mock(
+        return_value=mocker.Mock(
+            collections=[], get_legend_handles_labels=lambda: ([], [])
+        )
+    )
     view_instance.figure.set_constrained_layout = mocker.Mock()
     view_instance.figure.axes = []
 
     view_instance.axes = mocker.Mock()
+    view_instance.axes.collections = []
+    view_instance.axes.get_legend_handles_labels = lambda: ([], [])
     view_instance.axes.clear = mocker.Mock()
     view_instance.axes.plot = mocker.Mock()
     view_instance.axes.fill_between = mocker.Mock()
@@ -715,7 +722,31 @@ def test_show_scatterplot_sets_axis_labels(
     view.axes.set_ylabel.assert_called()
 
 
+def test_show_scatterplot_draws_points_at_50_percent(view: MetadataView) -> None:
+    view.show_scatterplot(
+        (np.array([1.0, 2.0]), np.array([3.0, 4.0])), ("x (u1)", "y (u2)"), "a label"
+    )
+
+    assert view.axes.scatter.call_args.kwargs["alpha"] == 0.5
+
+
 # ----------------------------- show_3d_scatterplot Tests ------------------------------
+
+
+def test_show_3d_scatterplot_takes_the_shared_colour_at_matplotlib_s_size_and_opacity(
+    view: MetadataView,
+) -> None:
+    """3D takes the first scatter colour, but sets no size or opacity of its own."""
+    type(view.axes).__name__ = "Axes3D"
+
+    view.show_3d_scatterplot(
+        (np.array([1.0]), np.array([2.0]), np.array([3.0])), ("x", "y", "z"), "a label"
+    )
+
+    assert view.axes.scatter.call_args.kwargs == {
+        "color": scatter_color(0),
+        "label": "a label",
+    }
 
 
 _THREE_FILTERED = (

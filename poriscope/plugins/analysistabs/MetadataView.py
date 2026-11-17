@@ -53,6 +53,7 @@ from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
+from poriscope.utils.scatter_palette import draw_scatter_legend, next_scatter_color
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
@@ -641,13 +642,14 @@ class MetadataView(MetaSubsetTabView):
         self._clear_unready_axes("3d")
         ax = self.axes
 
-        ax.scatter(xdata, ydata, zdata, label=dataset_label)
+        # Size and opacity stay matplotlib's 3D defaults; only the colour order is shared.
+        ax.scatter(xdata, ydata, zdata, color=next_scatter_color(ax), label=dataset_label)
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         ax.set_zlabel(z_label)
 
         self._update_cache((xdata, x_label), (ydata, y_label), (zdata, z_label))
-        ax.legend(loc="best")
+        draw_scatter_legend(ax)
 
     @log(logger=logger)
     def _plot_all_points_histogram(
