@@ -16,6 +16,7 @@ on the specific layout it builds. The ``main_model`` fixture in
 import itertools
 import os
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -211,42 +212,235 @@ _ITEM_MARKERS: "dict[str, list[str]]" = {}
 _ITEM_DURATIONS: "defaultdict[str, float]" = defaultdict(float)
 
 
+# Seconds a single test may take in each tier before --time-budget warns about it.
+# Set well above normal - one test's time varies by up to ~60% between runs on one
+# machine - so a warning means a test is several times slower than its peers, not
+# that a runner was busy. pytest.ini sets them; these are the defaults.
+_DEFAULT_BUDGETS = {"unit": "5", "integration": "20", "e2e": "60"}
+
+
 def pytest_addoption(parser):
-    """Register the --marker-stats reporting flag."""
+    """Register --marker-stats, --time-budget and the per-tier budgets."""
     parser.addoption(
         "--marker-stats",
         action="store_true",
         default=False,
         help="After the run, print test count and mean duration per marker.",
     )
+    parser.addoption(
+        "--time-budget",
+        action="store_true",
+        default=False,
+        help="After the run, warn about every test over its tier's time budget.",
+    )
+    for tier, seconds in _DEFAULT_BUDGETS.items():
+        parser.addini(
+            f"time_budget_{tier}",
+            f"Seconds a {tier} test may take before --time-budget warns.",
+            default=seconds,
+        )
 
 
 def pytest_collection_modifyitems(items):
-    """Apply path-derived markers and index each test's markers for reporting."""
+    """Apply path-derived markers."""
     for item in items:
         path = str(getattr(item, "path", item.fspath)).replace("\\", "/")
         for fragment, marker in _PATH_MARKERS:
             if fragment in path:
                 item.add_marker(getattr(pytest.mark, marker))
-        _ITEM_MARKERS[item.nodeid] = sorted({m.name for m in item.iter_markers()})
+
+
+# ===========================================================================
+# What each test carries to the report: its markers and its own time
+# ===========================================================================
+#
+# Under `pytest -n auto` collection, fixture setup and the test protocol all run in
+# the workers, while the terminal summary runs in the controller, which sees only the
+# reports the workers send it. So --marker-stats and --time-budget take nothing from
+# the worker's bookkeeping directly: the worker attaches each test's markers and own
+# time to its teardown report, xdist carries a report's attributes to the controller,
+# and pytest_runtest_logreport records them there. A serial run takes the same path.
+#
+# A test's own time is setup + call + teardown, less what is not its cost: setting up
+# a fixture wider than the function (a session database, the QApplication), which
+# lands on whichever test first asks for it, and the teardown of the last test before
+# a module or class boundary, which is where pytest finalises that module's or class's
+# fixtures. With `--dist loadfile` a worker runs whole files, so both are known there.
+
+_PHASE_SECONDS: "defaultdict[str, float]" = defaultdict(float)
+_TEARDOWN_SECONDS: "dict[str, float]" = {}
+_WIDER_FIXTURE_SECONDS: "defaultdict[str, float]" = defaultdict(float)
+_ENDS_A_SCOPE: "set[str]" = set()
+_RUNNING: "list[str]" = []
+_OWN_SECONDS: "dict[str, float]" = {}
+
+_MARKERS_ATTRIBUTE = "poriscope_markers"
+_OWN_SECONDS_ATTRIBUTE = "poriscope_own_seconds"
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Note which test is running, and whether its teardown also closes a module or class."""
+    if (
+        nextitem is None
+        or nextitem.module is not item.module
+        or nextitem.cls is not item.cls
+    ):
+        _ENDS_A_SCOPE.add(item.nodeid)
+    _RUNNING.append(item.nodeid)
+    yield
+    _RUNNING.pop()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_fixture_setup(fixturedef, request):
+    """Time each fixture wider than the function, so its setup is not billed to one test."""
+    start = time.perf_counter()
+    yield
+    if fixturedef.scope != "function" and _RUNNING:
+        _WIDER_FIXTURE_SECONDS[_RUNNING[-1]] += time.perf_counter() - start
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Attach the test's markers and own time to its teardown report, where they are known."""
+    report = yield
+    _PHASE_SECONDS[item.nodeid] += report.duration
+    if report.when == "teardown":
+        _TEARDOWN_SECONDS[item.nodeid] = report.duration
+        setattr(report, _OWN_SECONDS_ATTRIBUTE, own_seconds(item.nodeid))
+        setattr(
+            report, _MARKERS_ATTRIBUTE, sorted({m.name for m in item.iter_markers()})
+        )
+    return report
 
 
 def pytest_runtest_logreport(report):
-    """Accumulate setup + call + teardown time per test, for --marker-stats."""
+    """Record each test's time, markers and own time, for --marker-stats and --time-budget."""
     _ITEM_DURATIONS[report.nodeid] += report.duration
+    if report.when == "teardown":
+        _ITEM_MARKERS[report.nodeid] = list(getattr(report, _MARKERS_ATTRIBUTE, []))
+        own = getattr(report, _OWN_SECONDS_ATTRIBUTE, None)
+        if own is not None:
+            _OWN_SECONDS[report.nodeid] = own
+
+
+def own_seconds(nodeid: str) -> float:
+    """
+    A test's time in this process, less wider-scoped fixture setup and any scope-closing teardown.
+
+    :param nodeid: the test's node id
+    :type nodeid: str
+    :return: the seconds the test itself accounts for
+    :rtype: float
+    """
+    own = _PHASE_SECONDS.get(nodeid, 0.0) - _WIDER_FIXTURE_SECONDS.get(nodeid, 0.0)
+    if nodeid in _ENDS_A_SCOPE:
+        own -= _TEARDOWN_SECONDS.get(nodeid, 0.0)
+    return max(own, 0.0)
+
+
+# ===========================================================================
+# Per-test time budget (--time-budget)
+# ===========================================================================
+#
+# A pass/fail run cannot see a cost paid once per test - a leaked widget, a full GC,
+# a whole application rebuilt - multiplied across a growing family of tests.
+# `scripts/test_durations.py check` compares each directory with a baseline; this
+# catches the other case, one test far slower than its peers, which barely moves a
+# directory's average.
+#
+# It only warns: one test's time is noisy, and a leaked cost can land on a test that
+# did not cause it. A test that needs its time carries
+# @pytest.mark.exceeds_time_budget(reason="...").
+
+
+def _tier(nodeid: str) -> str:
+    """
+    The budget tier a test belongs to, from where it lives.
+
+    :param nodeid: the test's node id
+    :type nodeid: str
+    :return: "e2e", "integration" or "unit"
+    :rtype: str
+    """
+    path = "/" + nodeid.replace("\\", "/")
+    if "/tests/e2e/" in path:
+        return "e2e"
+    if "/tests/integration/" in path:
+        return "integration"
+    return "unit"
+
+
+def over_budget(config) -> "list[tuple[str, float, float]]":
+    """
+    Every test over its tier's budget and not marked exceeds_time_budget, slowest first.
+
+    :param config: the pytest config, for the budgets
+    :type config: pytest.Config
+    :return: (node id, its own seconds, its budget) for each test over budget
+    :rtype: list[tuple[str, float, float]]
+    """
+    budgets = {
+        tier: float(config.getini(f"time_budget_{tier}")) for tier in _DEFAULT_BUDGETS
+    }
+    found = []
+    for nodeid, seconds in _OWN_SECONDS.items():
+        if "exceeds_time_budget" in _ITEM_MARKERS.get(nodeid, []):
+            continue
+        budget = budgets[_tier(nodeid)]
+        if seconds > budget:
+            found.append((nodeid, seconds, budget))
+    return sorted(found, key=lambda row: -row[1])
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Print per-marker test counts and mean durations when --marker-stats is set."""
-    if not config.getoption("--marker-stats"):
-        return
+    """Report tests over their time budget, and per-marker stats, when asked for."""
+    if config.getoption("--time-budget"):
+        _report_time_budget(terminalreporter, config)
+    if config.getoption("--marker-stats"):
+        _report_marker_stats(terminalreporter, config)
 
+
+def _report_time_budget(terminalreporter, config) -> None:
+    """
+    Warn about every test over its budget; on GitHub Actions, also as an annotation.
+
+    :param terminalreporter: pytest's terminal reporter
+    :type terminalreporter: Any
+    :param config: the pytest config
+    :type config: pytest.Config
+    """
+    found = over_budget(config)
+    terminalreporter.write_sep("=", f"time budget: {len(found)} test(s) over")
+    for nodeid, seconds, budget in found:
+        terminalreporter.write_line(f"{seconds:8.2f}s > {budget:g}s  {nodeid}")
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            path = nodeid.split("::", 1)[0]
+            terminalreporter.write_line(
+                f"::warning file={path},title=Over time budget::{nodeid} took "
+                f"{seconds:.2f}s, over its {budget:g}s budget. Make it cheaper, or mark "
+                f"it @pytest.mark.exceeds_time_budget(reason=...)."
+            )
+
+
+def _report_marker_stats(terminalreporter, config) -> None:
+    """
+    Print per-marker test counts and mean durations.
+
+    :param terminalreporter: pytest's terminal reporter
+    :type terminalreporter: Any
+    :param config: the pytest config
+    :type config: pytest.Config
+    """
     # Report only the project's own markers, read straight from pytest.ini, so
     # this stays correct when a marker is added or removed and does not drown in
-    # pytest builtins (parametrize, skip, timeout, usefixtures...).
+    # pytest builtins (parametrize, skip, timeout, usefixtures...). The raw ini value,
+    # not getini("markers"), which also holds every plugin's and builtin's marker. A
+    # marker declared with arguments, `name(args): ...`, is counted under its name.
     declared = {
-        line.split(":", 1)[0].strip()
-        for line in config.getini("markers")
+        line.split(":", 1)[0].split("(", 1)[0].strip()
+        for line in str(config.inicfg.get("markers", "")).splitlines()
         if line.strip()
     }
 
