@@ -58,10 +58,12 @@ RESET_ACTION = "reset"
 
 #: What a recorded action is, which decides what a restored session keeps of it:
 #:
-#: - ``result``: a background run of one plugin on one channel (Find, Fit), recorded only
-#:   once the run finished. The newest entry per ``key`` replaces older ones.
+#: - ``result``: one run of one plugin on one channel (Find, Fit), recorded only once the
+#:   run finished. The newest entry per ``key`` replaces older ones. A replay starts every
+#:   run it can at the same time, so a run must not need the output of another run.
 #: - ``view``: a drawing that replaces what its figure showed. The newest per figure is
-#:   kept, and a view drawn from a result that was run again later is dropped. One that
+#:   kept. One that shows a run's output names it in ``depends_on``: a replay draws it only
+#:   once that run has finished, and it is dropped when that run is repeated. One that
 #:   computes in the background before it draws is waited for by a replay.
 #: - ``additive``: a drawing added to what its figure shows (an overlay, a merge). Kept
 #:   until a later reset or view on its figure.

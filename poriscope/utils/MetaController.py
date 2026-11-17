@@ -508,7 +508,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return [(text, source)]
         if self._held_panel_text is None:
             self._held_panel_text = []
-        if self.is_replaying():
+        if self.replay_sequence.holds_panel_text():
             self._held_panel_text.append((text, source))
             return []
         shown = self._held_panel_text + [(text, source)]
@@ -561,11 +561,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         entry = self._held().pop((key, channel), None)
         if entry is None:
             return
-        sequence = self.replay_sequence
-        self._recording_replayed_run = sequence.running and sequence.waiting_for == (
-            key,
-            channel,
-        )
+        self._recording_replayed_run = self.replay_sequence.launched(key, channel)
         try:
             self._record_ended_run(entry, channel, key)
         finally:

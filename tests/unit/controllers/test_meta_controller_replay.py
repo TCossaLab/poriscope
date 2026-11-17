@@ -77,6 +77,18 @@ class _Tab(MetaController):
         self.calls.append(f"find:{finder}/{channel}")
         return True
 
+    @register_action(
+        "show",
+        kind="view",
+        figure="plot",
+        depends_on=("finder", "channel"),
+        skip_on_false=True,
+    )
+    def show(self, finder: str, channel: int) -> bool:
+        """A view drawn from one run's results, so a replay draws it once that run ends."""
+        self.calls.append(f"show:{finder}/{channel}")
+        return True
+
 
 @pytest.fixture
 def tab(qtbot: Any) -> Iterator[_Tab]:
@@ -110,16 +122,16 @@ def _entry(action: str, *args: Any, **kwargs: Any) -> Dict[str, Any]:
 def test_the_models_run_finished_reaches_the_replay_after_the_run_is_recorded(
     tab: _Tab, qtbot: Any
 ) -> None:
-    assert tab.start_replay([_entry("find", "A", 1), _entry("draw", "b")])
+    assert tab.start_replay([_entry("find", "A", 1), _entry("show", "A", 1)])
     qtbot.waitUntil(lambda: tab.calls == ["find:A/1"])
 
     tab.model.run_finished.emit(1, "A")
     qtbot.waitUntil(lambda: not tab.is_replaying())
 
-    assert tab.calls == ["find:A/1", "draw:b"]
+    assert tab.calls == ["find:A/1", "show:A/1"]
     assert [entry["action"] for entry in tab.tab_action_history.values()] == [
         "find",
-        "draw",
+        "show",
     ]
 
 
@@ -182,7 +194,7 @@ def test_a_file_loaded_during_a_replay_is_refused(
 def test_stopping_the_tabs_operations_stops_its_replay(
     tab: _Tab, panel: List[str], qtbot: Any
 ) -> None:
-    tab.start_replay([_entry("find", "A", 1), _entry("draw", "b")])
+    tab.start_replay([_entry("find", "A", 1), _entry("show", "A", 1)])
     qtbot.waitUntil(lambda: tab.calls == ["find:A/1"])
 
     tab.handle_kill_all_workers("_Tab")
@@ -195,7 +207,7 @@ def test_stopping_the_tabs_operations_stops_its_replay(
 
 
 def test_the_next_start_continues_from_the_stopped_entry(tab: _Tab, qtbot: Any) -> None:
-    tab.start_replay([_entry("find", "A", 1), _entry("draw", "b")])
+    tab.start_replay([_entry("find", "A", 1), _entry("show", "A", 1)])
     qtbot.waitUntil(lambda: tab.calls == ["find:A/1"])
     tab.handle_kill_all_workers("_Tab")
     tab.model.run_finished.emit(1, "A")
@@ -205,7 +217,7 @@ def test_the_next_start_continues_from_the_stopped_entry(tab: _Tab, qtbot: Any) 
     tab.model.run_finished.emit(1, "A")
     qtbot.waitUntil(lambda: not tab.is_replaying())
 
-    assert tab.calls == ["find:A/1", "find:A/1", "draw:b"]
+    assert tab.calls == ["find:A/1", "find:A/1", "show:A/1"]
 
 
 def test_a_kill_all_for_another_tab_leaves_the_replay_running(

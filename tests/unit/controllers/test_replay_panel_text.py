@@ -81,6 +81,21 @@ class _Tab(MetaController):
         self.model.add_text_to_display.emit(f"Ch{channel}: searching", finder)
         return True
 
+    @register_action(
+        "show",
+        kind="view",
+        figure="plot",
+        depends_on=("finder", "channel"),
+        skip_on_false=True,
+    )
+    def show(self, finder: str, channel: int) -> bool:
+        """A view drawn from one run's results, so a replay draws it once that run ends."""
+        self.calls.append(f"show:{finder}/{channel}")
+        self.add_text_to_display.emit(
+            f"showed {finder}/{channel}", self.__class__.__name__
+        )
+        return True
+
 
 class _Other(_Tab):
     pass
@@ -127,7 +142,9 @@ def _tab(main: MainController, name: str = "_Tab") -> _Tab:
 
 def _replay_up_to_the_find(main: MainController, qtbot: Any) -> _Tab:
     tab = _tab(main)
-    tab.start_replay([_entry("draw", "a"), _entry("find", "A", 1), _entry("draw", "b")])
+    tab.start_replay(
+        [_entry("draw", "a"), _entry("find", "A", 1), _entry("show", "A", 1)]
+    )
     qtbot.waitUntil(lambda: tab.calls == ["draw:a", "find:A/1"])
     return tab
 
@@ -153,7 +170,7 @@ def test_a_replaying_tabs_lines_are_held_until_it_is_done(
     assert _shown(main) == [
         "drew a",
         "Ch1: searching",
-        "drew b",
+        "showed A/1",
         "replay done",
     ]
 

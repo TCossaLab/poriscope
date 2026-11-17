@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections import OrderedDict
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -47,6 +47,12 @@ class _Model:
         self.run_finished = MagicMock()
         self.add_text_to_display = MagicMock()
         self.cache_plot_data = MagicMock()
+        self.workers: Dict[str, Dict[int, Any]] = {}
+        self.stopped: List[Any] = []
+
+    def stop_workers(self, key: str, channel: int) -> None:
+        """Ask one run to stop; the real one sets a flag the run reads at its next chunk."""
+        self.stopped.append((key, channel))
 
     def call(self, metaclass: str, key: str, method: str, *args: Any) -> Any:
         if method in ("get_eventfinding_status", "get_eventfitting_status"):
@@ -71,6 +77,7 @@ class _Tab(MetaController):
         self.calls: List[str] = []
         self.draws: Dict[str, bool] = {}
         self.background_failure = ""
+        self.refused: List[str] = []
 
     def background_step_failure(self) -> str:
         return self.background_failure
@@ -119,18 +126,39 @@ class _Tab(MetaController):
     )
     def find(self, finder: str, channel: int) -> bool:
         self.calls.append(f"find:{finder}/{channel}")
+        if finder in self.refused:
+            return False
+        self.model.workers.setdefault(finder, {})[channel] = object()  # type: ignore[attr-defined]
         return True
+
+    @register_action(
+        "show",
+        kind="view",
+        figure="plot",
+        depends_on=("finder", "channel"),
+        skip_on_false=True,
+        plugin_args=("finder",),
+    )
+    def show(self, finder: str, channel: int) -> bool:
+        """A view drawn from one run's results."""
+        self.calls.append(f"show:{finder}/{channel}")
+        return self.draws.get("show", True)
 
 
 @pytest.fixture
-def tab(qtbot: Any) -> _Tab:
+def tab(qtbot: Any) -> Iterator[_Tab]:
     """
     A tab whose plugins say every channel finished, with a fitter that fitted 12 events.
+
+    A replay still waiting on a run at the end of the test is stopped, as quitting does, so
+    it collects no later test's errors.
 
     :param qtbot: pytest-qt fixture, for the application the timers run on
     :return: the tab
     """
-    return _Tab()
+    tab = _Tab()
+    yield tab
+    tab.replay_sequence.stop(quitting=True)
 
 
 @pytest.fixture
@@ -153,12 +181,15 @@ def _entry(action: str, *args: Any, **kwargs: Any) -> Dict[str, Any]:
 def _replay(tab: _Tab, entries: List[Dict[str, Any]], qtbot: Any) -> ReplaySequence:
     sequence = ReplaySequence(tab)
     assert sequence.start(entries)
-    qtbot.waitUntil(lambda: not sequence.running or sequence.waiting_for is not None)
+    qtbot.waitUntil(
+        lambda: not sequence.running or bool(sequence.runs or sequence.waiting)
+    )
     return sequence
 
 
 def _run_ends(tab: _Tab, sequence: ReplaySequence, channel: int, key: str) -> None:
     """The Model's ``run_finished``: the tab records the run, then the replay hears of it."""
+    tab.model.workers.get(key, {}).pop(channel, None)  # type: ignore[attr-defined]
     tab.record_finished_run(channel, key)
     sequence.on_run_finished(channel, key)
 
@@ -251,9 +282,9 @@ class TestResults:
     def test_a_result_waits_for_its_own_run_to_end(
         self, tab: _Tab, panel: List[str], qtbot: Any
     ) -> None:
-        sequence = _replay(tab, [_entry("find", "A", 1), _entry("draw", "b")], qtbot)
+        sequence = _replay(tab, [_entry("find", "A", 1), _entry("show", "A", 1)], qtbot)
 
-        assert sequence.waiting_for == ("A", 1)
+        assert sequence.runs == {("A", 1): 0}
         _run_ends(tab, sequence, 2, "A")
         _run_ends(tab, sequence, 1, "B")
         qtbot.wait(20)
@@ -262,7 +293,7 @@ class TestResults:
         _run_ends(tab, sequence, 1, "A")
         _ended(sequence, qtbot)
 
-        assert tab.calls == ["find:A/1", "draw:b"]
+        assert tab.calls == ["find:A/1", "show:A/1"]
         assert panel == ["replay done"]
 
     @pytest.mark.parametrize("plugin", ["A", "F"])
@@ -271,7 +302,9 @@ class TestResults:
     ) -> None:
         """Cancelled, failed or no events found: the plugin says the channel is not finished."""
         tab.model.finished[plugin] = False  # type: ignore[attr-defined]
-        sequence = _replay(tab, [_entry("find", plugin, 3), _entry("draw", "b")], qtbot)
+        sequence = _replay(
+            tab, [_entry("find", plugin, 3), _entry("show", plugin, 3)], qtbot
+        )
 
         _run_ends(tab, sequence, 3, plugin)
         _ended(sequence, qtbot)
@@ -338,14 +371,14 @@ class TestResults:
         qtbot.wait(20)
 
         assert tab.calls == []
-        assert sequence.waiting_for == ("A", 1)
+        assert sequence.waiting == {("A", 1): 0}
 
         tab.model.thread_running = {}  # type: ignore[attr-defined]
         tab._held().clear()
         _run_ends(tab, sequence, 1, "A")
         qtbot.waitUntil(lambda: tab.calls == ["find:A/1"])
 
-        assert sequence.waiting_for == ("A", 1)
+        assert sequence.runs == {("A", 1): 0}
         assert sequence.running
 
 
@@ -461,7 +494,7 @@ class TestStop:
     def test_stop_ends_the_replay_and_the_next_start_reruns_the_cancelled_entry(
         self, tab: _Tab, panel: List[str], qtbot: Any
     ) -> None:
-        sequence = _replay(tab, [_entry("find", "A", 1), _entry("draw", "b")], qtbot)
+        sequence = _replay(tab, [_entry("find", "A", 1), _entry("show", "A", 1)], qtbot)
 
         sequence.stop()
         _run_ends(tab, sequence, 1, "A")
@@ -472,11 +505,11 @@ class TestStop:
         assert panel == ["replay stopped"]
 
         assert sequence.start()
-        qtbot.waitUntil(lambda: sequence.waiting_for is not None)
+        qtbot.waitUntil(lambda: bool(sequence.runs))
         _run_ends(tab, sequence, 1, "A")
         _ended(sequence, qtbot)
 
-        assert tab.calls == ["find:A/1", "find:A/1", "draw:b"]
+        assert tab.calls == ["find:A/1", "find:A/1", "show:A/1"]
 
     def test_a_step_scheduled_before_a_stop_does_not_run(
         self, tab: _Tab, qtbot: Any
@@ -590,12 +623,13 @@ class TestAfterAFailure:
             side_effect=lambda: tab.calls.append("cleared")
         )
         self._answer(tab, "back", [])
-        sequence = _replay(tab, [_entry("find", "A", 1), _entry("boom")], qtbot)
+        tab.draws["show"] = False
+        sequence = _replay(tab, [_entry("find", "A", 1), _entry("show", "A", 1)], qtbot)
         _run_ends(tab, sequence, 1, "A")
         qtbot.waitUntil(lambda: "draw:before" in tab.calls)
         _ended(sequence, qtbot)
 
-        assert tab.calls == ["find:A/1", "boom", "cleared", "draw:before"]
+        assert tab.calls == ["find:A/1", "show:A/1", "cleared", "draw:before"]
         assert tab.model.resets == [("MetaEventFinder", "A", 1)]  # type: ignore[attr-defined]
         assert list(tab.tab_action_history.values()) == [
             {"action": "draw", "args": (), "kwargs": {"label": "before"}}
@@ -619,7 +653,8 @@ class TestAfterAFailure:
         qtbot.waitUntil(lambda: panel[-1].startswith("going back stopped"))
         _ended(sequence, qtbot)
 
-        assert states == [False, True, False, False]
+        # Going back starts a second replay without the first having offered to continue.
+        assert states == [False, False, False]
 
         ask.assert_called_once()
         assert tab.clear_for_replay.call_count == 2
@@ -888,7 +923,7 @@ class TestAPluginThatChanged:
         self, tab: _Tab, qtbot: Any
     ) -> None:
         tab.start_replay([_entry("find", finder="A", channel=1), _entry("draw", "c")])
-        qtbot.waitUntil(lambda: tab.replay_sequence.waiting_for is not None)
+        qtbot.waitUntil(lambda: bool(tab.replay_sequence.runs))
 
         tab.rewrite_plugin_entries("A", None)
         _run_ends(tab, tab.replay_sequence, 1, "A")
@@ -932,3 +967,440 @@ def test_a_failed_step_s_errors_are_in_the_one_dialog_and_open_none_of_their_own
 
     shown.assert_not_called()
     assert tab.view.ask_after_replay_failure.call_args.args[-1] == "the column is gone"
+
+
+class TestRunsTogether:
+    """
+    Runs that do not depend on one another start together, as one click on several channels
+    starts them; every other step keeps its recorded place, after the run it draws from.
+    """
+
+    @staticmethod
+    def _start(tab: _Tab, entries: List[Dict[str, Any]], qtbot: Any) -> ReplaySequence:
+        assert tab.start_replay(entries)
+        qtbot.wait(50)
+        return tab.replay_sequence
+
+    @staticmethod
+    def _history(tab: _Tab) -> List[str]:
+        return [
+            f"{e['action']}:" + "/".join(str(v) for v in e["kwargs"].values())
+            for e in tab.tab_action_history.values()
+        ]
+
+    def test_runs_on_different_channels_are_all_launched_before_any_ends(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab, [_entry("find", "A", channel) for channel in (1, 2, 3, 4)], qtbot
+        )
+
+        assert tab.calls == ["find:A/1", "find:A/2", "find:A/3", "find:A/4"]
+        assert sequence.running
+
+        for channel in (3, 1, 4, 2):
+            assert panel == []
+            _run_ends(tab, sequence, channel, "A")
+        _ended(sequence, qtbot)
+
+        assert panel == ["replay done"]
+
+    def test_a_run_starts_ahead_of_a_view_drawn_from_another_run(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """The view waits for its own run only, and not for the one launched past it."""
+        sequence = self._start(
+            tab,
+            [_entry("find", "A", 1), _entry("show", "A", 1), _entry("find", "A", 3)],
+            qtbot,
+        )
+
+        assert tab.calls == ["find:A/1", "find:A/3"]
+
+        _run_ends(tab, sequence, 1, "A")
+        qtbot.waitUntil(lambda: tab.calls[-1] == "show:A/1")
+        assert sequence.running
+
+        _run_ends(tab, sequence, 3, "A")
+        _ended(sequence, qtbot)
+        assert sequence.failed_at is None
+
+    def test_a_view_waits_for_the_run_it_is_drawn_from(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab, [_entry("find", "A", 1), _entry("show", "A", 1)], qtbot
+        )
+
+        assert tab.calls == ["find:A/1"]
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+        assert tab.calls == ["find:A/1", "show:A/1"]
+
+    def test_a_step_drawn_from_no_run_does_not_wait_for_one(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab,
+            [_entry("find", "A", 1), _entry("draw", "b"), _entry("find", "A", 2)],
+            qtbot,
+        )
+
+        assert tab.calls == ["find:A/1", "find:A/2", "draw:b"]
+        assert sequence.running
+
+    def test_a_second_run_on_the_same_channel_waits_for_the_first_and_its_view(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab,
+            [_entry("find", "A", 1), _entry("show", "A", 1), _entry("find", "A", 1)],
+            qtbot,
+        )
+        assert tab.calls == ["find:A/1"]
+
+        _run_ends(tab, sequence, 1, "A")
+        qtbot.waitUntil(lambda: len(tab.calls) == 3)
+        assert tab.calls == ["find:A/1", "show:A/1", "find:A/1"]
+
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+    def test_the_other_steps_keep_their_order(self, tab: _Tab, qtbot: Any) -> None:
+        sequence = self._start(
+            tab,
+            [
+                _entry("find", "A", 1),
+                _entry("show", "A", 1),
+                _entry("draw", "b"),
+                _entry("find", "A", 2),
+            ],
+            qtbot,
+        )
+
+        assert tab.calls == ["find:A/1", "find:A/2"]
+        _run_ends(tab, sequence, 2, "A")
+        qtbot.wait(20)
+        assert tab.calls == ["find:A/1", "find:A/2"]
+
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+        assert tab.calls == ["find:A/1", "find:A/2", "show:A/1", "draw:b"]
+
+    def test_the_history_ends_in_the_recorded_order_whichever_run_ended_first(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sent: List[List[str]] = []
+        tab.update_tab_action_history.connect(
+            lambda name, history: sent.append(self._history(tab))
+        )
+        sequence = self._start(
+            tab,
+            [_entry("find", "A", 1), _entry("show", "A", 1), _entry("find", "A", 2)],
+            qtbot,
+        )
+
+        _run_ends(tab, sequence, 2, "A")
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert self._history(tab) == ["find:A/1", "show:A/1", "find:A/2"]
+        assert sent[-1] == ["find:A/1", "show:A/1", "find:A/2"]
+
+    def test_an_action_by_hand_during_the_replay_keeps_its_place_in_the_history(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab, [_entry("find", "A", 1), _entry("find", "A", 2)], qtbot
+        )
+
+        _run_ends(tab, sequence, 2, "A")
+        tab.draw("by hand")
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert self._history(tab) == ["find:A/1", "draw:by hand", "find:A/2"]
+
+    def test_the_panel_ends_showing_the_values_of_the_last_recorded_step(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """Each step shows its values as it starts, so they are shown again in order."""
+        sequence = self._start(
+            tab,
+            [_entry("find", "A", 1), _entry("show", "A", 1), _entry("find", "A", 2)],
+            qtbot,
+        )
+        _run_ends(tab, sequence, 2, "A")
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        written = [
+            (call.args[0], call.args[1][1])
+            for call in tab.view.write_back.call_args_list
+        ]
+        assert written[-3:] == [("find", 1), ("show", 1), ("find", 2)]
+
+    def test_a_replay_in_recorded_order_does_not_show_the_values_twice(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        sequence = self._start(
+            tab, [_entry("draw", "a"), _entry("find", "A", 1)], qtbot
+        )
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert tab.view.write_back.call_count == 2
+
+
+class TestAFailureWhileRunsAreGoing:
+    """
+    The question is asked as soon as a run fails, with the other runs still going. Nothing
+    new starts from then on; keeping leaves the runs to end, going back stops them first.
+    """
+
+    ENTRIES = [
+        ("find", "A", 1),
+        ("find", "B", 1),
+        ("find", "A", 2),
+        ("show", "A", 2),
+    ]
+
+    @staticmethod
+    def _start(tab: _Tab, entries: List[Dict[str, Any]], qtbot: Any) -> ReplaySequence:
+        assert tab.start_replay(entries)
+        qtbot.wait(50)
+        return tab.replay_sequence
+
+    def _four(self) -> List[Dict[str, Any]]:
+        return [_entry(*values) for values in self.ENTRIES]
+
+    def test_the_question_is_asked_at_once_and_the_other_runs_go_on(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        ask = tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        sequence = self._start(tab, self._four(), qtbot)
+
+        _run_ends(tab, sequence, 1, "B")
+
+        ask.assert_called_once_with(
+            "_Tab",
+            2,
+            4,
+            "find",
+            "B did not leave a finished run with results on channel 1",
+            "",
+        )
+        assert sequence.running
+        assert sequence.failed_at == 1
+        assert panel[-1] == (
+            "replay stopped at step 2 of 4: B did not leave a finished run with "
+            "results on channel 1"
+        )
+
+    def test_after_keep_nothing_new_starts_and_the_runs_going_are_kept(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        sequence = self._start(tab, self._four(), qtbot)
+        _run_ends(tab, sequence, 1, "B")
+
+        _run_ends(tab, sequence, 2, "A")
+        qtbot.wait(20)
+        assert "show:A/2" not in tab.calls
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert [e["kwargs"] for e in tab.tab_action_history.values()] == [
+            {"finder": "A", "channel": 1},
+            {"finder": "A", "channel": 2},
+        ]
+        assert sequence.has_remaining()
+
+    def test_replay_actions_then_runs_only_what_did_not_finish(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        tab.hold_session_actions(self._four(), "session.json")
+        assert tab.start_replay()
+        qtbot.wait(50)
+        sequence = tab.replay_sequence
+        _run_ends(tab, sequence, 1, "B")
+        _run_ends(tab, sequence, 2, "A")
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert panel[-1] == (
+            "2 of 4 steps are kept; the other 2 are not saved in the autosave. Replay "
+            "Actions continues them now; " + _FILE_TAIL
+        )
+
+        tab.calls.clear()
+        tab.model.finished["B"] = True  # type: ignore[attr-defined]
+        assert tab.start_replay()
+        qtbot.waitUntil(lambda: len(tab.calls) == 2)
+        assert tab.calls == ["find:B/1", "show:A/2"]
+        _run_ends(tab, sequence, 1, "B")
+        _ended(sequence, qtbot)
+
+        assert not tab.replay_available()
+        assert [
+            (e["action"], e["kwargs"]["finder"], e["kwargs"]["channel"])
+            for e in tab.tab_action_history.values()
+        ] == self.ENTRIES
+
+    def test_go_back_stops_the_runs_going_and_clears_the_tab_once_they_have_ended(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
+        tab.view.ask_after_replay_failure = MagicMock(return_value="back")
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        sequence = self._start(
+            tab, [_entry("find", "B", 1), _entry("find", "A", 1)], qtbot
+        )
+
+        _run_ends(tab, sequence, 1, "B")
+
+        assert tab.model.stopped == [("A", 1)]  # type: ignore[attr-defined]
+        tab.clear_for_replay.assert_not_called()
+        assert sequence.running
+
+        tab.model.finished["A"] = False  # type: ignore[attr-defined]
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        tab.clear_for_replay.assert_called_once()
+        tab.view.ask_after_replay_failure.assert_called_once()
+        assert panel[-1] == "back to before the replay"
+        assert list(tab.tab_action_history.values()) == []
+
+    def test_a_run_that_ends_with_results_after_go_back_is_reset_with_the_rest(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """A stop is read at the run's next chunk, so the run may have finished first."""
+        tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
+        tab.view.ask_after_replay_failure = MagicMock(return_value="back")
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        sequence = self._start(
+            tab, [_entry("find", "B", 1), _entry("find", "A", 1)], qtbot
+        )
+        _run_ends(tab, sequence, 1, "B")
+
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert tab.model.resets == [("MetaEventFinder", "A", 1)]  # type: ignore[attr-defined]
+        assert list(tab.tab_action_history.values()) == []
+
+    def test_a_second_failure_is_asked_about_once_the_first_is_answered(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        open_questions: List[int] = []
+        most_open: List[int] = []
+
+        def ask(tab_name: str, step: int, *rest: Any) -> str:
+            open_questions.append(step)
+            most_open.append(len(open_questions))
+            if step == 1:
+                _run_ends(tab, tab.replay_sequence, 2, "B")
+            open_questions.pop()
+            return "keep"
+
+        asked = tab.view.ask_after_replay_failure = MagicMock(side_effect=ask)
+        sequence = self._start(
+            tab, [_entry("find", "B", 1), _entry("find", "B", 2)], qtbot
+        )
+
+        _run_ends(tab, sequence, 1, "B")
+        _ended(sequence, qtbot)
+
+        assert [call.args[1] for call in asked.call_args_list] == [1, 2]
+        assert most_open == [1, 1]
+
+    def test_after_go_back_no_other_failure_is_asked_about(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+
+        def ask(tab_name: str, step: int, *rest: Any) -> str:
+            _run_ends(tab, tab.replay_sequence, 2, "B")
+            return "back"
+
+        asked = tab.view.ask_after_replay_failure = MagicMock(side_effect=ask)
+        sequence = self._start(
+            tab, [_entry("find", "B", 1), _entry("find", "B", 2)], qtbot
+        )
+
+        _run_ends(tab, sequence, 1, "B")
+        _ended(sequence, qtbot)
+
+        asked.assert_called_once()
+
+    def test_a_run_that_fails_after_keep_is_asked_about_too(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        asked = tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        sequence = self._start(
+            tab, [_entry("find", "B", 1), _entry("find", "B", 2)], qtbot
+        )
+
+        _run_ends(tab, sequence, 1, "B")
+        _run_ends(tab, sequence, 2, "B")
+        _ended(sequence, qtbot)
+
+        assert [call.args[1] for call in asked.call_args_list] == [1, 2]
+
+    def test_a_run_that_is_refused_fails_while_the_ones_launched_go_on(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        tab.refused = ["B"]
+        asked = tab.view.ask_after_replay_failure = MagicMock(return_value="keep")
+        sequence = self._start(
+            tab,
+            [_entry("find", "A", 1), _entry("find", "B", 1), _entry("find", "A", 2)],
+            qtbot,
+        )
+
+        asked.assert_called_once_with("_Tab", 2, 3, "find", "find did nothing", "")
+        assert tab.calls == ["find:A/1", "find:B/1"]
+        assert sequence.running
+
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+    def test_the_panel_shows_the_tab_s_lines_once_the_question_is_asked(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """Until then a replaying tab's lines are held, so tabs' lines do not interleave."""
+        tab.model.finished["B"] = False  # type: ignore[attr-defined]
+        shown: List[str] = []
+        tab.add_text_to_display.connect(
+            lambda text, source: shown.extend(
+                line for line, _ in tab.panel_text_to_show(text, source)
+            )
+        )
+
+        def ask(*args: Any) -> str:
+            shown.append("asked")
+            return "keep"
+
+        tab.view.ask_after_replay_failure = MagicMock(side_effect=ask)
+        sequence = self._start(
+            tab, [_entry("find", "B", 1), _entry("find", "A", 1)], qtbot
+        )
+        assert shown == []
+
+        _run_ends(tab, sequence, 1, "B")
+
+        assert shown == [
+            "B did not finish channel 1, so this run is not saved in the tab's history",
+            "replay stopped at step 1 of 2: B did not leave a finished run with "
+            "results on channel 1",
+            "asked",
+        ]
+        assert sequence.running

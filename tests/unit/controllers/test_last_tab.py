@@ -70,6 +70,18 @@ class _Tab(MetaController):
         self.calls.append(label)
         return True
 
+    @register_action(
+        "events",
+        kind="view",
+        figure="plot",
+        depends_on=("finder", "channel"),
+        skip_on_false=True,
+    )
+    def events(self, finder: str, channel: int, label: str) -> bool:
+        """A plot drawn from one run's results, so a replay draws it once that run ends."""
+        self.calls.append(label)
+        return True
+
     @register_action("trace", kind="view", figure="trace", plugin_args=("reader",))
     def trace(self, reader: str) -> bool:
         self.calls.append(f"trace {reader}")
@@ -95,12 +107,12 @@ def _e(action: str, **kwargs: Any) -> Dict[str, Any]:
     return {"action": action, "args": [], "kwargs": kwargs}
 
 
-#: A loaded tab's actions: a plot, a Find that waits on its run, another plot.
+#: A loaded tab's actions: a plot, a Find that waits on its run, a plot drawn from it.
 LOADED = [
     _e("reset"),
     _e("overlay", label="A"),
     _e("find", finder="F", channel=1),
-    _e("overlay", label="B"),
+    _e("events", finder="F", channel=1, label="B"),
 ]
 
 
