@@ -149,9 +149,9 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
     - Always on, or an opt-in `keep_previous` on `find_events` / `fit_events`, depending on whether scripts rerun a
       channel on the same plugin instance.
     - A readable outcome (`last_run_outcome`), so a replay can tell a cancel from a failure.
-    - 0 results handling. Settled input (Kyle, 2026-11-05): during a replay a run with 0 results counts as failed,
-      since it only comes from a settings issue (a Find with 0 events, a Fit with 0 good fits); live, a 0-good-fits Fit
-      still marks the channel fitted, is recorded and can be written.
+    - 0 results handling. Settled input (Kyle, 2026-11-05): a run with 0 results counts as failed, since it only
+      comes from a settings issue (a Find with 0 events, a Fit with 0 good fits); neither is saved in the tab's history,
+      live or replayed, but the fitter still marks a 0-good-fits channel fitted, so it can still be plotted and written.
     - The writers refusing a run that did not complete before deleting or writing anything.
     - If earlier results are kept again, keeping the earlier run's history entry instead of removing it.
     - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
@@ -164,6 +164,12 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
   and the steps declared as depending on it, and carry on. Declare first what the declarations miss: Clustering's
   Merge needs the run before it (both only `additive` on `clusters`), and an Event Analysis fit needs the Raw Data
   tab's Find (another tab). Changes the replay rule (`DECISIONS.md` 2026-11-05, 2026-10-17 and 2026-11-17), so it needs a ruling before it is built.
+- **A refusal of the user's own click waits for the replay to end (2026-11-17).** While a tab replays, every
+  status-panel line it sends is held until "replay done" (`MetaController.panel_text_to_show:489-515`), so "<finder>
+  is already running on channel <n>; this request was ignored" (`MetaModel.run_generators:248-250`), answering a Find
+  clicked during the replay, showed ~1 min late (manual pass, `a64182ab`, 2026-11-17). Show it at once, as the second-replay
+  refusal does (`_panel_text_now`, `MetaController.py:350-357`); the Model cannot tell a click from a replay launch,
+  and the fix may need a signal change, so it needs a ruling before it is built.
 
 ### Fitter performance
 
