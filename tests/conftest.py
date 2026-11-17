@@ -24,6 +24,7 @@ import psutil
 import pytest
 
 from tests._replay_cleanup import stop_leftover_replays
+from tests._thread_guard import record_started_threads, threads_still_running
 from tests._window_cleanup import destroy_leftover_windows
 
 # ===========================================================================
@@ -139,7 +140,9 @@ def destroy_windows_after_each_test():
     This is root-level because the ``QApplication`` is shared by the whole session: a
     window left alive in one directory slows every test in every directory after it.
     It is autouse and declared here, so it is torn down after every fixture a test
-    asks for - a triad has stopped its workers before its windows go.
+    asks for. Nothing in that order stops a worker thread: the tests' workers have
+    simply finished by teardown, and ``fail_a_test_that_leaves_a_thread_running``
+    checks that before this destroys anything.
     """
     yield
     survivors = destroy_leftover_windows()
@@ -147,15 +150,60 @@ def destroy_windows_after_each_test():
         pytest.fail(f"Windows still alive after the cleanup: {survivors}")
 
 
+# How long the thread guard waits for each thread still running at teardown. A worker
+# finishing its last chunk ends well inside it; one waiting on nothing never does.
+_THREAD_WAIT_MS = 5000
+
+
 @pytest.fixture(autouse=True)
-def stop_replays_after_each_test():
+def fail_a_test_that_leaves_a_thread_running(
+    request, monkeypatch, destroy_windows_after_each_test
+):
+    """
+    Fail a test whose ``QThread`` is still running at teardown, naming the thread.
+
+    Destroying a window while its worker thread runs aborts the interpreter, and an abort
+    names no test. This asks for ``destroy_windows_after_each_test`` so it is torn down
+    first, before any window goes. Each running thread gets up to five seconds to end;
+    one still running then is written straight to the terminal, past pytest's capture, so
+    the name survives even if the window cleanup aborts the run, and the test fails. See
+    ``tests/_thread_guard.py``.
+
+    :param request: pytest's request for the running test.
+    :type request: pytest.FixtureRequest
+    :param monkeypatch: patches ``QThread.start`` for the test's length.
+    :type monkeypatch: pytest.MonkeyPatch
+    :param destroy_windows_after_each_test: asked for only to be torn down after this.
+    :type destroy_windows_after_each_test: None
+    """
+    started = record_started_threads(monkeypatch)
+    yield
+    running = threads_still_running(started, wait_ms=_THREAD_WAIT_MS)
+    if running:
+        message = f"{request.node.nodeid} left threads running: {', '.join(running)}"
+        capture = request.config.pluginmanager.getplugin("capturemanager")
+        with capture.global_and_fixture_disabled():
+            sys.stderr.write(f"\n{message}\n")
+            sys.stderr.flush()
+        pytest.fail(message, pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def stop_replays_after_each_test(fail_a_test_that_leaves_a_thread_running):
     """
     Stop every replay a test leaves running, and fail the test that left one.
 
     A running replay takes the errors that would open a dialog, from a set the whole
     process shares, so one left running swallows the dialogs of the tests after it on the
     same worker. Root-level and autouse for the reason the window cleanup is: it is torn
-    down after every fixture a test asks for, which stop their own replays first.
+    down after every fixture a test asks for, which stop their own replays first. It asks
+    for ``fail_a_test_that_leaves_a_thread_running`` so it is torn down before that guard:
+    a replay is stopped before its threads are checked, so a replay left running is named
+    as a replay, not as a thread.
+
+    :param fail_a_test_that_leaves_a_thread_running: asked for only to be torn down
+        after this.
+    :type fail_a_test_that_leaves_a_thread_running: None
     """
     yield
     left = stop_leftover_replays()
