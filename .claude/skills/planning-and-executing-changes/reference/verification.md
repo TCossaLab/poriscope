@@ -25,6 +25,7 @@ program still work for a person using it?*
 - V17 Save a failure's output before any rerun
 - V18 A test that skips without a generated artefact passes silently wherever it is missing
 - V19 A run from a second working copy can import the first one's code
+- V20 Measure against the commit the branch actually starts from
 
 ## The verification routine
 
@@ -211,6 +212,19 @@ channel profiled at 1.8 s, which predicted about 30 s, and a repeat of the whole
 to 21.7 s. The slow run had started minutes after 900 MB of input recordings were renamed in a
 cloud-synced folder; nothing in the code changed between the two.
 
+*Case:* 2026-11-11, three tests in a laptop's full-suite run took 307 s, 56 s and 58 s, against 2.6 s,
+1.6 s and 0.04 s normally, and none reproduced in twelve isolated loops. The system log showed the
+machine in standby for the first two. The 307 s test had also run past a 300 s timeout backstop that
+never fired: the timeout's wait does not count sleep, while the test's duration clock does. Read the
+power log before diagnosing a long tail on a laptop, and hold the machine awake for any timing run.
+
+*Case:* 2026-11-17, a laptop held awake against idle sleep still entered modern standby when its
+5-minute screen timeout fired, and stayed there for 86 minutes of a timing session: the runs went on,
+throttled, and develop's full suite read 1,400 s against 996 s rerun with the screen kept on. Nothing in
+the runs looked wrong; only the system log's standby entries showed it. Holding off idle sleep is not
+holding the machine awake - set the screen timeout to never as well, and read the log after every
+timed run.
+
 ## V14 · Bisect, don't argue
 
 When a failure has a cause somewhere in a set - commits, test files, the hunks of one diff - halve the
@@ -264,6 +278,12 @@ verbose output and a 300-second per-test timeout, it passed in 7 minutes.
 load. The previous session's run of the same suite, in a worktree since deleted, was still alive - stuck at
 3% for 90 minutes and holding 3.9 GB. Once it was killed, the new run went from 6% to 39% in 33 minutes.
 
+*Case:* 2026-11-17, timed runs overlapped test runs other sessions started on the same machine, twice;
+a check for other pytest processes at each run's start and end missed them, since each began and ended
+inside one run. Sampling every 15 s while a run lasted caught them, and also caught the suite's own
+subprocess test, whose temporary path contains "pytest" - identify a match before calling a run
+contaminated. Arrange for nothing else to run before timing, not after.
+
 ## V17 · Save a failure's output before any rerun
 
 The first failure is the only one that carries the evidence, so write its full output to a file before
@@ -303,3 +323,16 @@ have any comparison print the file path of the module it imported.
 checkout: scripts launched there imported the main checkout's code. The gates were moved to `python -m`
 from the worktree root, and the final comparison against the original application printed the imported
 module's path to show it had measured the worktree.
+
+## V20 · Measure against the commit the branch actually starts from
+
+A before/after comparison is only about your change if "before" is your branch's real base. A shared
+branch moves while you work - a pull, a fast-forward from a colleague - so the commit you noted at the
+start may not be the one you branched from. Take the baseline from `git merge-base`, and confirm both
+runs collected the same tests before reading the difference; a test count that changed between them is
+the cheapest sign that the code did too.
+
+*Case:* 2026-11-12, an integration tree measured at 1,090 s on the remembered base and 317 s on the
+branch. The branch had 29 more tests: the base had been fast-forwarded by ten unrelated commits before
+the branch was cut, and the "before" run was on the older commit. The comparison was redone on the real
+base before any figure was recorded.

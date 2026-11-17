@@ -18,6 +18,7 @@ can it move for the wrong reason?*
 - I15 A gate that runs on one path is never asked if your work takes another
 - I16 A cached artefact needs a staleness check
 - I18 A check between a copy and its source must run in both directions
+- I19 A pass/fail gate cannot see a per-item cost multiplied by a growing count
 
 ## I1 · The definition is the number
 
@@ -129,3 +130,22 @@ an index and its headings, a registry and its docs table, a dependency file and 
 sibling's README said a checker "confirms they agree". The checker flagged copy entries with no matching
 lesson, but never lessons missing from the copy, so it passed for weeks while the copy lacked one lesson.
 The copy was replaced by a three-line pointer.
+
+## I19 · A pass/fail gate cannot see a per-item cost multiplied by a growing count
+
+A suite can slow several-fold with every test passing: a cost paid once per test - a leaked widget, a
+full garbage collection, an application rebuilt in every test - grows with the number of tests that pay
+it, and no pass/fail gate measures time. Record every test's duration on every CI run, as a file a
+script can read, not only a summary line. Then ask the question the slowdown poses: is it more tests, or
+dearer tests? Expect each group to cost (its count now) x (its baseline cost per item), and warn when the
+run exceeds that by more than the runner's own noise. Keep a separate per-item budget for one new item
+far dearer than its peers, which barely moves a group's mean. Count setup and teardown in the per-item
+time; a call-only time hides exactly the fixture cost that grows. For the leak itself - cleaning up
+a process-wide resource at its own scope and guarding the count - see N17.
+
+*Case:* the same suite regressed twice in ten weeks. In August 2026 a view-test teardown that only hid
+widgets made each teardown walk every widget earlier tests had made; fixing it cut the view tree from
+~3,540 s to 465 s. On 2026-10-29 CI's test step went from 313 s to 713 s while the test count rose 5%:
+new integration tests each built a whole application and leaked it. Nobody noticed for two weeks,
+because CI kept only the summary line; the investigation had to re-run both commits locally to get
+per-test times at all.

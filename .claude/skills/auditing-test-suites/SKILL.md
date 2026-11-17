@@ -96,6 +96,8 @@ owns production code and the records (O1, O2).
 | A worker count is a constant | Size it from cores and free memory, with an override | T6 |
 | Parallel workers refuse to start, or collect different tests | A parametrization from a set or dict; sort it | T6 |
 | More workers stopped helping | The longest file sets the floor | T7 |
+| A report or summary hook shows nothing, or ignores a marker, under `-n` | Its bookkeeping is in the workers; attach it to the report | T12 |
+| You are fixing a slowdown that CI could have caught | Record per-test time on every CI run and check it against the count (planning skill I19) | T12 |
 | You are about to shrink test data for speed | Is its size calibrated? Copy a template instead | T8, T10 |
 | A test is listed to drop as "covered" | Name the survivor and run the mutation | Q2 |
 | An assertion is `>= 0`, `is not None`, or inside `try/except` | Mutate what it names; does it fail? | Q4 |

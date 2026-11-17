@@ -183,6 +183,8 @@ Also standing, with steps 3, 4 and 6 above (N6, N7, E25, C3, C6):
 | You are about to add a dependency or raise a pin | Read its `requires-python` and ranges against the project's floor and pins; ask if either would move | E31 |
 | A metric moved the way you wanted | Prove it was earned | I12 |
 | A background run "exited 0" | Read the summary line and the sentinel | V2 |
+| The suite got slower and every test passes | More tests, or dearer tests? Compare per-test time with its baseline | I19 |
+| You are about to compare timings before and after a change | Is "before" the branch's real merge-base, with the same tests collected? | V20 |
 | A test or gate failed and you are about to rerun it | Is its full output saved to a file? | V17 |
 | A long run crawls, or you are about to start one | List the test processes already running; an orphan from an ended session competes for the machine | V16 |
 | A targeted, per-commit or clean-copy run is green | Read the skipped count against a known-good run; were the generated artefacts built in that copy? | V18 |

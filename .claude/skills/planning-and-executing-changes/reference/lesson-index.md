@@ -68,6 +68,7 @@ building-skills) add their own lessons under the same ID scheme; IDs are unique 
 - **I15** A gate that runs on one path is never asked if your work takes another
 - **I16** A cached artefact needs a staleness check
 - **I18** A check between a copy and its source must run in both directions
+- **I19** A pass/fail gate cannot see a per-item cost multiplied by a growing count
 
 ## Execution (E) - [execution.md](execution.md)
 
@@ -112,6 +113,7 @@ building-skills) add their own lessons under the same ID scheme; IDs are unique 
 - **V17** Save a failure's output before any rerun
 - **V18** A test that skips without a generated artefact passes silently wherever it is missing
 - **V19** A run from a second working copy can import the first one's code
+- **V20** Measure against the commit the branch actually starts from
 
 ## Finishing (X) - [finishing.md](finishing.md)
 
