@@ -468,6 +468,13 @@ The rest are readability only; each is behaviour-preserving and wants the coveri
 
 ### Types, tests and CI
 
+- **`--time-budget` and the duration check only warn.** Once on develop, build
+  `tests/test_duration_baseline.json` from the median of several Linux 3.12.0 CI artifacts. Add a `history` report
+  to `scripts/test_durations.py` that reads the last 30 develop runs' artifacts, counts false failures (over budget
+  in one run, within it in the runs around it, the test unchanged) and lists tests near their budget; switch
+  `--time-budget` to failing when it counts none (`DECISIONS.md` 2026-11-17).
+  `test_peak_finder.py::test_two_channels_fitted_together_each_get_their_own_report` took 4.8 s serial and 6.3 s
+  under 2 workers (local, 2026-11-17) against its 5 s budget.
 - **Mocks are almost all unspecced**: 698 bare `Mock()`/`MagicMock()` against 23
   `spec`/`autospec`/`spec_set` (2026-11-16). Adopt specs one fixture file at a time, controllers
   and views first.

@@ -150,6 +150,16 @@
 
 * A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on
 
+* Every CI run records each test's duration: a per-directory table on the job's summary page, the full record as a downloadable artifact on branch CI, and `scripts/test_durations.py` to report, compare and check those files
+
+* Branch CI warns, without failing, about a test over its tier's time budget (`pytest --time-budget`; unit 5 s, integration 20 s, e2e 60 s, unless marked `exceeds_time_budget`) and about a suite slower than its test count explains
+
+* `pytest --marker-stats` now reports under `-n auto` too, and counts only the markers `pytest.ini` declares
+
+* A test that leaves a worker thread running at teardown now fails, naming the thread, instead of risking an interpreter abort that names no test
+
+* A test now checks that both subset tabs store a blank filter as an empty string
+
 ### Data Plugin API:
 
 * `SingleBinaryDecoder` reads its format settings through `_binary_setting`, so a subclass fixes one by deleting its key and overriding `SETTING_DEFAULTS`
