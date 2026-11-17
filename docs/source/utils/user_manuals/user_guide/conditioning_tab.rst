@@ -75,6 +75,10 @@ away from the dividing line in both halves. Both noise axes share one range acro
 channel, so channels compare at a glance. A channel whose pore size is 0 in every cycle is
 greyed out as disabled.
 
+Hover over a panel to read its values: the toolbar under the plot shows the cycle nearest the
+cursor, with its measured pore size and the 1 Hz noise of each PSD recording taken at that
+cycle, whatever the cursor's height in the panel.
+
 .. note::
 
    A PSD recording shorter than its points per average is still analysed, as one shorter

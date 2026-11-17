@@ -26,6 +26,7 @@
 
 import logging
 import math
+from functools import partial
 from typing import Any, Dict, List, Sequence, Tuple, override
 
 from matplotlib.axes import Axes
@@ -52,6 +53,10 @@ class ConditioningView(MetaView):
     sharing one range across every channel so channels compare at a glance, and each PSD's
     cycle shaded green, orange or red by its noise against the Good and Decent thresholds.
     A channel with no pore size measured in any cycle is greyed out as disabled.
+
+    The toolbar's coordinate readout names the cycle nearest the cursor and that cycle's pore
+    size and 1 Hz noise, since matplotlib would otherwise report the cursor's height on the
+    pore-size axis even over the noise axes.
     """
 
     logger = logging.getLogger(__name__)
@@ -341,6 +346,7 @@ class ConditioningView(MetaView):
             ax.set_facecolor((0.5, 0.5, 0.5, 0.8))
             return
         ax.set_title(label)
+        ax.format_coord = partial(self._cycle_readout, label, entry)
         ax.scatter(cycles, entry["measured"], s=10, color="black", zorder=3)
         self._update_cache(
             (cycles, f"{label} Cycle"),
@@ -395,3 +401,45 @@ class ConditioningView(MetaView):
                 (result["cycles"], f"{label} PSD{polarity} Cycle"),
                 (result["one_hz"], f"{label} PSD{polarity} 1 Hz Noise (pA^2/Hz)"),
             )
+
+    @log(logger=logger)
+    def _cycle_readout(
+        self, label: str, entry: Dict[str, Any], x: float, y: float
+    ) -> str:
+        """
+        The toolbar's coordinate text for one channel's panel: the cycle nearest the cursor,
+        with its measured pore size and the 1 Hz noise of each PSD taken at it.
+
+        Matplotlib reports the cursor's position on the axes it hit-tests, and an inset is
+        never among them, so over the noise axes it would show a pore size. The values are
+        read from the plotted data instead, so the height of the cursor does not matter.
+
+        :param label: the panel's title
+        :type label: str
+        :param entry: the channel's entry from ``ConditioningModel.plot_data``
+        :type entry: Dict[str, Any]
+        :param x: the cursor's position on the cycle axis
+        :type x: float
+        :param y: the cursor's position on the pore-size axis, unused
+        :type y: float
+        :return: the readout, as ``"Channel 5, cycle 4: pore size 4.25 nm, PSD+ 1 Hz noise
+            0.0234 pA²/Hz"``
+        :rtype: str
+        """
+        cycles = entry["cycles"]
+        index = min(range(len(cycles)), key=lambda i: abs(cycles[i] - x))
+        cycle = cycles[index]
+        parts = [f"pore size {entry['measured'][index]:.3g} nm"]
+        for polarity in self.POLARITY_LAYOUT:
+            result = entry["psd"].get(polarity)
+            if result is None:
+                continue
+            values = [
+                value
+                for at, value in zip(result["cycles"], result["one_hz"])
+                if at == cycle
+            ]
+            if values:
+                noise = ", ".join(f"{value:.3g}" for value in values)
+                parts.append(f"PSD{polarity} 1 Hz noise {noise} pA²/Hz")
+        return f"{label}, cycle {cycle:g}: " + ", ".join(parts)
