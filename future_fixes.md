@@ -233,6 +233,14 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
 
 ## Later - worth doing, not scheduled
 
+### Short Protein events cannot be fitted from a histogram (2026-11-18)
+
+With automatic bins (`ProteinModel._resolve_event_bins`), an event under ~150 samples gets 2-7
+bins and no two-level synthetic event of 30-75 samples was fitted (0/100 each). A fixed 50 or 100
+bins fits them but accepted 20-68% of single-level events as two populations (measured with the
+unbounded fit and no width rule, so re-measure under the quarter-bin floor). A fit on the samples
+themselves (two-component mixture, BIC against one) would not depend on binning; needs a ruling.
+
 ### The column-names/plugin-state reaction pair is near-duplicated, invisible to the ratchet (2026-10-09)
 
 `ClusteringView` and `MetadataView`'s `update_available_columns` (identical code, differing

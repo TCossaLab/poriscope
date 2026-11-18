@@ -39,6 +39,43 @@ def _make_double_gaussian_histogram(
     return x, g1 + g2
 
 
+def _one_bin_spike_beside_a_peak():
+    """
+    A broad peak with one isolated bin raised beside it.
+
+    The spike has no width the histogram can show, so the only way to fit it is a
+    component narrower than a bin - the shape a sparse event's stray sample makes.
+
+    :return: the bin centers and the amplitudes
+    :rtype: tuple
+    """
+    x = np.linspace(0.0, 1.0, 200)
+    y = np.exp(-((x - 0.6) ** 2) / (2 * 0.03**2))
+    y[np.argmin(np.abs(x - 0.2))] = 0.5
+    return x, y
+
+
+def _histograms_that_fit_a_zero_width_component():
+    """
+    Inputs on which an unbounded fit returns a component of zero width.
+
+    :return: (name, bin centers, amplitudes) for each input
+    :rtype: list
+    """
+    model = ProteinModel()
+    single = np.linspace(0.0, 1.0, 200)
+    dominated = np.linspace(0.0, 1.0, 300)
+    return [
+        ("single_peak", single, np.exp(-((single - 0.5) ** 2) / (2 * 0.1**2))),
+        (
+            "dominated_peak",
+            dominated,
+            model._double_gaussian(dominated, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02),
+        ),
+        ("one_bin_spike", *_one_bin_spike_beside_a_peak()),
+    ]
+
+
 # ===========================================================================
 # _init - a new model starts with no fit of either kind
 # ===========================================================================
@@ -167,6 +204,28 @@ class TestFitDoubleGaussian:
         assert popt is None
         assert pcov is None
 
+    @pytest.mark.parametrize(
+        "name,x,y",
+        _histograms_that_fit_a_zero_width_component(),
+        ids=[case[0] for case in _histograms_that_fit_a_zero_width_component()],
+    )
+    def test_no_component_collapses_to_zero_width(self, model, name, x, y):
+        """
+        Left free, the optimizer shrinks a component to zero width on one bin, and a
+        delta on a lone count fits a sparse histogram well. Bounding the width keeps
+        that solution out of reach, so the fit has to find a real second population or
+        sit on the bound where the sanity check can see it.
+
+        The threshold is the low end of the floors measured to work on real protein
+        data (0.15 to 0.3 of a bin), not the constant, so retuning within that range
+        keeps this green and removing the floor does not.
+        """
+        popt, _ = model._fit_double_gaussian(x, y)
+
+        assert popt is not None
+        bin_width = x[1] - x[0]
+        assert min(popt[2], popt[5]) >= 0.15 * bin_width
+
     # --- pins moved from test_protein_view.py, receiver re-pointed ---
     # The ``qt_app`` fixture and its ``processEvents()`` calls went with the move:
     # a Model builds no widget, so there is no event loop to pump.
@@ -196,14 +255,14 @@ class TestFitAndSanityCheckDoubleGaussian:
         The raw fit succeeds on this input and the sanity check refuses it, which is
         what distinguishes this test from the failed-fit case above.
 
-        **The guard that fires is the parameter-error check**, ``perr > |popt| * 10``
-        - established by deleting each guard in turn, not by reading the code. A
-        second population at 2% never clears ``find_peaks``' 5%-of-maximum prominence
-        threshold, so the fit lands both components on the dominant peak and returns
-        a degenerate one with a standard deviation of zero; it is that degeneracy the
-        error check catches. The amplitude-ratio guard below it is *reached* and does
-        not fire, because the fitted amplitudes are then near-equal whatever the input
-        ratio was.
+        A second population at 2% never clears ``find_peaks``' 5%-of-maximum
+        prominence threshold, so the fit lands both components on the dominant peak,
+        on the same mean and width, with 4% of the amplitude in one of them. **The
+        parameter-error check fires first, and is not the only guard that would**:
+        deleting it, the separation check, the t-test or the amplitude-ratio check one
+        at a time leaves this green, since each of the others refuses the fit alone
+        (gap 0.0005 of a sigma, p ~ 1, amplitude ratio 0.04). Measured by deletion,
+        not read from the code.
         """
         data = model._double_gaussian(bins, 1.0, 3.0, 0.5, 0.02, 7.0, 0.5)
 
@@ -225,9 +284,9 @@ class TestFitAndSanityCheckDoubleGaussian:
 
     @pytest.mark.parametrize("width", [0.03, 0.05, 0.1])
     def test_a_single_peak_is_not_two_populations(self, model, width):
-        # On a clean single peak the fallback can return a second component of zero
-        # width on top of the first. A component narrower than half a bin cannot be
-        # resolved from the histogram, so the fit counts as finding one population.
+        # On a clean single peak the fit can split the one Gaussian into two on the
+        # same mean (width 0.05), whose degenerate covariance passes the t-test; the
+        # separation check refuses it. Width 0.1 fails the parameter-error check.
         x = np.linspace(0, 1, 200)
         y = np.exp(-((x - 0.5) ** 2) / (2 * width**2))
         assert model._fit_and_sanity_check_double_gaussian(x, y) is None
@@ -238,6 +297,44 @@ class TestFitAndSanityCheckDoubleGaussian:
         x = np.linspace(0, 1, 300)
         y = model._double_gaussian(x, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02)
         assert model._fit_and_sanity_check_double_gaussian(x, y) is None
+
+    def test_a_population_narrower_than_half_a_bin_is_kept(self, model):
+        """
+        A real level can be narrower than the bins: automatic binning sizes them from
+        the spread of the whole event, which spans both populations. A component a
+        histogram resolves to 0.4 of a bin is a second population, with its mean
+        recovered to well inside a bin.
+        """
+        x = np.linspace(0.0, 1.0, 200)
+        bin_width = x[1] - x[0]
+        y = np.exp(-((x - 0.2) ** 2) / (2 * (0.4 * bin_width) ** 2)) + 0.8 * np.exp(
+            -((x - 0.6) ** 2) / (2 * 0.03**2)
+        )
+
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
+
+        assert popt is not None
+        assert min(popt[2], popt[5]) < bin_width / 2
+        np.testing.assert_allclose(
+            sorted([popt[1], popt[4]]), [0.2, 0.6], atol=bin_width / 2
+        )
+
+    def test_a_component_pushed_onto_the_width_bound_is_not_a_population(self, model):
+        """
+        The fit sets this spike's width at the bound: the optimizer wanted it narrower
+        than the histogram can resolve, which is no second population.
+        """
+        x, y = _one_bin_spike_beside_a_peak()
+        bin_width = x[1] - x[0]
+
+        raw, _ = model._fit_double_gaussian(x, y)
+        checked = model._fit_and_sanity_check_double_gaussian(x, y)
+
+        assert raw is not None
+        assert min(raw[2], raw[5]) == pytest.approx(
+            ProteinModel.MIN_FIT_STD_BINS * bin_width, rel=1e-2
+        )
+        assert checked is None
 
     def test_roundtrip_residuals(self, model):
         x, y = _make_double_gaussian_histogram()

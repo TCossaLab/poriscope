@@ -97,6 +97,14 @@ class ProteinModel(MetaSubsetTabModel):
     #: Quadrature points per axis across a fit's +/-4 sigma.
     REACH_GRID_POINTS = 65
 
+    #: No fitted component is narrower than this many bin widths. Left free, the fit
+    #: can shrink a component to zero width on one sparse bin; on real protein data
+    #: any floor from 0.15 to 0.3 removes every such fit, while 0.1 and 0.35 leave some.
+    MIN_FIT_STD_BINS = 0.25
+    #: Two components whose means are closer than this many of the wider one's
+    #: sigmas are one Gaussian split in two, not two populations.
+    MIN_SEPARATION_STD = 0.25
+
     @log(logger=logger)
     @override
     def _init(self) -> None:
@@ -211,18 +219,18 @@ class ProteinModel(MetaSubsetTabModel):
             max_mean = np.max(bins)
             min_amp = 0
             max_amp = np.max(amplitude)
-            min_std = 0
+            min_std = self.MIN_FIT_STD_BINS * abs(bin_width)
             max_std = np.abs(bins[-1] - bins[1])
+            lower = [min_amp, min_mean, min_std, min_amp, min_mean, min_std]
+            upper = [max_amp, max_mean, max_std, max_amp, max_mean, max_std]
 
             popt, pcov = curve_fit(
                 self._double_gaussian,
                 bins,
                 amplitude,
-                p0=p0,
-                bounds=(
-                    [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
-                    [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
-                ),
+                # A guessed width can be 0, and curve_fit refuses a start outside its bounds.
+                p0=np.clip(p0, lower, upper),
+                bounds=(lower, upper),
             )
             return popt, pcov
         except (RuntimeError, ValueError):
@@ -283,18 +291,17 @@ class ProteinModel(MetaSubsetTabModel):
                 max_mean = np.max(bins)
                 min_amp = 0
                 max_amp = np.max(amplitude)
-                min_std = 0
+                min_std = self.MIN_FIT_STD_BINS * abs(bins[1] - bins[0])
                 max_std = np.abs(bins[-1] - bins[1])
+                lower = [min_amp, min_mean, min_std, min_amp, min_mean, min_std]
+                upper = [max_amp, max_mean, max_std, max_amp, max_mean, max_std]
 
                 popt, pcov = curve_fit(
                     self._double_gaussian,
                     bins,
                     amplitude,
-                    p0=p0,
-                    bounds=(
-                        [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
-                        [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
-                    ),
+                    p0=np.clip(p0, lower, upper),
+                    bounds=(lower, upper),
                 )
                 return popt, pcov
             except (RuntimeError, ValueError):
@@ -331,10 +338,14 @@ class ProteinModel(MetaSubsetTabModel):
         if np.any(perr > np.abs(popt) * 10):
             return None
 
-        # A component narrower than half a bin cannot be resolved from the histogram:
-        # on a clean single peak the fit can place a zero-width second component on
-        # the first, and its degenerate covariance then passes the test on the means.
-        if min(popt[2], popt[5]) < abs(bins[1] - bins[0]) / 2:
+        # A component on its width bound is one the fit wanted narrower than the
+        # histogram resolves; curve_fit returns a bounded parameter at or just above
+        # its bound. Two components on nearly the same mean are one Gaussian split in
+        # two. Either way the degenerate covariance can pass the test on the means.
+        width_bound = self.MIN_FIT_STD_BINS * abs(bins[1] - bins[0])
+        if min(popt[2], popt[5]) <= width_bound * 1.01:
+            return None
+        if abs(popt[1] - popt[4]) < self.MIN_SEPARATION_STD * max(popt[2], popt[5]):
             return None
 
         mu1_idx, mu2_idx = 1, 4

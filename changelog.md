@@ -32,7 +32,7 @@
 
 * An Assisted filter that starts with `SELECT` is now refused, saying to use Raw SQL mode; it used to be put inside the `WHERE` as a subquery, where a one-column query was accepted and selected events by an unrelated test
 
-* **The Protein tab no longer reports a two-population fit whose second component is narrower than half a bin:** on a clean single peak, or one peak dominating another, the fit could place a zero-width component on the first; it now counts as finding one population, as a noisy single peak always did
+* **The Protein tab's double-Gaussian fit no longer gives a component zero width:** no component is fitted narrower than a quarter of a bin, and a fit whose component sits on that limit, or whose two means nearly coincide, counts as finding one population; a real population narrower than half a bin is kept
 
 #### Data plugin API:
 

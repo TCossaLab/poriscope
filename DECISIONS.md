@@ -18,6 +18,42 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-18 - A Protein fit component is bounded at a quarter bin, not rejected under half a bin
+
+**Context.** A Protein tab user's rerun on develop lost fits they had before. On their database
+(`Ub_250mV_0p2MPa_CUSUM_A1`, 4.17 MHz, Filtered Histogram, automatic bins, which HEAD reproduced
+exactly) the 2026-11-12 half-bin rule rejected 88 of the 177 fits passing every other check. 72 of
+those had a component under 0.01 bin: the unbounded fit (`min_std = 0`) parks a delta on one sparse
+bin, often the first filtered samples of the event. But real levels were rejected too: events 2045
+and 2164 at 0.39 bin, and 26 of 40 synthetic two-level events at n = 1000, separation 12 sigma.
+Automatic bins are sized from the spread of the whole event, which spans both populations, so a
+clean population is routinely narrower than half a bin. This met that entry's "Revisit if".
+
+**Decision** (Kyle, 2026-11-18). `_fit_double_gaussian` bounds each sigma at
+`MIN_FIT_STD_BINS = 0.25` bin, both seeds, clipping the start into the bounds. The sanity check
+rejects a fit with a component on that bound (within 1%) or with means closer than
+`MIN_SEPARATION_STD = 0.25` of the wider sigma, in place of the half-bin rule. On that database:
+104 fits accepted instead of 89, none with a component under 0.39 bin, all 46 of the user's current
+fits kept.
+
+**Evidence.** Floors swept on all 5,997 events: 0.1 bin leaves 9 delta fits, 0.15 to 0.3 none, 0.35
+two, 0.4 eleven; 0.5 (PeakFinder's) leaves 33 components pinned at the bound. Trimming or
+percentile-clipping the event edges (seven variants) left 61-70 delta fits: the delta moves to the
+next spike. Without the separation check, the bounded fit splits a noise-free single peak (width
+0.05) into two components on one mean that pass the t-test; on real data the smallest accepted gap
+is 0.41 of the wider sigma, so 0.25 costs none. PeakFinder's one-FWHM separation would drop 6-14.
+
+**Rejected.** Lowering the half-bin threshold to 0.1 bin alone (96 accepted against 104: the delta
+fits are refused, but a fit that lands on a delta never finds the second population the bounded one
+does, and 7 of the 16 it misses fail the parameter-error check on the delta's covariance); trimming the
+event edges (above); a separate rule for zero width on top of the other mean (on short events it
+restored most false two-population fits along with the real ones).
+
+**Revisit if** short events matter: under automatic binning, events under ~150 samples get 2-7 bins
+and cannot be fitted by any of these rules (see `future_fixes.md`).
+
+---
+
 ## 2026-11-17 - A replay restores the state the actions produced, not their order: independent runs start together
 
 **Context.** A replay ran one entry at a time and waited for each Find or Fit, so a Find clicked once on four channels
@@ -214,8 +250,8 @@ sampler's geometry space (360,000 points, 4 pores, both families), so the reacha
 the image of that space's edge; `ProteinModel.reachable_fractions` integrates the fit's Gaussian over it
 on a 65x65 grid across +/-4 sigma, 100 points per edge: 1.9 ms per family, within 0.0006 of a
 257x257, 4,000-point reference. The sigmas are the sampler's floored ones (1% of the mean), so the
-fraction describes the target the ensemble beside it was drawn from; a fit narrower than half a bin is
-rejected before this anyway. A fit names its larger mean the maximum, while near m = 1 the forward
+fraction describes the target the ensemble beside it was drawn from; a fit component is never
+narrower than a quarter of a bin anyway. A fit names its larger mean the maximum, while near m = 1 the forward
 model's `dI_max` is up to 0.3% below its `dI_min` (V = 200, d = 10, L = 20); the sampler compares them
 the same unsorted way, so the region and the ensemble agree.
 
@@ -264,6 +300,9 @@ populations"). The sanity check rejects a fit whose narrower component has sigma
 
 **Revisit if** a real dataset has a population genuinely narrower than one bin: then the binning, not
 this rule, is what should change.
+
+*Superseded 2026-11-18: one did, at 0.39 bin, and the binning was not the cause; the fit's width is
+bounded at a quarter bin instead (see that entry).*
 
 ---
 

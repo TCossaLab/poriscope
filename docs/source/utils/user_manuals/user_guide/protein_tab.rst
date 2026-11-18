@@ -63,6 +63,15 @@ Click **Update Plot** to run the fit for the current mode. This draws:
    more than one experiment, channel or subset in scope, an experiment with no channel
    selected, or no usable events. The previous plot stays on screen.
 
+.. note::
+
+   An event's histogram is drawn without a fit when the tab does not find two populations
+   in it: the fit failed, its parameters are too uncertain, the two means are not
+   distinguishable, one component holds under 5% of the amplitude, or one component is as
+   narrow as the fit allows (a quarter of a bin), which means it covers a single bin. Short
+   events are the usual case: with automatic bins, an event of under about 150 samples gets
+   too few bins to fit.
+
 Step 7a: Commit Individual Fits
 ----------------------------------
 
