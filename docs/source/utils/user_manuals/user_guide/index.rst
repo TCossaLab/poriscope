@@ -10,6 +10,7 @@ Welcome to Poriscope's user guide. This guide will walk you through the main fea
    :caption: Sections
 
    user_installation
+   upgrading_from_2_0
    workflow_overview
    tutorial
    raw_data_tab

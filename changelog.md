@@ -2,6 +2,8 @@
 
 ### Breaking Changes:
 
+* The user guide's "Upgrading from 2.0" page summarises what opens in which version and which results change
+
 #### Results that change:
 
 * **Baseline sigma, and every sigma-denominated threshold, moves slightly:** the baseline histogram uses Rice's rule for its bins, removing a bias that inflated sigma on short chunks, and short clean chunks are no longer skipped

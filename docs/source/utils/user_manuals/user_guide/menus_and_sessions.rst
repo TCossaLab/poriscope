@@ -20,6 +20,7 @@ Session Options Overview
   the analysis tabs. A file that is not a saved session - a plot configuration, for instance,
   which the message names - or one saved by a later version in a format this one cannot read
   is refused with a message saying why, and the current workspace is left as it was.
+  **Load Session** never rewrites the file you picked.
 
 - **Save Session**
   Stores the current state — the readers, filters, finders, fitters, loaders and writers with
@@ -41,15 +42,11 @@ saved before Poriscope 3.0 - says so when it loads.
 Deleting a plugin removes the recorded actions that use it. Renaming one without changing its
 settings keeps them, under the new name. Editing a setting removes them, together with those
 of the plugins built on it, and the message panel says so: they would no longer replay as they
-first ran.
+first ran. A plugin cannot be given the name of an analysis tab, such as
+``MetadataController``; an error says so.
 
-Sessions saved by Poriscope 3.0 do not open in 2.0. A 2.0 session opens in 3.0, with its
-plugins and filters but no actions; the action history 2.0 kept beside it,
-``tab_action_history.json``, cannot be replayed, and the first Restore says so. That Restore
-saves the autosave again in 3.0's format, says so, and the note does not appear again; Poriscope
-2.0 can then no longer restore that autosave. **Load Session** never rewrites the file you
-picked. A plugin cannot be given the name of an analysis tab, such as ``MetadataController``;
-an error says so.
+For which sessions open in Poriscope 2.0 and 3.0, and what happens to a 2.0 autosave, see
+:ref:`upgrading_from_2_0`.
 
 - **Reset Session**
   Closes every open analysis tab and removes every configured plugin, returning the workspace to the same clean state as a fresh launch — without restarting Poriscope. Your saved session files are left untouched, so **Restore Session** still brings the workspace back, as long as it is the next thing you do; opening a tab or adding a plugin afterward replaces what Restore would have loaded.
