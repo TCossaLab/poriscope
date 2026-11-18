@@ -1,6 +1,6 @@
 ---
 name: plugin-architecture
-description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, where to add a new data plugin or analysis tab, and trap questions to answer from the code before designing in an area. Load before reading, reasoning about, designing or changing anything in a plugin, a Meta* base, an analysis tab, the app-shell controllers or session persistence - including design discussion with no code change planned.
+description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, where to add a new data plugin or analysis tab, the files Poriscope saves and the rule for versioning them, and trap questions to answer from the code before designing in an area. Load before reading, reasoning about, designing or changing anything in a plugin, a Meta* base, an analysis tab, the app-shell controllers, session persistence or the format of any saved file - including design discussion with no code change planned.
 ---
 
 # Architecture
@@ -125,6 +125,26 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   a tab needs beyond the generator and the frontend guide - data, Views, recording, workers,
   controls panels - with the cases that taught it.
 
+## Saved files
+
+Poriscope writes six kinds of file. A saved file breaks only at a major version (`DECISIONS.md`
+2026-11-18; the general rule is lesson C17 in `planning-and-executing-changes`): a format number
+changes only in a major release, a change within a major is additive, and a reader ignores what it
+does not know. `tests/unit/test_saved_file_formats.py` pins the four numbers per major; add a row
+there only when preparing a major release.
+
+| File | Written by | Version | A reader of this major |
+|---|---|---|---|
+| Session and autosave (`plugin_history.json`) | `MainModel.save_session` | `SESSION_FORMAT_VERSION` in the file | ignores unknown keys; refuses another number, naming the writer; reads a file with no number as the 2.0 layout |
+| Plot configuration | `MetaModel.save_plot_configuration` | `format` name and `PLOT_CONFIGURATION_FORMAT_VERSION` | ignores unknown keys; refuses another number, another tab's file and a file naming no format |
+| Metadata database | `SQLiteDBWriter` | `PRAGMA user_version` = `SCHEMA_VERSION`, stamped when the schema is created | `SQLiteDBLoader` requires its core tables, ignores others, reads up to its number, refuses a newer one |
+| Events database | `SQLiteEventWriter` | the same, with its own `SCHEMA_VERSION` | `SQLiteEventLoader` likewise; refuses a file with an `experiments` table as a metadata database |
+| Save Filter file | `MetaSubsetTabModel.save_filters` | none, by decision: a hand-editable map of name to filter text | reads any map of strings |
+| `config.json` | `MainModel` | none, by decision | read key by key, with defaults |
+
+Both database writers refuse to add to a file with a newer number. A stamp says which version
+*created* the file: a file from before 3.0 reads 0 and keeps 0 when a later writer adds to it.
+
 ## Trap questions: check before designing
 
 Each area below lists questions whose obvious answer has been wrong before. Before designing in that area,
@@ -135,6 +155,16 @@ assumed, not what is true now.
 Add a trap only with evidence: a design or claim that went wrong, with its case. No speculative entries.
 When a correction shows a wrong assumption about the codebase, propose it as a trap for its area and ask
 the user before adding it.
+
+### Saved files
+
+- **Can every release of this major still read the file after this change, and can this release read
+  what they wrote?** Start at the file's reader (the table above) and at
+  `tests/unit/test_saved_file_formats.py`; open a file the change writes with the oldest release of
+  the major, not only with this tree.
+  *Case:* 2026-11-18, the events loader refused any table it did not know, so the first table added
+  in a minor release would have locked out every earlier release of that major; before that, three
+  of the six files had been given version checks that each followed a different rule.
 
 ### Tabs, sessions and the action history
 

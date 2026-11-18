@@ -49,8 +49,8 @@ The pytest markers are listed in `pytest.ini`. `e2e` and `integration` are appli
 
 Two layers, one MVC pattern: an app-shell triad (`MainModel`/`MainView`/`MainController`) and
 plugins - analysis tabs and data plugins. **Load the `plugin-architecture` skill** before
-reading, discussing or changing a plugin, a `Meta*` base, an analysis tab or session
-persistence, even with no code planned. Regardless:
+reading, discussing or changing a plugin, a `Meta*` base, an analysis tab, session
+persistence or a saved file's format, even with no code planned. Regardless:
 
 - A tab never imports another tab's modules and reaches data plugins only through
   `MetaModel.call()`; do not rebuild the removed `global_signal` bus.
@@ -152,6 +152,9 @@ generalises beyond Poriscope goes into a skill, not this file.
   (`release.yml` triggers on `v*`); `scripts/setup_hooks.py` sets it per clone.
 - Before a major release, run `auditing-test-suites` and land its findings before
   `release start`.
+- **A saved file breaks only at a major version.** A format number changes only in a major
+  release; within one, a saved file changes only by addition and every reader ignores what it
+  does not know (`plugin-architecture`, "Saved files"; `DECISIONS.md` 2026-11-18).
 - **Before every release, on the release branch, run the records-and-docs cleanup** (lesson C14
   in `planning-and-executing-changes`): `changelog.md`, `DECISIONS.md`, `future_fixes.md`, this
   file, the skills and the hand-written docs, each cut verified against the code, landed before

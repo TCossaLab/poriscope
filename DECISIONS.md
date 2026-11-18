@@ -18,6 +18,75 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-18 - Saved files break only at a major version: one rule for every file Poriscope writes
+
+**Context.** Six kinds of file followed three rules. The session file refused any format number but
+its own and read a file with none as the 2.0 layout; the metadata database read anything up to its
+`SCHEMA_VERSION`; a plot configuration refused a file that did not name its format; the events
+database, Save Filter files and `config.json` carried no version. The rule had to be settled before
+3.0 shipped, because the shipped reader is the one that meets files written later.
+
+**Decision** (Kyle, 2026-11-18). A saved file follows the release's version discipline (2026-11-12):
+only a major release may stop reading a file, or write one an earlier release of the same major
+cannot read. Minor versions never break a saved file, and a reader refuses only across majors.
+
+- A format number (`SESSION_FORMAT_VERSION`, `PLOT_CONFIGURATION_FORMAT_VERSION`, each SQLite
+  plugin's `SCHEMA_VERSION`) changes only in a major release. `tests/unit/test_saved_file_formats.py`
+  pins the numbers per major, reading the release from the changelog's first header, since
+  `constants.py` carries the previous version until the release bump.
+- Within a major a file changes only by addition, and a reader ignores what it does not know: the
+  session reader and the plot-configuration reader ignore unknown keys, and both database loaders
+  require their core tables and leave any other alone. `SQLiteEventLoader` refused every unknown
+  table until now; it tells a fitted-metadata database apart by its `experiments` table instead.
+- A reader refuses a newer number, naming the versions. A file with no number is the layout from
+  before versioning, handled explicitly: a 2.0 session is read without actions, a 2.0 plot
+  configuration is refused, a database at version 0 is read.
+- A writer refuses to add to a database with a newer number: rows in an older layout damage a file
+  that a reader could otherwise only fail to open.
+- The events database is stamped `user_version` 1 in the transaction that creates its schema, as
+  the metadata database is (ruling E, 2026-10-06). The 2.0.2 loader opened a file 3.0 stamped.
+- Save Filter files and `config.json` stay unversioned: a filter file is a hand-editable map of name
+  to filter text that every release reads, and `config.json` is read key by key with defaults.
+
+**Accepted as it stands** (Kyle). The 3.0 formats were designed before this rule and are not
+renumbered: the session reader refuses any number but 2, an older one included, and no build ever
+wrote format 1.
+
+**Rejected.** Versioning every file: 2.0 could not read a 3.0 filter file, and it would stop being
+hand-editable. Recording today's behaviour and changing nothing: a later change to the events
+database could be noticed only by its table names. Comparing `poriscope_version` strings in place
+of format numbers: the format is what a reader has to understand, and a development build carries
+the last release's version.
+
+**Revisit if** a format has to change inside a major: that is a breaking change, and it makes the
+release a major one.
+
+---
+
+## 2026-11-18 - Ruling A confirmed: the ground-truth tolerances the fitter accuracy tests enforce
+
+**Context.** The tolerance policy for fitted values against planted ones was proposed on 2026-10-05,
+approved "as a starting point", re-measured on Bessel-filtered data the same day and enforced from
+then on, with no recorded approval of the amended bounds and no entry here.
+
+**Decision** (Kyle, 2026-11-18): the bounds as shipped, in
+`tests/unit/plugins/conformance/test_fitter_accuracy.py`. Fixtures are Bessel-filtered at 100 kHz
+with Rise Time 16 us; CUSUM's step is 100 pA and ClassicCUSUM's 10 sigma. Per event and per planted
+sublevel, against the stored (post-filter) sigma: current and blockage within 1.0 sigma at 83-sample
+steps and 2.0 sigma at 40- and 20-sample steps; duration within 2 samples at 15 pA of drawn noise
+and 12 at 50 pA; the level count exact at 15 pA and on at least 24 of 25 events at 50 pA, the missing
+event named. Required bands: 15 and 50 pA at 83- and 40-sample steps, 15 pA at 20-sample steps. The
+100 pA band is informative, kept as strict expected failures (ClassicCUSUM's 10 sigma threshold
+exceeds the 150 pA step).
+
+**Why wider than white-noise intuition.** A median over low-pass noise has far fewer effective
+samples than the step is wide.
+
+**Revisit if** a fitter's mechanism changes - re-measure every expected-failure mark that blames
+it - or a fitter that models events differently is added, which opts in by name (2026-10-06).
+
+---
+
 ## 2026-11-18 - A reference links only what the docs publish; the build fails on a dead one
 
 **Context.** `sphinx-build -W` passed with 139 references that resolved to nothing (91 targets),
@@ -456,7 +525,7 @@ own name (each format inventing its key). Today's layout plus a version (keys by
 session's `format_version`). The live history (replays plots a later one replaced). Telling a session from an
 earlier plot configuration at Load Plot Configuration (the tab's Model would have to know the session layout).
 
-**Revisit** with the Step 10 versioning policy (`future_fixes.md`), which may change both formats.
+**Revisit** closed 2026-11-18: the saved-file policy of that date keeps both formats as they are.
 
 ---
 
