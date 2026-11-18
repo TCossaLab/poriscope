@@ -55,6 +55,8 @@
 
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
+* **A setting declared `int` no longer accepts `True` or `False`** when settings are applied: Python counts a boolean as an integer, and the check now refuses one by name, as it already did for a default
+
 #### Saved files:
 
 * **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 3.0 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it

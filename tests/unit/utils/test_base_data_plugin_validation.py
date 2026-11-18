@@ -180,3 +180,30 @@ class TestARefusedApplyChangesNothing:
 
         assert plugin.get_raw_settings() == self.threshold(4)
         assert plugin.settings == {"Threshold": {"Value": 4}}
+
+
+class TestABooleanIsNotANumber:
+    """Python counts ``True`` as an ``int``; a setting declared a number does not."""
+
+    @pytest.mark.parametrize("declared", [int, float, str])
+    @pytest.mark.parametrize("value", [True, False])
+    def test_a_boolean_is_refused_under_any_other_type(self, plugin, declared, value):
+        with pytest.raises(TypeError, match="Count must have type"):
+            plugin._validate_param_types({"Count": {"Type": declared, "Value": value}})
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_a_boolean_is_accepted_under_bool(self, plugin, value):
+        plugin._validate_param_types({"Flag": {"Type": bool, "Value": value}})
+
+    def test_an_integer_is_still_accepted_under_int(self, plugin):
+        plugin._validate_param_types({"Count": {"Type": int, "Value": 5}})
+
+    def test_applying_a_boolean_to_an_integer_setting_leaves_the_plugin_as_it_was(
+        self, plugin
+    ):
+        plugin.apply_settings({"Count": {"Type": int, "Value": 5}})
+
+        with pytest.raises(TypeError, match="Count must have type"):
+            plugin.apply_settings({"Count": {"Type": int, "Value": True}})
+
+        assert plugin.settings == {"Count": {"Value": 5}}

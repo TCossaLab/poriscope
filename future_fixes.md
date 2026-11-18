@@ -55,9 +55,6 @@ Everything planned has landed. `develop` burns in with lab users for a few weeks
 **Plans, awaiting approval:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>. Nothing is built
 until its plan is approved; each lands on its own branch, tests first.
 
-- **A boolean is refused for a `Type: int` setting at apply time**
-  (`BaseDataPlugin._validate_param_types:556`); only a default has it refused today
-  (`settings_schema.py:146`). **S**
 - **A filter must be threadsafe, said where a filter author reads it.**
   `MetaFilter.force_serial_channel_operations` (`MetaFilter.py:136`) is a word-for-word copy of the
   concrete method on `BaseDataPlugin` and is never consulted: a filter runs as a bare callable inside

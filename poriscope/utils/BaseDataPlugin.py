@@ -564,6 +564,9 @@ class BaseDataPlugin(ABC):
         a schema straight out of ``get_empty_settings()`` legitimately omits ``Value``, and
         subscripting it raised ``KeyError`` where the caller expected ``TypeError``.
 
+        A ``bool`` is accepted only where ``Type`` is ``bool``. Python counts ``True`` as
+        an ``int``, so a setting declared ``int`` refuses it by name.
+
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
@@ -575,7 +578,11 @@ class BaseDataPlugin(ABC):
                 if setting_value is None:
                     continue
                 if setting_type in (int, float, bool, str):
-                    if not isinstance(setting_value, setting_type):
+                    # A bool is an int to isinstance, so it is refused by name first.
+                    is_stray_bool = setting_type is not bool and isinstance(
+                        setting_value, bool
+                    )
+                    if is_stray_bool or not isinstance(setting_value, setting_type):
                         raise TypeError(f"{param} must have type {val['Type']}")
 
     @log(logger=logger)
