@@ -53,16 +53,16 @@ class MetaControls(QWidget):
 
     What a subclass inherits:
 
-    - **Widget factories.** :meth:`createLabel`, :meth:`create_comboBox` and
-      :meth:`createButton` build the three plain widgets every panel uses, with the
+    - **Widget factories.** :py:meth:`~poriscope.utils.MetaControls.MetaControls.createLabel`, :py:meth:`~poriscope.utils.MetaControls.MetaControls.create_comboBox` and
+      :py:meth:`~poriscope.utils.MetaControls.MetaControls.createButton` build the three plain widgets every panel uses, with the
       font, size policy and translation call applied consistently.
-    - **Icon buttons.** :meth:`create_info_button`, :meth:`create_add_button` and
-      :meth:`create_delete_button` build the pencil, plus and trash buttons beside
+    - **Icon buttons.** :py:meth:`~poriscope.utils.MetaControls.MetaControls.create_info_button`, :py:meth:`~poriscope.utils.MetaControls.MetaControls.create_add_button` and
+      :py:meth:`~poriscope.utils.MetaControls.MetaControls.create_delete_button` build the pencil, plus and trash buttons beside
       each plugin combobox, already wired to the signals below.
-    - **The placeholder guard.** :meth:`is_placeholder_item` and
-      :meth:`toggle_info_button` keep a combobox's edit and delete buttons disabled
+    - **The placeholder guard.** :py:meth:`~poriscope.utils.MetaControls.MetaControls.is_placeholder_item` and
+      :py:meth:`~poriscope.utils.MetaControls.MetaControls.toggle_info_button` keep a combobox's edit and delete buttons disabled
       until a real plugin is selected, reading the tab's own
-      :attr:`placeholder_texts`.
+      ``placeholder_texts``.
     - **Signals.** ``actionTriggered`` carries a request into the tab's Controller as
       ``(submodel_name, action_name, args)``. ``add_processed``, ``edit_processed``
       and ``delete_processed`` carry plugin-management requests, and are emitted for
@@ -74,7 +74,7 @@ class MetaControls(QWidget):
       declares none, because every call in the family goes through ``self.logger``
       and resolves through the MRO - so a logger here would silently re-home every
       subclass's records to ``poriscope.utils.MetaControls``.
-    - **Its own** :attr:`placeholder_texts`, or the placeholder guard above will read
+    - **Its own** ``placeholder_texts``, or the placeholder guard above will read
       every combobox entry as a real selection.
     - ``setupUi``, ``connect_signals``, ``validate_inputs`` and ``collect_parameters``,
       which are genuinely per-tab and are called by the subclass's own ``__init__``.

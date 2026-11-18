@@ -43,7 +43,7 @@ class SingleBinaryDecoder(MetaReader):
     Subclass of MetaReader for reading a single, user-configured raw binary file, with sampling rate, header size, array count, byte order, and data type all specified via settings rather than inferred from a vendor-specific header.
 
     A subclass for one file format fixes its format settings by deleting their keys in
-    :py:meth:`get_empty_settings`: each is then read from :py:attr:`SETTING_DEFAULTS`, which
+    :py:meth:`~poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder.get_empty_settings`: each is then read from ``SETTING_DEFAULTS``, which
     the subclass can override, as ``NIBinaryReader`` does for its big-endian files.
     """
 

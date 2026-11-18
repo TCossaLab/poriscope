@@ -226,9 +226,9 @@ class MetaFilter(BaseDataPlugin):
     @abstractmethod
     def _finalize_initialization(self) -> None:
         """
-        **Purpose:** Perform generic class construction operations after settings are applied. This function is called at the end of the :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.apply_settings` function to perform additional initialization specific to the algorithm being implemented.
+        **Purpose:** Perform generic class construction operations after settings are applied. This function is called at the end of the :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` function to perform additional initialization specific to the algorithm being implemented.
 
-        Perform any initialization tasks required after settings are applied. You can access the values in the settings dict provided as needed in the class variable ``self.settings[key]['Value']`` where ``key`` corresponds to the keys in the provided settings dict (as provided to :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.apply_settings` or to the constructor). You can freely make class variables here and you can assume (if using the poriscope app) that this will only be called from a single thread. .
+        Perform any initialization tasks required after settings are applied. You can access the values in the settings dict provided as needed in the class variable ``self.settings[key]['Value']`` where ``key`` corresponds to the keys in the provided settings dict (as provided to :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` or to the constructor). You can freely make class variables here and you can assume (if using the poriscope app) that this will only be called from a single thread. .
 
         Should Raise if initialization fails.
         """

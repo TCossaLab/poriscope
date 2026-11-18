@@ -515,7 +515,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         from the Raw Data tab in particular, which also has an ``events`` table.
 
         A metadata database holds results from one type of fitter, from any number of runs,
-        so one holding another type's is refused here too; see :meth:`_other_fitter_reason`.
+        so one holding another type's is refused here too; see ``_other_fitter_reason``.
 
         :param settings: Parameters for event detection.
         :type settings: dict

@@ -357,7 +357,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         """
         **Purpose:** Write any information you need to save about the experiment itself.
 
-        Given an optional channel argument, write any experiment level information (for example, as provided by the user in the settings dict) to the database files you created in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._initialize_database`.
+        Given an optional channel argument, write any experiment level information (for example, as provided by the user in the settings dict) to the database files you created in :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._initialize_database`.
 
         :param channel: int indicating which output to flush
         :type channel: int
@@ -369,7 +369,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         """
         **Purpose:** Write any information you need to save about the channel
 
-        Given a channel, write any channel level information (for example, as provided by the user in the settings dict, or the associated samplerate) to the database files you created in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._initialize_database`. Your ``channels`` table in yout database should share a key with ``experiments`` or ahev some other way of cross-referencing channels to experiments in cases where experiments can have many channels.
+        Given a channel, write any channel level information (for example, as provided by the user in the settings dict, or the associated samplerate) to the database files you created in :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._initialize_database`. Your ``channels`` table in yout database should share a key with ``experiments`` or ahev some other way of cross-referencing channels to experiments in cases where experiments can have many channels.
 
         :param channel: int indicating which output to flush
         :type channel: int
@@ -396,7 +396,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._finalize_initialization` before doing so to ensure that you are not conflicting with those functions.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and ``MetaDatabaseWriter._finalize_initialization`` before doing so to ensure that you are not conflicting with those functions.
         """
         self.eventfitter = self.settings["MetaEventFitter"]["Value"]
 

@@ -287,7 +287,7 @@ class MetaWriter(BaseDataPlugin):
         carries on to the next event and files the exception's text as that event's
         rejection reason for downstream reporting.
 
-        ``event`` is the dict :meth:`MetaEventFinder.get_single_event_data` produces, and
+        ``event`` is the dict :py:meth:`MetaEventFinder.get_single_event_data() <poriscope.utils.MetaEventFinder.MetaEventFinder.get_single_event_data>` produces, and
         is passed through whole rather than exploded into arguments - this took thirteen
         positional parameters until 2.0.0, of which ten were its keys. Its keys are:
 
@@ -342,7 +342,7 @@ class MetaWriter(BaseDataPlugin):
 
         This function is called at the start of a write operation and is used to do anything you need to do in order to open the output file for writing. You are responsible for checking whether such an operation is needed (for example, by setting an appropriate flag to avoid duplicate innitialization). Note that this operation will be called for each channel and you must ensure that any initializations operations are threadsafe if you are not forcing serial channel operations (see :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations`).
 
-        We strongly encourage atomic operations by ensuring that any file handles opened in this function are later closed in :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.close_resources` which will be called at the end of any batch write operation.
+        We strongly encourage atomic operations by ensuring that any file handles opened in this function are later closed in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.close_resources` which will be called at the end of any batch write operation.
 
         :param channel: the channel for which to initialize the database
         :type channel: int
@@ -354,7 +354,7 @@ class MetaWriter(BaseDataPlugin):
         """
         **Purpose**: Save any metadata required at the level of channels (for example, samplerate).
 
-        Given a channel index, write any required metadata for that channel. Typically this is done once per channel on the first related write operation. Remember to close any file handles used either in this function or :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.close_resources` depending on whether you need to keep those resources open for the event writing step that follows.
+        Given a channel index, write any required metadata for that channel. Typically this is done once per channel on the first related write operation. Remember to close any file handles used either in this function or :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.close_resources` depending on whether you need to keep those resources open for the event writing step that follows.
 
         :param channel: int indicating which output to flush
         :type channel: int
@@ -537,9 +537,9 @@ class MetaWriter(BaseDataPlugin):
     @abstractmethod
     def _finalize_initialization(self) -> None:
         """
-        **Purpose:** Perform generic class construction operations after settings are applied. This function is called at the end of the :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.apply_settings` function to perform additional initialization specific to the algorithm being implemented.
+        **Purpose:** Perform generic class construction operations after settings are applied. This function is called at the end of the :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` function to perform additional initialization specific to the algorithm being implemented.
 
-        Perform any initialization tasks required after settings are applied. You can access the values in the settings dict provided as needed in the class variable ``self.settings[key]['Value']`` where ``key`` corresponds to the keys in the provided settings dict (as provided to :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.apply_settings` or to the constructor). You can freely make class variables here and you can assume (if using the poriscope app) that this will only be called from a single thread. .
+        Perform any initialization tasks required after settings are applied. You can access the values in the settings dict provided as needed in the class variable ``self.settings[key]['Value']`` where ``key`` corresponds to the keys in the provided settings dict (as provided to :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` or to the constructor). You can freely make class variables here and you can assume (if using the poriscope app) that this will only be called from a single thread. .
 
         Should Raise if initialization fails.
         """

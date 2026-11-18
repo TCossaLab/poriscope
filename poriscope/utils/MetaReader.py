@@ -241,7 +241,7 @@ class MetaReader(BaseDataPlugin):
         ``load_raw_data``, returned the unscaled samples instead; that path is gone,
         because a float64 reading loses nothing that matters and nothing used it.
 
-        Validation happens in :meth:`_slice_request`, which raises ``ValueError`` for an
+        Validation happens in ``_slice_request``, which raises ``ValueError`` for an
         out-of-bounds or uncoercible request and ``IndexError`` when the channel has no
         data map or config. Both propagate out of this method unchanged.
 
@@ -533,7 +533,7 @@ class MetaReader(BaseDataPlugin):
         instances you built in :meth:`_map_data`, along with the ``config`` dict that
         belongs to the same file, return it as ``float64`` in pA. Derive whatever scale,
         offset and bitmask the format needs from ``config`` and hand them to
-        :meth:`_scale_data`, which applies them in the right order:
+        ``_scale_data``, which applies them in the right order:
 
         .. code-block:: python
 
@@ -601,7 +601,7 @@ class MetaReader(BaseDataPlugin):
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and :py:meth:`~poriscope.utils.MetaReader.MetaReader._finalize_initialization` before doing so to ensure that you are not conflicting with those functions.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and ``MetaReader._finalize_initialization`` before doing so to ensure that you are not conflicting with those functions.
         """
         self.datafile = Path(self.settings["Input File"]["Value"])
         self.file_extension = self._set_file_extension()

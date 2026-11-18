@@ -175,7 +175,7 @@ class CUSUM(MetaEventFitter):
         baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
-        Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size expressed in units of the local baseline standard deviation by :py:meth:`_step_size_in_sigma`, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
+        Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size expressed in units of the local baseline standard deviation by ``_step_size_in_sigma``, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]

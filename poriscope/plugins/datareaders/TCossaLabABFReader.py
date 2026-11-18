@@ -71,7 +71,7 @@ class TCossaLabABFReader(ABFReader):
           recording beside it is found and read with it. The ABF header carries the
           sample rate and scaling.
 
-        :py:class:`~poriscope.plugins.datareaders.ABFReader.ABFReader`'s ``Current
+        :ref:`ABFReader`'s ``Current
         Channel`` and ``Sweep`` are removed: every file of these recordings records
         current on its first ADC channel in one gap-free sweep, so the current is read
         from ADC channel 0 and every sweep is read.

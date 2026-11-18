@@ -301,7 +301,7 @@ class ClassicBlockageFinder(MetaEventFinder):
         The range is taken from the chunk itself, so every sample contributes; a finder
         that wants to restrict what counts as baseline overrides this and narrows the
         range it asks for. A chunk with no variation in it has no histogram to fit, and
-        :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._fit_baseline_histogram`
+        ``MetaEventFinder._fit_baseline_histogram``
         raises ``ValueError`` for it.
 
         :param data: Chunk of timeseries data to compute statistics on.

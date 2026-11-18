@@ -50,7 +50,7 @@ class ClusteringModel(MetaModel):
     ``QWidget``; none of those names appears in the View any more.
 
     The View asks for a result by emitting ``cluster_requested``;
-    ``ClusteringController`` calls :meth:`cluster` and hands what comes back to
+    ``ClusteringController`` calls :py:meth:`~poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.cluster` and hands what comes back to
     ``ClusteringView.set_clustering_result``; ``RawDataController.calculate_psd`` is
     the same shape.
     """

@@ -48,7 +48,7 @@ class NIConditioningLoader(MetaConditioningLoader):
     cycle, in three blocks of one column per channel: the measured size, the upper target
     and the lower target. ``Cond PSD Pos`` and ``Cond PSD Neg`` hold one NI binary file per
     PSD recording at positive and negative bias; either may be missing. Each binary file is
-    read by an :py:class:`~poriscope.plugins.datareaders.NIBinaryReader.NIBinaryReader` this
+    read by an :ref:`NIBinaryReader` this
     plugin owns, so the binary format, the sample rate in the file name and the conversion
     to pA are implemented once.
 

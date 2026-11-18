@@ -65,7 +65,7 @@ class ABFReader(MetaReader):
     channel holds the current and which sweep to read.
 
     Subclasses for a specific family of ABF recordings remove the settings their files
-    do not need from :py:meth:`get_empty_settings`, which fixes them at their defaults
+    do not need from :py:meth:`~poriscope.plugins.datareaders.ABFReader.ABFReader.get_empty_settings`, which fixes them at their defaults
     (ADC channel 0, every sweep), and override the three file-set methods to recognise
     and order a dataset that spans several files.
     """

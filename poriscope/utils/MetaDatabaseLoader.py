@@ -545,7 +545,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         flat in event count, because it is the events query and nothing else.
 
         An unknown experiment name raises ``KeyError`` out of
-        :py:meth:`_build_subset_events_query`, which is where that lookup happens.
+        ``_build_subset_events_query``, which is where that lookup happens.
 
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
@@ -590,7 +590,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :raises ValueError: if no matching data is found. An unknown experiment name, or a filter that builds invalid SQL, raises ``KeyError``/``ValueError`` out of :py:meth:`_build_subset_events_query`
+        :raises ValueError: if no matching data is found. An unknown experiment name, or a filter that builds invalid SQL, raises ``KeyError``/``ValueError`` out of ``_build_subset_events_query``
         :yield: a float between 0 and 1 representing progress toward completion
         :ytype: float
         """

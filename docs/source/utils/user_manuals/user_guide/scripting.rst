@@ -340,7 +340,7 @@ Of particular note here is that it is possible to write many experiments to a si
                 break
         print(metadata_writer.report_status())
 
-The printed report at the end will detail any problems that occurred. This brings us to the end of the tasks that are covered by the :ref:`EventAnalysisView` tab in the :mod:`poriscope` GUI
+The printed report at the end will detail any problems that occurred. This brings us to the end of the tasks that are covered by the :ref:`EventAnalysisView` tab in the ``poriscope`` GUI
 
 Loading event metadata
 ----------------------

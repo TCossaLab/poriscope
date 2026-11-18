@@ -338,12 +338,12 @@ def register_action(
 
     The entry is ``{"action": name, "args": args, "kwargs": kwargs}``, with every value
     under its parameter name in ``kwargs`` and ``args`` empty, however the call passed
-    them (see :py:func:`_arguments_by_name`). It is handed to
+    them (see ``_arguments_by_name``). It is handed to
     ``self.record_action`` once the body has returned, so an action called inside
     another is recorded before it. The name is the declared name, not the Python method
     name, so the method can be renamed or moved without breaking a saved history. It is
-    also stored on the wrapper under :py:data:`ACTION_NAME_ATTR`, which is how
-    :py:meth:`MetaController.action_registry` finds the method again. A failure to
+    also stored on the wrapper under ``ACTION_NAME_ATTR``, which is how
+    :py:meth:`MetaController.action_registry() <poriscope.utils.MetaController.MetaController.action_registry>` finds the method again. A failure to
     record is logged at INFO and never breaks the call; an object with no
     ``record_action`` is simply not recorded.
 
@@ -359,14 +359,14 @@ def register_action(
     deleting, renaming or editing a plugin can find every entry that names it.
 
     ``kind`` and the fields after it say what a restored session keeps of the action
-    (see :py:data:`ACTION_KINDS`). They are stored on the wrapper as an
-    ``ActionDeclaration`` under :py:data:`ACTION_DECLARATION_ATTR`, never in the
+    (see ``ACTION_KINDS``). They are stored on the wrapper as an
+    ``ActionDeclaration`` under ``ACTION_DECLARATION_ATTR``, never in the
     entry, and checked when the class is defined, so a declaration that names a missing
     parameter fails on import.
 
     :param name: the action's declared name, unique within one tab
     :type name: str
-    :param kind: one of :py:data:`ACTION_KINDS`
+    :param kind: one of ``ACTION_KINDS``
     :type kind: str
     :param key: for a result, its plugin parameter, then its channel parameter
     :type key: Tuple[str, ...]

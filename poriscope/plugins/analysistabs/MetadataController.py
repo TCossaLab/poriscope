@@ -211,7 +211,7 @@ class MetadataController(MetaSubsetTabController):
         Clear the figure and empty the history; the Reset button.
 
         Recorded by nothing: an Undo straight after brings the history back, and anything
-        recorded first drops it (:py:meth:`set_history_aside`). The status panel says which
+        recorded first drops it (:py:meth:`~poriscope.utils.MetaController.MetaController.set_history_aside`). The status panel says which
         was cleared. The resets the tab makes
         itself - a new figure, the first Plot Events - stay recorded through :py:meth:`reset`.
 
@@ -1006,7 +1006,7 @@ class MetadataController(MetaSubsetTabController):
         """
         The same for a 3-D scatterplot's three columns.
 
-        Separate from :meth:`_scatterplot` because the View's two drawing halves are
+        Separate from ``_scatterplot`` because the View's two drawing halves are
         separate: a 3-D scatter rebuilds the axes and carries a z label.
 
         :param columns: the raw x, y and z values
@@ -1347,7 +1347,7 @@ class MetadataController(MetaSubsetTabController):
 
         A raw filter - one whose name ends ``_raw`` - is a complete ``SELECT``, not a
         WHERE-clause body, so it cannot go through the query builder. It is run by
-        :meth:`_load_raw_metadata_subset`, restricted to the experiment and channel
+        ``_load_raw_metadata_subset``, restricted to the experiment and channel
         scope.
 
         :param loader: the database loader plugin's key

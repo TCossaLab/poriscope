@@ -214,7 +214,7 @@ class MetaConditioningLoader(BaseDataPlugin):
         """
         **Purpose:** Return the polarities the experiment has PSD recordings for: ``"+"``, ``"-"``, both, or neither.
 
-        :return: the polarities present, from :py:data:`POLARITIES`
+        :return: the polarities present, from ``POLARITIES``
         :rtype: List[str]
         """
         pass
@@ -301,7 +301,7 @@ class MetaConditioningLoader(BaseDataPlugin):
         """
         **Purpose:** Perform generic class construction operations before settings are applied.
 
-        This is called immediately at the start of class creation but before settings have been applied. No settings are available yet, so set up only what does not depend on them - typically empty containers that :py:meth:`close_resources` can safely walk before any experiment has been read.
+        This is called immediately at the start of class creation but before settings have been applied. No settings are available yet, so set up only what does not depend on them - typically empty containers that :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.close_resources` can safely walk before any experiment has been read.
         """
         pass
 

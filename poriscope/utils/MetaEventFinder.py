@@ -695,7 +695,7 @@ class MetaEventFinder(BaseDataPlugin):
         An event that cannot be read - the reader or the filter refuses it - is logged with
         its reason and yields None in its place, so position ``i`` is always event ``i`` and
         one bad event does not end the iteration. A channel whose events are not ready
-        raises :meth:`_require_events_found`'s ``KeyError`` or ``ValueError`` on the first
+        raises ``_require_events_found``'s ``KeyError`` or ``ValueError`` on the first
         ``next()``.
 
         :param channel: label for the channel from which to retrieve event data
@@ -773,7 +773,7 @@ class MetaEventFinder(BaseDataPlugin):
 
         Event finding need not have finished: the Raw Data tab reads events while a run is
         still going. A channel whose events are not ready raises
-        :meth:`_require_events_found`'s ``KeyError`` or ``ValueError``, and a ``ValueError``
+        ``_require_events_found``'s ``KeyError`` or ``ValueError``, and a ``ValueError``
         from the reader or the filter propagates with its own message.
 
         :param channel: label for the channel from which to retrieve event indices
@@ -894,7 +894,7 @@ class MetaEventFinder(BaseDataPlugin):
         first_chunk: bool = False,
     ) -> Tuple[List[int], List[int], bool]:
         """
-        This is the core of the event finder. You will be given a segment of data as well as a series of related arguments, and you must write a function that flags the start and end times of all events in that data chunk. Bear in mind that events might straddle more than one event chunk. The ``entrey_state`` argument encodes whether or not the previous data chunk ended inside an event, and the ``first_chunk`` argument encodes whether this is the first call to this function. You are also given the mean and standard deviation of the chunk as determined by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._get_baseline_stats` as an input.
+        This is the core of the event finder. You will be given a segment of data as well as a series of related arguments, and you must write a function that flags the start and end times of all events in that data chunk. Bear in mind that events might straddle more than one event chunk. The ``entrey_state`` argument encodes whether or not the previous data chunk ended inside an event, and the ``first_chunk`` argument encodes whether this is the first call to this function. You are also given the mean and standard deviation of the chunk as determined by your implementation of :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._get_baseline_stats` as an input.
 
         Your function must return two lists and a boolean: integers representing the start times and end times of all events flagged in that chunk, and a bollean  flag inficating whether nor not the chunk ended partway through an  evnet. These lists can be different lengths, since as noted previously, your chunk could have events that straddle the start, end, or both, of the chunk.You are responsible only for flagging the start and end of events that are present in the given data chunk; the base class will handle stitching them all together.
 
@@ -925,7 +925,7 @@ class MetaEventFinder(BaseDataPlugin):
         last_end: int = 0,
     ) -> Tuple[List[int], List[str]]:
         """
-        Given the lists of event start and event ends calculated by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._find_events_in_chunk`, select which ones to reject. For this, you may assume that poriscope has corrected for events that straddle the start of the chink, but not the end, which is to say that ``event_starts[0] < event_ends[0]`` will be ``True``, but it is possible that ``event_start`` will have an additional trailing entry that you should not attempt to reject. You must return a list of indices (N.B, not the actual values in ``event_starts`` or ``event_ends``) to reject, and an equal-length list of strings that provide a reason for rejection (be very terse).
+        Given the lists of event start and event ends calculated by your implementation of :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._find_events_in_chunk`, select which ones to reject. For this, you may assume that poriscope has corrected for events that straddle the start of the chink, but not the end, which is to say that ``event_starts[0] < event_ends[0]`` will be ``True``, but it is possible that ``event_start`` will have an additional trailing entry that you should not attempt to reject. You must return a list of indices (N.B, not the actual values in ``event_starts`` or ``event_ends``) to reject, and an equal-length list of strings that provide a reason for rejection (be very terse).
 
         :param event_starts: a list of starting data indices for events. You may assume that event_starts[0] < event_ends[0]. It is possible that there will be one more entry in this list than in event_ends.
         :type event_starts: List[int]
@@ -956,7 +956,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         This function must calculate and return the mean and standard deviation of the baseline for the given chunk of data, excluding any events present in the chunk. These values are used downstream to determine where the baseline deviates from the open pore current. By default, :ref:`MetaEventFinder` assumes a Gaussian distribution of baseline noise. You may assume that the data is rectified.
 
-        You do not have to build the histogram or run the fit yourself: :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._fit_baseline_histogram` does both for a range you choose, so your implementation is your own policy for what counts as baseline around one call to it. ``ClassicBlockageFinder`` hands it the chunk's own extremes; ``BoundedBlockageFinder`` hands it a configured range and refuses a fit that lands outside it.
+        You do not have to build the histogram or run the fit yourself: ``MetaEventFinder._fit_baseline_histogram`` does both for a range you choose, so your implementation is your own policy for what counts as baseline around one call to it. ``ClassicBlockageFinder`` hands it the chunk's own extremes; ``BoundedBlockageFinder`` hands it a configured range and refuses a fit that lands outside it.
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
@@ -1432,7 +1432,7 @@ class MetaEventFinder(BaseDataPlugin):
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._finalize_initialization` before doing so to ensure that you are not conflicting with those functions.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and ``MetaEventFinder._finalize_initialization`` before doing so to ensure that you are not conflicting with those functions.
 
         Should Raise if initialization fails.
         """

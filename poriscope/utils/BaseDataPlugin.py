@@ -90,7 +90,7 @@ class BaseDataPlugin(ABC):
 
     Attributes:
         logger (logging.Logger): Logger instance for logging messages.
-        lock (threading.RLock): Per-instance reentrant lock, used by :py:meth:`serialize_channel_operations` to serialize this plugin's own operations across channels when it declares that it must not run concurrently. One lock per plugin instance, so two different plugins never contend with each other. A plugin needing *process-wide* serialization (a non-reentrant native library, say) must declare its own class-level lock rather than reusing this one.
+        lock (threading.RLock): Per-instance reentrant lock, used by :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.serialize_channel_operations` to serialize this plugin's own operations across channels when it declares that it must not run concurrently. One lock per plugin instance, so two different plugins never contend with each other. A plugin needing *process-wide* serialization (a non-reentrant native library, say) must declare its own class-level lock rather than reusing this one.
     """
 
     logger = logging.getLogger(__name__)
@@ -299,7 +299,7 @@ class BaseDataPlugin(ABC):
         """
         Hold this plugin's own lock for the duration of the block, but only if the plugin declares that its channels must not run concurrently.
 
-        This is where :py:meth:`force_serial_channel_operations` is actually enforced. The declaration is a statement about *this instance* - "my own operations must not overlap across channels" - so the lock taken is this instance's :py:attr:`lock`. Two different plugin instances never contend with each other, and a plugin that returns ``False`` pays nothing.
+        This is where :py:meth:`force_serial_channel_operations` is actually enforced. The declaration is a statement about *this instance* - "my own operations must not overlap across channels" - so the lock taken is this instance's ``lock``. Two different plugin instances never contend with each other, and a plugin that returns ``False`` pays nothing.
 
         Enforcement lives here, on the object that makes the declaration, rather than in the caller. It used to live in ``MetaModel``, which asked the plugin over the signal bus and then handed its own model-scoped lock to the worker - and since every analysis tab builds its own model, two tabs driving the *same* plugin instance took *different* locks and ran it concurrently anyway, while unrelated plugins within one tab serialized against each other for nothing.
 

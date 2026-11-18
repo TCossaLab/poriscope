@@ -476,7 +476,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw one bar series per overlaid dataset.
 
-        The tallies are made by :meth:`MetadataModel.categorical_counts`, because
+        The tallies are made by :py:meth:`MetadataModel.categorical_counts() <poriscope.plugins.analysistabs.MetadataModel.MetadataModel.categorical_counts>`, because
         counting occurrences is aggregation rather than drawing and the tallies are
         exported with the plot.
 
@@ -625,7 +625,7 @@ class MetadataView(MetaSubsetTabView):
         Draw a 3-D scatterplot of three filtered columns.
 
         Called by ``MetadataController.overlay_plot``, and the same reasoning as
-        :meth:`set_scatterplot`.
+        :py:meth:`~poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_scatterplot`.
 
         :param columns: the filtered x, y and z values
         :type columns: Sequence[npt.NDArray[np.float64]]
@@ -775,7 +775,7 @@ class MetadataView(MetaSubsetTabView):
         Draw every overlaid subset's all-points histogram.
 
         The tallies are made by
-        :meth:`MetadataModel.build_all_points_histogram`, because walking a subset's
+        :py:meth:`MetadataModel.build_all_points_histogram() <poriscope.plugins.analysistabs.MetadataModel.MetadataModel.build_all_points_histogram>`, because walking a subset's
         events and binning every sample of them is aggregation rather than drawing, and
         the result is exported with the plot.
 
@@ -810,7 +810,7 @@ class MetadataView(MetaSubsetTabView):
         Overlay one subset's event traces on a shared normalised time axis.
 
         The baseline subtraction and
-        the per-event time base are made by :meth:`MetadataModel.build_event_overlay` -
+        the per-event time base are made by :py:meth:`MetadataModel.build_event_overlay() <poriscope.plugins.analysistabs.MetadataModel.MetadataModel.build_event_overlay>` -
         both are exported with the plot; what is left here is the drawing,
         including the alpha each trace is given - a shorter event is drawn more
         opaquely than a longer one so the short ones are not lost under the crowd, and

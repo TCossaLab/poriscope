@@ -43,7 +43,7 @@ class NIBinaryReader(SingleBinaryDecoder):
     Reads one binary file from the lab's NI DAQ acquisition software: 16 channels interleaved,
     big-endian 64-bit floats, no header, in mV.
 
-    A :py:class:`~poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder` with
+    A :ref:`SingleBinaryDecoder` with
     that format fixed. The acquisition software names each file after its settings,
     ``<stem>_PSD-<points>_<averages>_<samplerate>Hz_<date>_<time>.bin``, so the sample rate is
     read from the name unless one is typed in, and the samples are converted from mV to pA
@@ -87,7 +87,7 @@ class NIBinaryReader(SingleBinaryDecoder):
         - ``Sensitivity`` (pA/V) - the amplifier gain; a sample of 1 mV is
           ``sensitivity / 1000`` pA.
 
-        :py:class:`~poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder`'s
+        :ref:`SingleBinaryDecoder`'s
         format settings are removed, which fixes them for these files: no header,
         big-endian, 8-byte floating point, no bitmask.
 
