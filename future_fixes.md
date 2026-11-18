@@ -37,13 +37,10 @@ Each minor also takes the entries under "Any release" that sit in files it alrea
 
 **Rulings owed on the series:**
 
-- **Does any of the 4.0 batch go into 3.0 before the cut?** 3.0 is the open major, so a break
-  landed now costs no extra major; landed later it waits for 4.0. Default: none, and 3.0 ships as
-  burned in. The cheap candidates are the loader `None`-to-raise change and the bool-under-`int`
-  refusal.
 - **The order of 3.1 to 3.4**, and whether 3.2 runs as a parallel track.
-- **Is `NanoTrees` to be removed?** Removing a shipped plugin is a break, so 4.0 can take it only if a
-  3.x release announces it, as 2.0.0 did for `ChimeraReader20240101`.
+
+**Ruled 2026-11-18 (Kyle):** seven changes go into 3.0 while it is the open major ("Before the cut",
+below), and `NanoTrees` stays.
 
 ## 3.0.0 - trust the numbers
 
@@ -52,6 +49,51 @@ Accuracy tests against ground truth, reader and database correctness, type check
 Everything planned has landed. `develop` burns in with lab users for a few weeks before 3.0 is cut
 (Kyle, 2026-11-18): no release branch until he says. A defect found meanwhile is an ordinary fix on
 `develop`, with its line under 3.0.0.
+
+### Before the cut (ruled 2026-11-18)
+
+**Plans, awaiting approval:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>. Nothing is built
+until its plan is approved; each lands on its own branch, tests first.
+
+- **A boolean is refused for a `Type: int` setting at apply time**
+  (`BaseDataPlugin._validate_param_types:556`); only a default has it refused today
+  (`settings_schema.py:146`). **S**
+- **`WalkthroughMixin.show_walkthrough_intro` is removed** (`walkthrough_mixin.py:316-330`):
+  `MainView` has its own, and only its three tests reach the mixin's. **S**
+- **`MetaView.lock` is removed** (`MetaView.py:95`, taken only at `:649`): every access to
+  `progress_bars` is on the GUI thread, so it guards nothing. **S**
+- **A filter must be threadsafe, said where a filter author reads it.**
+  `MetaFilter.force_serial_channel_operations` (`MetaFilter.py:136`) is a word-for-word copy of the
+  concrete method on `BaseDataPlugin` and is never consulted: a filter runs as a bare callable inside
+  other plugins' loops. Delete the copy (not a break: the method is still inherited), put the note
+  on `MetaFilter`, `get_callable_filter` and `_apply_filter`, correct `meta_filter.rst` and
+  `serial_channel_operations.rst`, and have `new_plugin.py` refuse that override for a filter. **S**
+- **One Chimera VC400 reader for both layouts.** `ChimeraReader20240501._get_configs` learns the
+  2024-01 layout (a JSON header embedded in the `.log`, ending `<END HEADER>`), told by the marker in
+  the file; `ChimeraReader20240101` is removed (161 of `datareaders`' 348 removable lines); the
+  survivor is renamed `ChimeraReaderVC400` (30 files name it) and both old class names are mapped to
+  it where a session is read. The real 2024-01 set (`vc400/v2024_01`, first machine only) must be run
+  through the merged reader before the cut. **M**
+- **A recorded Plot Events holds its range as text.** `RawDataController.load_event_plot_data:530`
+  and `EventAnalysisController.load_event_plot:71` take `events: List[int]`; a typed `0-99999` costs
+  3.49 MB in the indented session file and 464 bytes as text. The replay's fit check binds names,
+  not types (`MetaController.resolve_replayed_entry:743`), so the parameter is renamed for an old
+  entry to be skipped cleanly. **M**
+- **Database loaders raise on a failed query** (`MetaDatabaseLoader.load_metadata_raw:1408`,
+  `load_metadata:1425`, `query_database_directly:1526`, abstract `_load_metadata:1590`). All six tab
+  call sites already catch and report; three (`ClusteringController.py:256`,
+  `MetadataController.py:519`, `MetaSubsetTabController.fetch_event_plot_data:659`) show "nothing
+  matched" for a failure today. 15 in-loader call lines in 9 functions test for `None`, and 21 tests
+  pin it. `DECISIONS.md` 2026-09-04 kept `None` only for the signal bus, which is gone. **M**
+- **3.0's readers must tolerate what a later minor adds** (probed 2026-11-18 on a real saved
+  session). A recorded action that gains a parameter has every saved call dropped: the recorder saves
+  every parameter, and the check refuses a name it lacks (`MetaController.resolve_replayed_entry:743`).
+  A plugin that gains a setting restores, but New Plugin of that class then fails
+  (`DataPluginController.py:971-973`, `KeyError`) and Edit crashes if the dialog cannot draw the
+  type. A setting left `None` refuses the plugin (`BaseDataPlugin._validate_param_ranges:601`). An
+  unknown tab is skipped with a cryptic error and not counted (`main_controller.py:727-734`). Fix the
+  reader in 3.0, or none of these can ship in a minor. Both databases, plot configurations and
+  `config.json` tolerate additions as they are. **M**
 
 ### Release prep, after the burn-in
 
@@ -255,12 +297,16 @@ addition, or the change waits for 4.0.
   exist and before the restore dialog offers a replay. A replay writes each step's recorded values back
   into the panel (`MetaView.write_back`); this is for a tab the user does not replay
   (`DECISIONS.md` 2026-09-27 anticipates it). **M-L, ruling** (which controls)
-- **A recorded Plot Events holds the expanded event list (2026-11-10).** Raw Data's
-  `load_event_plot_data` (`RawDataController.py:540`) and Event Analysis's `load_event_plot`
-  (`EventAnalysisController.py:81`) take `events: List[int]`, so a typed `0-99999` saves 100,000 ints,
-  688,890 bytes of JSON, in the history and the session file; `_expand_event_indices`
-  (`MetaEventTabView.py:196`) has no cap. A cap is this release's; recording the range text changes
-  the action's parameters, so it is 4.0's. **S, ruling** (cap, or wait and record ranges)
+- **One Plot Events request may ask for any number of events.** Recording the range as text (3.0)
+  fixes the session file, not the request: a typed `0-99999` still builds the full list, makes one
+  plugin call and one subplot per event, and its out-of-range message lists every index. Both panels
+  also expand the text on every keystroke. Three expanders with different rules do it
+  (`IntegerRangeLineEdit.get_values`, `MetaEventTabView._expand_event_indices:196`,
+  `_parse_event_indices:89`): a cap or a confirmation, and one expander. **S-M, ruling**
+- **A replay can wait forever for a run that reports under another key.** A saved `find_events`
+  whose channel is the string `"3"` starts a run that ends as `(3, "finder")` while the replay waits
+  for `("finder", "3")` (`replay_sequence.py:376-391`); a probe gave up after 150 s (2026-11-18). No
+  release should write a changed type, but a damaged or hand-edited session should fail, not hang. **S**
 - **Undo finds a reset by its name, not its figure (2026-11-04).** `MetaController.py:1022`, `:1038`
   stop at the last `RESET_ACTION` whatever figure it clears; harmless while Metadata, with one figure,
   is the only tab with Undo. Match the declared figure before a tab with two figures gains Undo. **S-M**
@@ -398,11 +444,11 @@ contribution, and the notice for what 4.0 removes.
 ### Plugin contract
 
 - **`_validate_param_ranges:582` rejects any `None`** (`:602`), so a plugin cannot declare an
-  optional parameter. A new schema key is additive, but a session holding `Value: None` would be
-  refused by an earlier 3.x, which the saved-file rule forbids for a shipped plugin. **S-M, ruling**
+  optional parameter. A minor may add one only as a new setting, and only if 3.0 ships a reader that
+  lets `None` through for it (3.0, before the cut); a setting 3.0's plugin code reads cannot become
+  optional before 4.0. **S-M**
 - **`_validate_param_types` accepts only the exact type** (`BaseDataPlugin.py:577-578`): at apply
-  time `Type: float` rejects an integer `5`. Accepting it is this release's; the other half, refusing
-  `True` under `Type: int`, is 4.0's. **S**
+  time `Type: float` rejects an integer `5`. Accepting it is additive. **S**
 - **Provenance stops at the fitter (2026-10-08).** A database's `channels.provenance` records the
   writer, the fitter and the event loader, which is all the database writer can reach
   (`SQLiteDBWriter._provenance_json:1112`). The reader, finder and filter that produced the events are
@@ -415,10 +461,6 @@ contribution, and the notice for what 4.0 removes.
   finder, which does not protect a reader shared by two finders. Latent: every reader and loader
   returns `False`. Taking the parent's lock too risks deadlock through lock order, which is why it
   was not done; that reason is written nowhere else. **M, ruling**
-- **`MetaFilter.force_serial_channel_operations` is unenforceable.** `get_callable_filter:97` hands
-  out `self.filter_data` as a bare bound method invoked inside another plugin's generator, and
-  `@serialize_channels` is restricted to generator functions. Wrap the callable it returns in the
-  guard (this release), or delete the declaration (4.0). **S, ruling**
 - **The plugin loader executes modules before knowing they are plugins.** `_import_plugin_module`
   calls `exec_module` (`main_model.py:286`) on every `.py` file before the class check
   (`:230-245`), so a helper module executes during discovery and reports as a plugin failure if it
@@ -445,8 +487,7 @@ contribution, and the notice for what 4.0 removes.
   `ChimeraReader20240501` and `ChimeraReaderVC100` raising on a missing sidecar is intended. **M,
   ruling**
 - **Announce what 4.0 removes.** Each removal in the 4.0 section needs a notice in a 3.x release:
-  written for `ChimeraReader20240101` (2.0.0); owed for the loaders' `None` returns, for anything
-  else ruled into 4.0, and for `NanoTrees` if it is to go. **S** each
+  written for `ChimeraReader20240101` (2.0.0); owed for anything else ruled into 4.0. **S** each
 
 ### Contributor gate
 
@@ -498,17 +539,10 @@ is down to the plugin-loader entry above. Block 1 is a pytest suite, so it is th
 
 Every break queued, landed together. A saved file's format number may change only here.
 
-- **Database loaders return `None` for a failed query instead of raising**
-  (`MetaDatabaseLoader.load_metadata_raw:1409`, `load_metadata:1426`, `query_database_directly:1527`,
-  abstract `_load_metadata:1591`), so each of the 6 tab call sites needs an `is None` branch
-  (`MetaSubsetTabController.load_event_id_cache:1568`), and 9 in-loader callers pass it on.
-  `DECISIONS.md` 2026-09-04 kept `None` only for the signal bus, which is gone: raise on failure.
-  Breaking for loader plugins and for any tab calling these. **M**
-- **Remove the deprecated `ChimeraReader20240101`** (ruled 2026-11-18: it stays in 3.0 and goes in
-  the next major; announced in 2.0.0). It differs from `ChimeraReader20240501` only in `_get_configs`
-  (embedded JSON header vs companion `.json`) and its deprecation notice; removing it takes 161 of
-  `datareaders`' 348 removable lines. No shared base (`DECISIONS.md` 2026-09-19). Nothing else reads
-  the 2024-01 format, so first ask whether anyone still holds such recordings. **S**
+- **The rest of the loader family returns `None` for a failure.** After 3.0 makes the four query
+  methods raise, eleven other `MetaDatabaseLoader` getters (`get_experiment_names`,
+  `get_channels_by_experiment`, `get_table_by_column` among them) still return `None` for both
+  "failed" and "nothing there", and `get_channel_db_id` swallows every exception. **M**
 - **Nothing bounds a plugin's `close_resources()`**: Reset Session and quit call it unguarded
   (`DataPluginModel.py:217`, `:243`), so one that hangs freezes the app without naming itself. A
   threaded timeout was built and reverted (`DECISIONS.md` 2026-08-31): doing it means
@@ -516,15 +550,10 @@ Every break queued, landed together. A saved file's format number may change onl
   `SQLiteEventWriter.py:594`), the quit path routed through the same guard, and "callable from
   another thread" added to the contract (`BaseDataPlugin.py:268`), which breaks a plugin holding
   thread-bound resources. **M, ruling**
-- **Record a Plot Events range as its text**, if the cap in 3.2 is not enough: earlier entries would
-  be reported and skipped. `_format_event_indices` (`MetaEventTabView.py:151`) already rebuilds the
-  text. **M**
-- **Refuse `True` for a `Type: int` parameter at apply time** (`BaseDataPlugin.py:577-578`); only a
-  default `Value` has the bool refused today (`settings_schema.py:146`). **S**
 - **Remove what the 3.x releases kept for compatibility**, as each lands: the public scope dicts on
-  `MetaSubsetTabView`, `event_id_cache_requested` and its slot, `MetaFilter`'s serial declaration if
-  ruled out, the old reader exception types, `WalkthroughMixin.show_walkthrough_intro`
-  (`walkthrough_mixin.py:316-328`, reached only by its own tests).
+  `MetaSubsetTabView`, `event_id_cache_requested` and its slot, the old reader exception types.
+- **Make an existing plugin setting optional.** A minor may add a setting that is optional; one that
+  3.0's plugin code reads cannot become `None` without breaking 3.0's reader.
 - **Results that change are a break too.** The owner-held fixes that move a stored number (the
   PeakFinders' truncated sample index, `Basic_PeakFinder`'s `NaN` current), either Protein
   two-population ruling that changes which fits are accepted, and a CUSUM port that is not
@@ -605,10 +634,10 @@ its name and signature.
   KeyError`/`StopIteration` (`MetaController.py:1006-1044`); `handle_kill_worker:830` nests three
   deep; `MetaView.update_progressbar:432` (72 lines) builds its widget inline; `MetaModel`
   repeats `if key not in self.<dict>` four times (`:244-286`).
-- **`MetaView.lock` guards `progress_bars` in `remove_progress_bar` only** (`MetaView.py:649`); the
-  other three accesses (`:445`, `:450`, `:488`) are unguarded, and all four run on the GUI thread, so
-  the lock guards nothing. Its comment at `:92-94` is garbled. Fix the comment; the attribute itself
-  is public on a tab base.
+- **A plugin whose parent could not be restored is refused with a type error that does not name the
+  parent.** The reference resolves to `None` silently (`DataPluginController.py:464-470`) and the
+  family's check then says the key "must have as value an object that inherits from MetaReader"
+  (`MetaEventFinder.py:1452-1456`). Say which parent is missing.
 - `MetaEventTabController.update_available_plugins:79` re-implements the base with the Model
   pushed before the View (`MetaController.py:940` does View first). Only `ConditioningController.py:254`
   reads `MetaModel.available_plugins`, outside this family, so the override is a debug log: delete
@@ -747,9 +776,10 @@ active. Docstring, signature and type-hint changes there are in scope (both are 
 with zero pydoclint violations); logic changes are not, even when annotating surfaces a real bug:
 write the honest annotation, mark the defect with a narrow `# type: ignore` and a `NOTE:` at the
 site, record it here, and leave the fix to the owner. Consult them before any `MetaEventFitter`
-signature change, which moves both PeakFinders in lockstep. `NanoTrees.py` is not owner-held but a
-deprecation candidate (its co-author has left; `CODEOWNERS` gives it to `@shadowk29` with the rest
-of `eventfitters/`): fixing it is permitted but not worth the effort while deprecation is pending.
+signature change, which moves both PeakFinders in lockstep. `NanoTrees.py` is not owner-held (its
+co-author has left; `CODEOWNERS` gives it to `@shadowk29` with the rest of `eventfitters/`) and is
+no longer a deprecation candidate: it stays, and may be rescued (Kyle, 2026-11-18). Fixing it is
+permitted; a fix that moves a stored number is still a break.
 
 ### Fitter plugin defects
 
