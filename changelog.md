@@ -336,6 +336,12 @@
 
 * Metadata databases now record their schema version, and one created by a newer Poriscope is refused with a message instead of being misread
 
+* Events databases now record their schema version too, and one created by a later major version of Poriscope is refused with a message; Poriscope 2.0 still opens one that 3.0 writes
+
+* An events or metadata database created by a later major version of Poriscope is refused as an output file, instead of being added to in this version's layout
+
+* An events database holding a table this version does not know now opens, and a fitted-metadata database chosen as an events database is refused by name
+
 * Each channel of a metadata database now records the plugins and settings that produced it, and the Poriscope version
 
 * Fixed an older metadata database whose event-count upgrade failed part-way reporting no experiments from then on; the upgrade now retries on the next open

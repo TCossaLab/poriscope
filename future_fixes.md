@@ -30,16 +30,6 @@ for both tracks.
 **Step plan:** <https://claude.ai/artifact/TX3JE9RqmwceSnaipXKHrv> (drafted 2026-11-18 at `0bc10706`, awaiting
 approval): the rulings still open, and the commit series through the release hand-off.
 
-- **Settle how every saved format is versioned, before 3.0 merges to main (2026-11-09).** One policy for
-  every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
-  whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
-  (load, convert, refuse, report). Today they differ: the session file has `format_version` 2, refuses any other number and
-  reads a file with none as the 2.0 layout (`main_model.py:83`, `_session_from_file:637`); the metadata database has
-  `SCHEMA_VERSION` 1 and reads anything up to it (`SQLiteDBLoader.py:112`, `:1079`); a plot configuration names its
-  `format` and has `format_version` 1, and any other, or a file naming no format, is refused
-  (`MetaModel.read_plot_configuration:495`); the event database (`SQLiteEventWriter`),
-  Save Filter files (`MetaSubsetTabModel.save_filters`) and `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
-  release bump, so files saved by 3.0 development builds say 2.0.2.
 - **Tell users, before 3.0 ships, what opens in which version (2026-11-09).** One page or
   release-notes section, gathered from the 3.0 changelog's breaking lines: 3.0 sessions do not open in
   2.0, and the first 3.0 Restore rewrites the 2.0 autosave; a 2.0 session opens in 3.0 without actions;

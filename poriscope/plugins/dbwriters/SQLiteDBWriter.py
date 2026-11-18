@@ -516,11 +516,14 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         A metadata database holds results from one type of fitter, from any number of runs,
         so one holding another type's is refused here too; see ``_other_fitter_reason``.
+        So is one created with a newer schema version: results in this version's layout
+        would damage a file that an older reader can otherwise only fail to open.
 
         :param settings: Parameters for event detection.
         :type settings: dict
         :raises ValueError: If the output file exists and is not an SQLite database, is
-            one without the fitted-metadata tables, or holds another fitter's results.
+            one without the fitted-metadata tables, holds another fitter's results, or
+            has a newer schema version.
         """
         value = settings.get("Output File", {}).get("Value")
         if not value:
@@ -537,6 +540,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = {row[0] for row in cursor.fetchall()}
+            version = cursor.execute("PRAGMA user_version;").fetchone()[0]
             fitter = settings.get("MetaEventFitter", {}).get("Value")
             other_fitter = (
                 self._other_fitter_reason(cursor, fitter)
@@ -563,6 +567,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             raise ValueError(
                 f"{output_file} is {kind}, not a fitted-metadata database. Choose a "
                 "metadata database or a new file."
+            )
+        if version > self.SCHEMA_VERSION:
+            raise ValueError(
+                f"{output_file} was created with metadata schema version {version}; this "
+                f"version of Poriscope writes up to {self.SCHEMA_VERSION}. Write to it "
+                "with a newer Poriscope, or choose a new file."
             )
         if other_fitter is not None:
             raise ValueError(

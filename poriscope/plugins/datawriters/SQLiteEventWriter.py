@@ -40,6 +40,10 @@ class SQLiteEventWriter(MetaWriter):
     """
 
     logger = logging.getLogger(__name__)
+    #: The schema version stamped, as ``PRAGMA user_version``, on a file this writer
+    #: creates. SQLiteEventLoader reads up to its own ``SCHEMA_VERSION`` and refuses
+    #: anything newer, so the two move together, and only in a major release.
+    SCHEMA_VERSION = 1
 
     @log(logger=logger)
     @override
@@ -154,9 +158,20 @@ class SQLiteEventWriter(MetaWriter):
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             cursor = conn.cursor()
             conn.execute("BEGIN TRANSACTION")  # Start a transaction
+            # The schema version is stamped only by the transaction that creates the
+            # schema, and rolls back with it, so a file reads it exactly when this
+            # version created it; an older file this writer adds to keeps its own.
+            creating = (
+                cursor.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'channels';"
+                ).fetchone()
+                is None
+            )
             # Create tables if they do not exist
             for query in table_creation_queries:
                 cursor.execute(query)
+            if creating:
+                cursor.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION};")
 
             base_settings = self.get_empty_settings()
             metadata = {
@@ -667,12 +682,15 @@ class SQLiteEventWriter(MetaWriter):
 
         A new or empty file is created as one, and an existing events database is
         accepted, since re-committing into one is intended. Anything else is refused
-        when the plugin is configured rather than when events are committed.
+        when the plugin is configured rather than when events are committed, as is an
+        events database created with a newer schema version: events in this version's
+        layout would damage a file that an older reader can otherwise only fail to open.
 
         :param output_file: The configured output file.
         :type output_file: Path
-        :raises ValueError: If the file exists and is not an SQLite database, or is a
-            fitted-metadata database or one of some other kind.
+        :raises ValueError: If the file exists and is not an SQLite database, is a
+            fitted-metadata database or one of some other kind, or is an events database
+            with a newer schema version.
         """
         if not output_file.is_file() or output_file.stat().st_size == 0:
             return
@@ -685,6 +703,7 @@ class SQLiteEventWriter(MetaWriter):
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = {row[0] for row in cursor.fetchall()}
+            version = cursor.execute("PRAGMA user_version;").fetchone()[0]
         except sqlite3.DatabaseError as e:
             raise ValueError(
                 f"{output_file} is not an SQLite database, so events cannot be written "
@@ -704,6 +723,12 @@ class SQLiteEventWriter(MetaWriter):
             raise ValueError(
                 f"{output_file} is an SQLite database of some other kind, not an events "
                 "database. Choose an events database or a new file."
+            )
+        if version > self.SCHEMA_VERSION:
+            raise ValueError(
+                f"{output_file} was created with event schema version {version}; this "
+                f"version of Poriscope writes up to {self.SCHEMA_VERSION}. Write to it "
+                "with a newer Poriscope, or choose a new file."
             )
 
     @log(logger=logger)

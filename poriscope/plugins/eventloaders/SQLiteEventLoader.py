@@ -49,6 +49,11 @@ class SQLiteEventLoader(MetaEventLoader):
 
     logger = logging.getLogger(__name__)
 
+    #: The newest schema version this loader reads, from ``PRAGMA user_version``. 0 is a
+    #: file created before 3.0; SQLiteEventWriter stamps the version it creates a file
+    #: at, and a file stamped above this is refused.
+    SCHEMA_VERSION = 1
+
     # Public API, probably usable as-is in most cases
 
     @log(logger=logger)
@@ -429,29 +434,33 @@ class SQLiteEventLoader(MetaEventLoader):
 
             # Fetch all tables from the database
             existing_tables = [row[0] for row in cursor.fetchall()]
+            name = Path(self.settings["Input File"]["Value"]).name
 
-            # sqlite_sequence is an internal table SQLite creates automatically for
-            # any AUTOINCREMENT column; it's not part of the expected schema, but its
-            # presence is normal and not itself a validation problem.
-            if "sqlite_sequence" in existing_tables:
-                existing_tables.remove("sqlite_sequence")
+            # A fitted-metadata database holds the three core tables too, so it is
+            # told apart by the table only it has, before its version is read.
+            if "experiments" in existing_tables:
+                raise ValueError(
+                    f"{name} is a fitted-metadata database, not an events database. "
+                    "Choose a database of raw event data."
+                )
 
-            # Check if the existing tables match the expected channels
+            version = cursor.execute("PRAGMA user_version;").fetchone()[0]
+            if version > self.SCHEMA_VERSION:
+                raise ValueError(
+                    f"{name} was created with event schema version {version}; this "
+                    f"version of Poriscope reads up to {self.SCHEMA_VERSION}. Open it "
+                    "with a newer Poriscope."
+                )
+
+            # Only the core tables are required. Any other table - one a later release
+            # of this major version adds, one a user adds, sqlite_sequence or
+            # sqlite_stat1 - is left alone rather than refusing the file.
             missing_tables = [
                 table for table in expected_tables if table not in existing_tables
             ]
-            extra_tables = [
-                table for table in existing_tables if table not in expected_tables
-            ]
-
             if missing_tables:
                 raise ValueError(
                     f"Missing tables: {', '.join(missing_tables)}. Double check that you are loading a database of raw event data."
-                )
-
-            if extra_tables:
-                raise ValueError(
-                    f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of raw event data."
                 )
 
             # If there are no issues, log success
