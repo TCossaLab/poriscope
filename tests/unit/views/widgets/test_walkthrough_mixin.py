@@ -567,44 +567,6 @@ class TestHandleWalkthroughDone:
 
 
 # ---------------------------------------------------------------------------
-# show_walkthrough_intro
-# ---------------------------------------------------------------------------
-
-
-class TestShowWalkthroughIntro:
-    def test_skips_if_already_active(self, widget):
-        widget._walkthrough_active = True
-        with patch(
-            "poriscope.views.widgets.walkthrough_mixin.IntroDialog"
-        ) as MockDialog:
-            widget.show_walkthrough_intro("MainView")
-            MockDialog.assert_not_called()
-
-    def test_creates_intro_dialog_when_inactive(self, widget):
-        widget._walkthrough_active = False
-        with patch(
-            "poriscope.views.widgets.walkthrough_mixin.IntroDialog"
-        ) as MockDialog:
-            mock_intro = MagicMock()
-            MockDialog.return_value = mock_intro
-            widget.show_walkthrough_intro("MainView")
-            MockDialog.assert_called_once_with(widget, current_step="MainView")
-            mock_intro.exec.assert_called_once()
-
-    def test_connects_signal_to_launch(self, widget):
-        widget._walkthrough_active = False
-        with patch(
-            "poriscope.views.widgets.walkthrough_mixin.IntroDialog"
-        ) as MockDialog:
-            mock_intro = MagicMock()
-            MockDialog.return_value = mock_intro
-            widget.show_walkthrough_intro("MainView")
-            mock_intro.start_walkthrough.connect.assert_called_once_with(
-                widget.launch_walkthrough
-            )
-
-
-# ---------------------------------------------------------------------------
 # get_current_view / get_walkthrough_steps – abstract method contract
 # ---------------------------------------------------------------------------
 

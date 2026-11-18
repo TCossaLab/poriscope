@@ -26,7 +26,6 @@
 
 import logging
 import os
-import threading
 from abc import abstractmethod
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -88,11 +87,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         """
         super().__init__()
         self.available_plugins: Dict[str, List[str]] = {}
+        # Read and written only on the GUI thread: update_progressbar is a slot fed by
+        # the Model's signal, and nothing else touches it. It needs no lock.
         self.progress_bars: Dict[str, Dict[str, Any]] = {}
-        # Guards progress_bars, which is per-instance - so this is too. It was a
-        # per instance, not a class attribute: one shared lock would serialise every
-        # tab against every other for a dict none of them share.
-        self.lock = threading.Lock()
         self._init()
         self._setup_ui()
         # Every tab used to repeat this pair in its own __init__, calling _init() a
@@ -646,17 +643,16 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         """
         Remove a specific progress bar and its components when a task is complete.
         """
-        with self.lock:
-            if identifier in self.progress_bars:
-                progress_data = self.progress_bars.pop(identifier)
+        if identifier in self.progress_bars:
+            progress_data = self.progress_bars.pop(identifier)
 
-                # Remove widget from layout
-                self.progress_bar_layout.removeWidget(progress_data["container"])
-                progress_data["container"].deleteLater()
+            # Remove widget from layout
+            self.progress_bar_layout.removeWidget(progress_data["container"])
+            progress_data["container"].deleteLater()
 
-                # Hide the container if no progress bars remain
-                if not self.progress_bars:
-                    self.progress_bar_container.hide()
+            # Hide the container if no progress bars remain
+            if not self.progress_bars:
+                self.progress_bar_container.hide()
 
     @log(logger=logger)
     def handle_kill_button(self, identifier: str) -> None:

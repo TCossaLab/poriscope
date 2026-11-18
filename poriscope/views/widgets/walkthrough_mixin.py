@@ -31,11 +31,7 @@ from PySide6.QtCore import QPoint, QRect, QTimer, Signal
 from PySide6.QtGui import QMoveEvent
 from PySide6.QtWidgets import QWidget
 
-from poriscope.views.widgets.walkthrough import (
-    IntroDialog,
-    StepDialog,
-    start_walkthrough,
-)
+from poriscope.views.widgets.walkthrough import StepDialog, start_walkthrough
 
 WalkthroughStep = Tuple[str, str, str, Callable[[], Union[QWidget, List[QWidget]]]]
 """A single walkthrough step: (title, description, view name, widget getter)."""
@@ -312,22 +308,6 @@ class WalkthroughMixin:
         dialog.move(
             QPoint(max(window_rect.left(), safe_x), max(window_rect.top(), safe_y))
         )
-
-    def show_walkthrough_intro(self, current_view: str) -> None:
-        """
-        Displays the initial tutorial intro dialog.
-
-        :param current_view: Identifier of the current view.
-        :type current_view: str
-        """
-        if self._walkthrough_active:
-            self.logger.info("Walkthrough is already active, skipping intro.")
-            return
-
-        self.logger.info(f"Starting walkthrough intro for {current_view}.")
-        intro = IntroDialog(cast(QWidget, self), current_step=current_view)
-        intro.start_walkthrough.connect(self.launch_walkthrough)
-        intro.exec()
 
     def get_current_view(self) -> str:
         """

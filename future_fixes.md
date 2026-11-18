@@ -58,10 +58,6 @@ until its plan is approved; each lands on its own branch, tests first.
 - **A boolean is refused for a `Type: int` setting at apply time**
   (`BaseDataPlugin._validate_param_types:556`); only a default has it refused today
   (`settings_schema.py:146`). **S**
-- **`WalkthroughMixin.show_walkthrough_intro` is removed** (`walkthrough_mixin.py:316-330`):
-  `MainView` has its own, and only its three tests reach the mixin's. **S**
-- **`MetaView.lock` is removed** (`MetaView.py:95`, taken only at `:649`): every access to
-  `progress_bars` is on the GUI thread, so it guards nothing. **S**
 - **A filter must be threadsafe, said where a filter author reads it.**
   `MetaFilter.force_serial_channel_operations` (`MetaFilter.py:136`) is a word-for-word copy of the
   concrete method on `BaseDataPlugin` and is never consulted: a filter runs as a bare callable inside

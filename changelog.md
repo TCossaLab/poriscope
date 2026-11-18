@@ -126,6 +126,10 @@
 
 * **Breaking:** the plot configuration is read and written by the tab's Model (`MetaModel.save_plot_configuration`, `read_plot_configuration`): `MetaController.save_tab_action_history`, `MainController.save_tab_action_history` and `MainModel.save_tab_actions` are removed, and `MetaController.save_tab_actions` requires the file
 
+* **Breaking:** `WalkthroughMixin.show_walkthrough_intro` is removed: only the main window shows the tutorial's intro, with a method of its own, and no tab called the inherited one
+
+* **Breaking:** `MetaView.lock` is removed: a tab's progress bars are only touched on the GUI thread, so it guarded nothing
+
 ### Developer Tooling:
 
 * The tests added since the 2026-11-12 audit were audited before the release: a replay test that depended on the speed of the event loop now waits for the replay to settle, four tests that could not see what they named were armed, and the Clustering colours and the leftover-replay cleanup gained tests

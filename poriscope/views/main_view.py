@@ -1228,8 +1228,9 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.logger.info("Walkthrough is already active, skipping intro.")
             return  # Exit if the walkthrough is already active
 
-        # WalkthroughMixin passes the view in; MainView's own callers do not,
-        # and it can derive it itself, so the argument stays optional.
+        # The Tutorial menu action's ``triggered`` signal passes its checked flag
+        # here and other callers pass nothing, so anything falsy means the page
+        # showing now.
         if not current_view:
             current_view = self.get_current_view()
         if not self._has_walkthrough(current_view):
