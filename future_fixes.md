@@ -27,26 +27,34 @@ for both tracks.
 
 ### Step 10 - docs dead-link gate and release prep
 
+**Step plan:** <https://claude.ai/artifact/TX3JE9RqmwceSnaipXKHrv> (drafted 2026-11-18 at `0bc10706`, awaiting
+approval): the rulings still open, and the commit series through the release hand-off.
+
 - **Settle how every saved format is versioned, before 3.0 merges to main (2026-11-09).** One policy for
   every file Poriscope writes, decided before the compatibility notes below: which files carry a format number,
   whether they also record the Poriscope version, and what a reader does with an older, a newer or no number
-  (load, convert, refuse, report). Today they differ: the session file has `format_version` 2 and refuses any other
-  (`main_model.py:82`, `:703-711`); the metadata database has `SCHEMA_VERSION` 1 and reads anything up to it
-  (`SQLiteDBLoader.py:112`, `:1079`); a plot configuration names its `format` and has `format_version` 1, and
-  any other is refused (`MetaModel.py:478`); the event database (`SQLiteEventWriter`),
+  (load, convert, refuse, report). Today they differ: the session file has `format_version` 2, refuses any other number and
+  reads a file with none as the 2.0 layout (`main_model.py:83`, `_session_from_file:637`); the metadata database has
+  `SCHEMA_VERSION` 1 and reads anything up to it (`SQLiteDBLoader.py:112`, `:1079`); a plot configuration names its
+  `format` and has `format_version` 1, and any other, or a file naming no format, is refused
+  (`MetaModel.read_plot_configuration:495`); the event database (`SQLiteEventWriter`),
   Save Filter files (`MetaSubsetTabModel.save_filters`) and `config.json` carry none. `poriscope_version` is written from `constants.__VERSION__`, still "2.0.2" until the
   release bump, so files saved by 3.0 development builds say 2.0.2.
 - **Tell users, before 3.0 ships, what opens in which version (2026-11-09).** One page or
   release-notes section, gathered from the 3.0 changelog's breaking lines: 3.0 sessions do not open in
   2.0, and the first 3.0 Restore rewrites the 2.0 autosave; a 2.0 session opens in 3.0 without actions;
   `tab_action_history.json` and plot configurations saved by 2.0 or early 3.0 builds are refused; a
-  plugin cannot take a tab's name. Write it once every 3.0 step has landed, so it is complete.
+  plugin cannot take a tab's name. Write it once every 3.0 step has landed, so it is complete. The session,
+  autosave and tab-name sentences are already in `menus_and_sessions.rst:46-51`; results that change, plot
+  configurations and the plugin API are gathered nowhere a user looks.
 
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved
-  because `conf.py` has no `nitpicky`. Third-party names resolve since 2026-10-09 (`-n` 1,476 → 97);
-  the 97 left are ours - wrong-owner `:meth:` targets (`MetaFilter.apply_settings` ×8), unqualified
-  short names, private methods, undocumented internal classes (`WalkthroughStep`, `SimpleCalc*`).
-  Fix them after step 9 renames things, then turn `nitpicky` on.
+  because `conf.py` has no `nitpicky`. `-n` at `0bc10706` (2026-11-18, fresh `-E` build): 139 warnings on 91
+  targets (97 on 2026-10-09; step 9 added the rest). Four are third-party (`scipy.signal.welch`, with no scipy
+  inventory, and bare `QObject`, `QEvent`, `QApplication`); the rest are ours - wrong-owner `:meth:` targets
+  (`MetaFilter.apply_settings` ×8, `MetaWriter.close_resources` ×4), unqualified short names, private methods,
+  `:mod:` `poriscope` ×5, undocumented internal classes (`WalkthroughStep` ×7). Fix them, then set
+  `nitpicky = True`: the existing `-W` build and the post-merge hook then enforce it with no workflow change.
 
 ## 3.1 - responsiveness and state
 
