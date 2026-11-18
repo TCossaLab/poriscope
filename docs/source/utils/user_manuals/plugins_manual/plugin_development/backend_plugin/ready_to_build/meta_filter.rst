@@ -39,8 +39,14 @@ Methods in this section have an implementation in either :ref:`BaseDataPlugin` o
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter.reset_channel
    :no-index:
 
-.. automethod:: poriscope.utils.MetaFilter.MetaFilter.force_serial_channel_operations
-   :no-index:
+.. important::
+
+   ``force_serial_channel_operations`` is left out of this list on purpose. Every other
+   family can override it to have its channels run one at a time; for a filter nothing
+   consults it. A filter runs as a plain callable inside other plugins' loops, on several
+   threads at once, so **a filter must be thread-safe**: if ``_apply_filter`` touches
+   anything shared between calls, guard it there with a lock of your own. See "Filters
+   are a special case" in :doc:`serial_channel_operations`.
 
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter.get_data_requirements
    :no-index:

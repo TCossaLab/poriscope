@@ -55,12 +55,6 @@ Everything planned has landed. `develop` burns in with lab users for a few weeks
 **Plans, awaiting approval:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>. Nothing is built
 until its plan is approved; each lands on its own branch, tests first.
 
-- **A filter must be threadsafe, said where a filter author reads it.**
-  `MetaFilter.force_serial_channel_operations` (`MetaFilter.py:136`) is a word-for-word copy of the
-  concrete method on `BaseDataPlugin` and is never consulted: a filter runs as a bare callable inside
-  other plugins' loops. Delete the copy (not a break: the method is still inherited), put the note
-  on `MetaFilter`, `get_callable_filter` and `_apply_filter`, correct `meta_filter.rst` and
-  `serial_channel_operations.rst`, and have `new_plugin.py` refuse that override for a filter. **S**
 - **One Chimera VC400 reader for both layouts.** `ChimeraReader20240501._get_configs` learns the
   2024-01 layout (a JSON header embedded in the `.log`, ending `<END HEADER>`), told by the marker in
   the file; `ChimeraReader20240101` is removed (161 of `datareaders`' 348 removable lines); the

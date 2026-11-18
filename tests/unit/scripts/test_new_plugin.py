@@ -436,6 +436,41 @@ class TestVariants:
         assert script.main(argv) == 1
         assert not Path(tmp_path, "Bad.py").exists()
 
+    def test_a_filter_variant_is_not_offered_the_serial_declaration(
+        self, script, shipped
+    ):
+        # Nothing consults it for a filter, which runs as a bare callable inside other
+        # plugins' loops, so offering the override would promise a lock that is never taken.
+        offered = script.overridable_methods(shipped["BesselFilter"])
+
+        assert "force_serial_channel_operations" not in offered
+        assert "_apply_filter" in offered
+
+    def test_another_family_is_still_offered_the_serial_declaration(
+        self, script, shipped
+    ):
+        offered = script.overridable_methods(shipped["ClassicBlockageFinder"])
+
+        assert "force_serial_channel_operations" in offered
+
+    def test_overriding_the_serial_declaration_on_a_filter_is_refused_with_the_reason(
+        self, script, tmp_path, capsys
+    ):
+        argv = [
+            "BesselFilter",
+            "SerialFilter",
+            "--output-dir",
+            str(tmp_path),
+            "--override",
+            "force_serial_channel_operations",
+        ]
+
+        assert script.main(argv) == 1
+
+        assert not Path(tmp_path, "SerialFilter.py").exists()
+        said = capsys.readouterr()
+        assert "thread" in (said.out + said.err).lower()
+
 
 class TestGeneratedAnalysisTabs:
     """The triad must clear the same gates a single-file plugin does, in all three files."""

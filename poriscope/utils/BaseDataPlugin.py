@@ -289,6 +289,8 @@ class BaseDataPlugin(ABC):
 
         For plugins that do not depend on other data plugins, by default this simply returns ``False``, meaning that it is acceptable and thread-safe to run operations on different channels in different threads on this plugin. If such operation is not thread-safe, this function should be overridden to simply return ``True``. In the case where your plugin depends on another plugin (for example, event finder plugins depend on reader plugins), then your plugin should defer thread safety considerations to the plugin on which it depends.
 
+        Not consulted for a filter: a :ref:`MetaFilter` is run as a plain callable inside other plugins' loops and has to be thread-safe by itself.
+
         :return: True if only one channel can run at a time, False otherwise
         :rtype: bool
         """

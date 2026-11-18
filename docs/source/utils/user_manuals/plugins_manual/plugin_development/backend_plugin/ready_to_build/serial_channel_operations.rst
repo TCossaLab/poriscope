@@ -26,8 +26,10 @@ Read that precisely, because both halves matter:
 
 The default is ``False``, i.e. "I am thread-safe, run my channels in parallel". Most plugins
 that only read are: reading a file from disk is generally safe, so
-:ref:`MetaReader`, :ref:`MetaFilter`, :ref:`MetaEventLoader` and :ref:`MetaDatabaseLoader`
-all default to ``False``. Both writer bases default to ``True``, because writing is not.
+:ref:`MetaReader`, :ref:`MetaEventLoader` and :ref:`MetaDatabaseLoader` all default to
+``False``. Both writer bases default to ``True``, because writing is not. :ref:`MetaFilter`
+is not on either list: the declaration is never consulted for a filter, which has to be
+thread-safe by itself (`Filters are a special case`_).
 
 How it is enforced
 ------------------
@@ -142,7 +144,9 @@ dispatched through the channel-management system: they are handed out as plain c
 ``MetaFilter.get_callable_filter`` and invoked inline inside *other* plugins' generators — on
 several worker threads at once, and on the GUI thread for plotting. If your filter is not
 thread-safe, guard the unsafe resource directly with your own lock inside
-``_apply_filter``, as above. Declaring ``True`` will do nothing.
+``_apply_filter``, as above. Declaring ``True`` will do nothing, which is why
+:ref:`MetaFilter` does not list the method among its optional overrides and
+``scripts/new_plugin.py`` refuses to generate that override for a filter.
 
 This applies to scripts too
 ---------------------------

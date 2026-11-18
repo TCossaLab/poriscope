@@ -190,6 +190,8 @@
 
 * An event finder that overrides `EDGE_RUN_SAMPLES` with a run longer than 1,023 samples no longer places an event's start after its threshold crossing or its end before it
 
+* A filter must be thread-safe, and `MetaFilter` now says so: its redundant copy of `force_serial_channel_operations`, which nothing consulted for a filter, is gone (the method is still inherited), and `new_plugin.py` no longer offers or generates that override for a filter
+
 ### Analysis Tabs:
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
