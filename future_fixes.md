@@ -233,13 +233,16 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
 
 ## Later - worth doing, not scheduled
 
-### Short Protein events cannot be fitted from a histogram (2026-11-18)
+### Protein two-population calls ignore that filtered samples are correlated (2026-11-18)
 
-With automatic bins (`ProteinModel._resolve_event_bins`), an event under ~150 samples gets 2-7
-bins and no two-level synthetic event of 30-75 samples was fitted (0/100 each). A fixed 50 or 100
-bins fits them but accepted 20-68% of single-level events as two populations (measured with the
-unbounded fit and no width rule, so re-measure under the quarter-bin floor). A fit on the samples
-themselves (two-component mixture, BIC against one) would not depend on binning; needs a ruling.
+Filtered noise stays correlated for a median 11 samples (9-14) on `Ub_250mV_0p2MPa_CUSUM_A1`, so a
+100-sample event holds ~9 independent measurements; 5,719 of its 5,997 events are under 100. A
+prototype two-component mixture on the samples, BIC (margin 10) with n divided by each event's
+padding correlation length, resolves none of the 5,817 events under 150 samples, where the
+histogram fit accepts 18; uncorrected it calls 52% of 50-99-sample events two populations. On
+events over 150 samples the two disagree (27 both, 77 histogram only, 20 mixture only). Rulings:
+replace the fit, decide acceptance only, or only label events too short; validate on filtered
+synthetic events first. Write-up: <https://claude.ai/artifact/D7ojrzmfUTXp5Rrq5UD8aJ>.
 
 ### The column-names/plugin-state reaction pair is near-duplicated, invisible to the ratchet (2026-10-09)
 
