@@ -110,7 +110,7 @@ class ProteinController(MetaSubsetTabController):
 
         A recorded action: a plot records one before it draws, with its own mode, so a
         replay clears the figures it was recorded on whichever mode is showing. Clears no
-        fit: the plot that resets keeps the fit it draws. See :meth:`_start_figure`.
+        fit: the plot that resets keeps the fit it draws. See ``_start_figure``.
 
         :param axis_type: Either '2d' or '3d'; the figures here are always 2-D
         :type axis_type: str

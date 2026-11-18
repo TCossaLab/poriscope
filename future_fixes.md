@@ -48,14 +48,6 @@ approval): the rulings still open, and the commit series through the release han
   autosave and tab-name sentences are already in `menus_and_sessions.rst:46-51`; results that change, plot
   configurations and the plugin API are gathered nowhere a user looks.
 
-- **The API reference has no dead-link gate.** `-W` passes while references are unresolved
-  because `conf.py` has no `nitpicky`. `-n` at `0bc10706` (2026-11-18, fresh `-E` build): 139 warnings on 91
-  targets (97 on 2026-10-09; step 9 added the rest). Four are third-party (`scipy.signal.welch`, with no scipy
-  inventory, and bare `QObject`, `QEvent`, `QApplication`); the rest are ours - wrong-owner `:meth:` targets
-  (`MetaFilter.apply_settings` ×8, `MetaWriter.close_resources` ×4), unqualified short names, private methods,
-  `:mod:` `poriscope` ×5, undocumented internal classes (`WalkthroughStep` ×7). Fix them, then set
-  `nitpicky = True`: the existing `-W` build and the post-merge hook then enforce it with no workflow change.
-
 ## 3.1 - responsiveness and state
 
 Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting the large Views.

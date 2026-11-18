@@ -515,7 +515,7 @@ class MetaEventFitter(BaseDataPlugin):
         populated as entries in a dict keyed by event id.
 
         Channels are independent. When the channel's last event is fitted,
-        :py:meth:`_post_process_events` runs for this channel alone, the channel is
+        ``_post_process_events`` runs for this channel alone, the channel is
         marked fitted (:py:meth:`get_eventfitting_status`, which is what a database
         write or an event plot waits for), and only then does the generator yield its
         final 1.0. A worker reports that as 100% and the tab then removes the channel's
@@ -1204,7 +1204,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._finalize_initialization` before doing so to ensure that you are not conflicting with those functions.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and ``MetaEventFitter._finalize_initialization`` before doing so to ensure that you are not conflicting with those functions.
 
         Should Raise if initialization fails.
         """

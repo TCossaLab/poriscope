@@ -321,7 +321,7 @@ class MetaSubsetTabView(MetaView):
         """
         Restore subset filters captured in a saved session.
 
-        Unlike :meth:`_load_filter`, this does not re-validate the filters against a
+        Unlike ``_load_filter``, this does not re-validate the filters against a
         database loader, since they were already valid when the session was saved.
 
         One copy for both subset tabs, reached through ``_subset_controls`` rather than

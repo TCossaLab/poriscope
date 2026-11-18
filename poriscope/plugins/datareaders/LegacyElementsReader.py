@@ -68,7 +68,7 @@ class LegacyElementsReader(ABFReader):
         - ``Input File`` - the ``.abf`` recording to read. The ABF header carries the
           sample rate and scaling.
 
-        :py:class:`~poriscope.plugins.datareaders.ABFReader.ABFReader`'s ``Current
+        :ref:`ABFReader`'s ``Current
         Channel`` and ``Sweep`` are removed: these recordings hold current alone, in one
         gap-free sweep, so the current is read from ADC channel 0 and every sweep is
         read.

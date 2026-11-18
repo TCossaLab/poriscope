@@ -2484,7 +2484,7 @@ class PeakFinder(MetaEventFitter):
         the end of its post-processing. The classification section is appended
         only once ``_post_process_events`` has produced the channel's
         ``_classification_results``; before that, or when ``init`` is set, only
-        the base report is returned. See :py:meth:`_classification_section` for
+        the base report is returned. See ``_classification_section`` for
         what the section covers.
 
         :param channel: the channel to report on, or None for all channels

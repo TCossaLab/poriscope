@@ -11,6 +11,8 @@ tab View only implements ``get_current_view`` and the method below; inherit it d
 only for a dialog or other non-tab widget. Implement :py:meth:`~poriscope.views.widgets.walkthrough_mixin.WalkthroughMixin.get_walkthrough_steps`;
 :doc:`adding_walkthrough` is the tutorial.
 
+.. autodata:: poriscope.views.widgets.walkthrough_mixin.WalkthroughStep
+
 .. autoclass:: poriscope.views.widgets.walkthrough_mixin.WalkthroughMixin
    :members:
    :undoc-members:

@@ -571,11 +571,11 @@ class ClusteringView(MetaView):
         """
         Parse the settings dialog, then ask for the rows to be clustered.
 
-        The second half of :meth:`_load_metadata_and_request_clustering`. The rows are a
+        The second half of ``_load_metadata_and_request_clustering``. The rows are a
         parameter now rather than something read back off ``self.plot_data``, so the
         clear-before-emit guard that used to protect that read is gone with the read.
 
-        **The filtering itself is** :meth:`ClusteringModel.build_clustering_frame`'s.
+        **The filtering itself is** :py:meth:`ClusteringModel.build_clustering_frame() <poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.build_clustering_frame>`'s.
         What stays here is reading the settings dialog - the per-column flags and the
         method parameters are strings the user typed, so a bad one is this form's
         problem to report.

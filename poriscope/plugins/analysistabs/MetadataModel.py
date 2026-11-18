@@ -317,7 +317,7 @@ class MetadataModel(MetaSubsetTabModel):
         The columns *within* one plot are filtered together, because a row dropped
         for one axis has to go for all of them. Overlaid datasets are different
         subsets of different lengths, so each is filtered by itself - handing them
-        to :meth:`logscale_and_filter_columns` together would mask them against one
+        to :py:meth:`~poriscope.utils.MetaModel.MetaModel.logscale_and_filter_columns` together would mask them against one
         another and fail on the first pair whose lengths differ.
 
         :param datasets: one raw column array per overlaid dataset
@@ -420,7 +420,7 @@ class MetadataModel(MetaSubsetTabModel):
         ``except TypeError``. The two differ only for a width of zero or a
         non-numeric one, and the controls refuse both - ``validate_inputs`` disables
         the plot button on ``bin_value <= 0`` or a value ``float()`` rejects - so
-        :meth:`_resolve_1d_bins` serves both and no behaviour changes.
+        ``_resolve_1d_bins`` serves both and no behaviour changes.
 
         :param all_data: every overlaid dataset's filtered values, concatenated
         :type all_data: npt.NDArray[np.float64]
@@ -611,7 +611,7 @@ class MetadataModel(MetaSubsetTabModel):
 
         Capture is Poisson, so the quantity the capture-rate fit is about is the gap
         between consecutive events rather than the times themselves; the fit then works
-        in log-time, which is why :meth:`_log_exp_pdf` carries a Jacobian. Sorting first
+        in log-time, which is why ``_log_exp_pdf`` carries a Jacobian. Sorting first
         makes the gaps meaningful for a column that arrived in any order.
 
         Non-positive intervals are dropped because ``log10`` has nothing to say about
@@ -645,7 +645,7 @@ class MetadataModel(MetaSubsetTabModel):
 
         This path answers an overflow in the automatic bin rule with Sturges'
         expression rather than the 100 bins the density and histogram paths use,
-        which is why it does not share :meth:`_resolve_1d_bins`.
+        which is why it does not share ``_resolve_1d_bins``.
 
         :param data: the base-10 logarithm of the inter-event times
         :type data: npt.NDArray[np.float64]

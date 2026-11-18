@@ -365,7 +365,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         Each entry runs on its own turn of the event loop. A ``result`` entry waits for its
         plugin's run on its channel to end, and the replay stops at the first entry that
-        fails; see :py:mod:`poriscope.utils.replay_sequence`. Undo replays with
+        fails; see ``poriscope.utils.replay_sequence``. Undo replays with
         :py:meth:`replay` instead, all at once.
 
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
@@ -725,9 +725,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         checked before the call, so an action's own ``TypeError`` still propagates.
         Replaying a decorated method records it again.
 
-        The loop runs inside :py:func:`~poriscope.utils.ReplayGuard.replaying`, so a
+        The loop runs inside ``replaying``, so a
         recorded action that reads a controls panel raises
-        :py:class:`~poriscope.utils.ReplayGuard.ReplayWidgetReadError` instead of using
+        :ref:`ReplayWidgetReadError` instead of using
         today's widget values.
 
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``
@@ -1210,7 +1210,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         The entries of this tab's history a restored session replays, for the session file.
 
         Built from the live history by
-        :py:func:`~poriscope.utils.kept_history.build_kept_history`, so a superseded run or
+        ``build_kept_history``, so a superseded run or
         view is left out. What the Reset button set aside is not included: it is kept in
         memory only, for an Undo straight after.
 

@@ -78,7 +78,7 @@ class ConditioningModel(MetaModel):
         """
         Drop what was kept for an experiment whose settings have changed since.
 
-        Whatever the plugin raises on the way propagates, through :py:meth:`call`.
+        Whatever the plugin raises on the way propagates, through :py:meth:`~poriscope.utils.MetaModel.MetaModel.call`.
 
         :param loader: the experiment's plugin key
         :type loader: str

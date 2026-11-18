@@ -183,7 +183,7 @@ class MetaEventLoader(BaseDataPlugin):
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and :py:meth:`~poriscope.utils.MetaEventLoader.MetaEventLoader._finalize_initialization` before doing so to ensure that you are not conflicting with those functions.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._finalize_initialization()`` **before** any additional code that you add, and take care to understand the implementation of both :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` and ``MetaEventLoader._finalize_initialization`` before doing so to ensure that you are not conflicting with those functions.
         """
         self.datafile = Path(self.settings["Input File"]["Value"])
 

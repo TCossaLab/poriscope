@@ -37,7 +37,7 @@ methods the channel-management system drives is decorated with
 :py:func:`~poriscope.utils.SerializeDecorator.serialize_channels`, which runs the generator
 inside :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.serialize_channel_operations`.
 That checks your declaration and, if it is ``True``, holds **this instance's**
-:py:attr:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.lock` for the run.
+``lock`` for the run.
 
 The five guarded entry points are:
 

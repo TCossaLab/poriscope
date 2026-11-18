@@ -682,7 +682,7 @@ class MainController(QObject):
         Save the session after a tab's history changed, with that tab as the last one.
 
         The history itself is read from the tab when the session is written
-        (:py:meth:`_sync_tab_session_state_into_history`).
+        (``_sync_tab_session_state_into_history``).
 
         :param key: the tab whose history changed
         :type key: str

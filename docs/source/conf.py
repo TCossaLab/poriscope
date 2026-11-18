@@ -38,6 +38,7 @@ from sphinx.addnodes import pending_xref
 from sphinx.application import Sphinx
 from sphinx.environment import BuildEnvironment
 from sphinx.ext.intersphinx import missing_reference
+from sphinx.util.nodes import make_refnode
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -94,6 +95,7 @@ intersphinx_mapping = {
     "pandas": ("https://pandas.pydata.org/docs/", None),
     "matplotlib": ("https://matplotlib.org/stable/", None),
     "sklearn": ("https://scikit-learn.org/stable/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
 }
 
 # An inventory lists a library's public names in full. Our docstrings name types by
@@ -113,19 +115,28 @@ _NAME_ALIASES: Dict[str, str] = {
     "GaussianMixture": "sklearn.mixture.GaussianMixture",
     "Path": "pathlib.Path",
     "datetime": "datetime.datetime",
+    "QApplication": "PySide6.QtWidgets.QApplication",
     "QComboBox": "PySide6.QtWidgets.QComboBox",
+    "QEvent": "PySide6.QtCore.QEvent",
     "QLabel": "PySide6.QtWidgets.QLabel",
+    "QObject": "PySide6.QtCore.QObject",
     "QPushButton": "PySide6.QtWidgets.QPushButton",
     "QToolButton": "PySide6.QtWidgets.QToolButton",
     "QWidget": "PySide6.QtWidgets.QWidget",
     "pandas.core.frame.DataFrame": "pandas.DataFrame",
     "matplotlib.axes._axes.Axes": "matplotlib.axes.Axes",
     "sklearn.mixture._gaussian_mixture.GaussianMixture": "sklearn.mixture.GaussianMixture",
+    "WalkthroughStep": "poriscope.views.widgets.walkthrough_mixin.WalkthroughStep",
 }
+
+# A reference that resolves to nothing is a warning, and the docs are built with -W, so
+# a dead link fails the build. How to write a reference that resolves is on the
+# contributor QA page ("Docs Render Check").
+nitpicky = True
 
 # Names no inventory can link: our own type alias and TypeVar, a numpy-internal TypeVar
 # autodoc reaches through numpy's annotations, and the PySide6 package, which Qt for
-# Python's inventory does not list as a module. They only matter once nitpicky is on.
+# Python's inventory does not list as a module.
 nitpick_ignore = [
     ("py:class", "Numeric"),
     ("py:class", "F"),
@@ -133,6 +144,25 @@ nitpick_ignore = [
     ("py:class", "poriscope.utils.SerializeDecorator.F"),
     ("py:class", "numpy._typing._array_like._ScalarType_co"),
     ("py:mod", "PySide6"),
+]
+
+# Supporting types of ours that a signature or a type field names but that have no page:
+# the methods that take, return or raise them describe them. A docstring cannot avoid
+# naming its types, so these are listed here; a reference written in prose to something
+# unpublished is written as a literal instead. Each pattern matches the bare and the
+# qualified spelling.
+nitpick_ignore_regex = [
+    (r"py:(class|exc|obj)", rf"(poriscope\..*\.)?{name}")
+    for name in (
+        "DatasetKey",
+        "EnsembleFit",
+        "FigureKind",
+        "LoadedSession",
+        "MetadataSubset",
+        "MultiSelectFilterComboBox",
+        "PlotConfigurationRefused",
+        "SessionRefused",
+    )
 ]
 
 # The docs are built with -W (see .github/workflows/docs-check.yml and the
@@ -173,6 +203,44 @@ def _public_name(target: str) -> str:
     return target
 
 
+def _resolve_own(
+    app: Sphinx, env: BuildEnvironment, node: pending_xref, contnode: nodes.TextElement
+) -> Optional[nodes.reference]:
+    """
+    Link a type field's or signature's reference to one of our own classes.
+
+    A generated page declares its class by a label of the class's name, not as a Python
+    object, so ``:rtype: MetaEventTabControls`` finds nothing although the page exists.
+    Prose links such a class with ``:ref:``; a type field cannot. This links a class
+    reference to the generated page labelled with its last name component, and failing
+    that tries the name's alias (``WalkthroughStep``) as any object the docs declare.
+
+    :param app: the Sphinx application
+    :type app: Sphinx
+    :param env: the build environment
+    :type env: BuildEnvironment
+    :param node: the unresolved reference
+    :type node: pending_xref
+    :param contnode: the reference's rendered text
+    :type contnode: nodes.TextElement
+    :return: the resolved reference, or None if it names nothing of ours
+    :rtype: Optional[nodes.reference]
+    """
+    target = node["reftarget"]
+    if node["reftype"] in ("class", "exc", "obj"):
+        label = env.get_domain("std").labels.get(target.rsplit(".", 1)[-1].lower())
+        if label is not None and label[0].startswith("autodoc/"):
+            return make_refnode(
+                app.builder, node["refdoc"], label[0], label[1], contnode
+            )
+    public = _public_name(target)
+    if public == target:
+        return None
+    return env.get_domain("py").resolve_xref(
+        env, node["refdoc"], app.builder, "obj", public, node, contnode
+    )
+
+
 def _resolve_third_party(
     app: Sphinx, env: BuildEnvironment, node: pending_xref, contnode: nodes.TextElement
 ) -> Optional[nodes.reference]:
@@ -198,6 +266,9 @@ def _resolve_third_party(
     if node.get("refdomain") != "py":
         return None
     target = node["reftarget"]
+    own = _resolve_own(app, env, node, contnode)
+    if own is not None:
+        return own
     public = _public_name(target)
     for reftype in (node["reftype"], "obj"):
         if public == target and reftype == node["reftype"]:
@@ -233,7 +304,7 @@ class _UnreachableInventoryIsInfo(logging.Filter):
 
 def setup(app: Sphinx) -> None:
     """
-    Register the third-party reference resolver, and keep an unreachable inventory from failing a -W build.
+    Register the reference resolver, and keep an unreachable inventory from failing a -W build.
 
     :param app: the Sphinx application
     :type app: Sphinx

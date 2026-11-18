@@ -18,6 +18,31 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-18 - A reference links only what the docs publish; the build fails on a dead one
+
+**Context.** `sphinx-build -W` passed with 139 references that resolved to nothing (91 targets),
+because `nitpicky` was off; 42 of them arrived during one month of analysis-tab work with nothing
+to show it. Three causes covered almost all: a generated page declares its class by a label, not as
+a Python object; a method is published only on the class that defines it; and a class docstring is
+rendered as page text, where a short `:meth:` has no class to resolve against.
+
+**Decision** (2026-11-18). `nitpicky = True`, so the existing `-W` build, CI's Docs Render Check and
+the post-merge hook all fail on a dead reference. Prose links a class by `:ref:` and a method in
+full on its defining class; anything unpublished is a literal. `conf.py` links a class named in a
+type field or signature to its generated page (a type field cannot hold `:ref:`), and
+`nitpick_ignore_regex` lists the eight supporting types a signature must name that have no page.
+
+**Rejected.** Resolving any bare name that is unique in the inventory: it links whatever shares the
+name, and breaks silently when a second one appears. Publishing a page per supporting type: the
+methods that take or return them already describe them (`ActionDeclaration` set the precedent,
+2026-11-03). A page for every private helper a docstring mentions: the published private contract
+is the abstract hooks, by design.
+
+**Revisit if** the ignore list grows past a handful, which would mean supporting types have become
+something contributors look up and want pages.
+
+---
+
 ## 2026-11-18 - A Protein fit component is bounded at a quarter bin, not rejected under half a bin
 
 **Context.** A Protein tab user's rerun on develop lost fits they had before. On their database

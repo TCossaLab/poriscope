@@ -203,8 +203,29 @@ rendering problem the moment you merge rather than when you open a pull request.
    **The build downloads other projects' indexes.** Through ``sphinx.ext.intersphinx``, a
    type such as ``numpy.ndarray`` or ``QWidget`` in a docstring links to that library's
    own documentation. A site that cannot be reached is reported as an info line and its
-   types render as plain text; it does not fail a ``-W`` build. References to Poriscope's
-   own code that point nowhere are not yet a gate: ``nitpicky`` is off.
+   types render as plain text; it does not fail a ``-W`` build.
+
+.. note::
+
+   **A reference that points nowhere fails the build.** ``nitpicky`` is on in
+   ``docs/source/conf.py``, so every role in a docstring or a page has to name something
+   the docs publish. To write one that resolves:
+
+   - **One of our classes with a page** (a ``Meta*`` base, a plugin, a tab class): link
+     the page, ``:ref:`MetaReader```. Pages declare a label, not a Python object, so
+     ``:class:`` finds nothing in prose. In a ``:type:`` or ``:rtype:`` field just name the
+     class; ``conf.py`` links it to its page.
+   - **A published method**: write it in full on the class that *defines* it,
+     ``:py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings```. A
+     method is published only where it is defined, and a class docstring is rendered as
+     page text with no class around it, so a short ``:meth:`apply_settings``` or one
+     written on a subclass does not resolve.
+   - **Anything the docs do not publish** - a private helper, a module constant, an
+     attribute, a module with no page: name it as a literal, ````_scale_data````, not
+     with a role.
+   - **A supporting type that a signature has to name but that has no page** goes in
+     ``nitpick_ignore_regex`` in ``conf.py``, with the others. Add one only for a type
+     whose methods already describe it; if contributors will look it up, give it a page.
 
 What CI Runs
 ------------

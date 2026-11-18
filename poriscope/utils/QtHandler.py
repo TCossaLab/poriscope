@@ -47,7 +47,7 @@ class MessageBoxEmitter(QObject):
 class QtHandler(logging.Handler):
     """Surface log records to the user as modal dialogs.
 
-    Attached to the root logger by :meth:`poriscope.main_app.App.configure_logger`
+    Attached to the root logger by ``App.configure_logger``
     alongside the console and file handlers.
 
     The default level is ``ERROR``, not ``NOTSET``. Log severity is not a
@@ -57,7 +57,7 @@ class QtHandler(logging.Handler):
     of those warrant a modal dialog. Anything the user should be *told* rather than
     *interrupted* by belongs on the ``add_text_to_display`` panel instead.
 
-    Note :meth:`poriscope.models.main_model.MainModel.update_logging_level`
+    Note ``MainModel.update_logging_level``
     deliberately skips this handler when it applies a new level to the root logger's
     handlers, so choosing a more verbose log level does not turn warnings back into
     dialogs.
