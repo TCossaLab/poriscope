@@ -35,3 +35,6 @@ https://youtube.com/@tcossalab?si=A8Wy8yHOXiwSXu5F
 
 ## Data
 Tutorial Series data is available on FRDR: https://doi.org/10.20383/103.01695
+
+## Architecture note
+The architecture described in the [Poriscope paper](https://doi.org/10.5334/jors.703) (JORS, 2026) corresponds to version 1.5.0 and applies through the 1.x releases. Since version 2.0.0, the central signal dispatcher has been removed. The main components (models, views, controllers and data plugins) keep the same roles; what changed is how they communicate. See [Global Signal (removed)](https://tcossalab.github.io/poriscope/signals/global_signal/global_signal.html) and [Data Plugin Controller Signal (replaced)](https://tcossalab.github.io/poriscope/signals/data_plugin_controller_signal/data_plugin_controller_signal.html) for details.
