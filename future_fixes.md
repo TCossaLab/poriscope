@@ -17,26 +17,24 @@ Accuracy tests against ground truth, reader and database correctness, type check
 **Plan:** <https://claude.ai/artifact/W9G3cHAQvSopQsRrJH6s3z>; each step is re-measured at HEAD
 when it comes up.
 
-**Two tracks** (Kyle, 2026-10-05). Step 10 is Kyle's. **Step 9 (9a, 9b) is Carolina's track**, run
-in parallel: its files (`plugins/analysistabs/`, `utils/Meta{View,Controller,SubsetTab*,EventTab*}`,
-`views/main_view.py`) and instruments (duplication and complexity ratchets, MVC boundary allowlist,
-headless flows) are disjoint from the data-plugin layer. One feature branch per sub-step; a promotion
-updates `.duplication-baseline.json` in the same commit; each track edits only its own step sections
-here and its own changelog lines, and rebases onto `develop` before `feature finish`. Step 10 waits
-for both tracks.
+Steps 0 to 9 have landed, and so has the pre-release half of step 10: the docs dead-link gate, the
+saved-file version rule and the user guide's "Upgrading from 2.0" page. `develop` now burns in with
+lab users for a few weeks before 3.0 is cut (Kyle, 2026-11-18): no release branch until he says. A
+defect found meanwhile is an ordinary fix on `develop`, with its line under 3.0.0.
 
-### Step 10 - docs dead-link gate and release prep
+### Step 10 - release prep, after the burn-in
 
-**Step plan:** <https://claude.ai/artifact/TX3JE9RqmwceSnaipXKHrv> (drafted 2026-11-18 at `0bc10706`, awaiting
-approval): the rulings still open, and the commit series through the release hand-off.
+**Step plan:** <https://claude.ai/artifact/TX3JE9RqmwceSnaipXKHrv>: the rulings, and the commit series
+through the release hand-off.
 
-- **Tell users, before 3.0 ships, what opens in which version (2026-11-09).** One page or
-  release-notes section, gathered from the 3.0 changelog's breaking lines: 3.0 sessions do not open in
-  2.0, and the first 3.0 Restore rewrites the 2.0 autosave; a 2.0 session opens in 3.0 without actions;
-  `tab_action_history.json` and plot configurations saved by 2.0 or early 3.0 builds are refused; a
-  plugin cannot take a tab's name. Write it once every 3.0 step has landed, so it is complete. The session,
-  autosave and tab-name sentences are already in `menus_and_sessions.rst:46-51`; results that change, plot
-  configurations and the plugin API are gathered nowhere a user looks.
+- **Cut 3.0.0 when the burn-in ends.** `git flow release start 3.0.0`; on the release branch, the
+  records-and-docs sweep of what changed since the 2026-11-16 trim, then the preparation commit
+  (`constants.py`, `CITATION.cff`, the changelog header; this section and the plan link leave this
+  file), with a full suite in a clean copy, the wheel installed in a clean venv and the app launched.
+  Kyle runs `release finish`.
+- **The release manual pass includes the capture-rate check owed since 2026-10-09.** On the Metadata
+  tab's capture-rate log filter, a clean timestamp column reports no dropped row, and a column with a
+  duplicate timestamp reports one fewer than 2.0 did. Needs the real app.
 
 ## 3.1 - responsiveness and state
 

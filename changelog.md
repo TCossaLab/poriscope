@@ -2,6 +2,8 @@
 
 ### Breaking Changes:
 
+* The user guide's "Upgrading from 2.0" page summarises what opens in which version and which results change
+
 #### Results that change:
 
 * **Baseline sigma, and every sigma-denominated threshold, moves slightly:** the baseline histogram uses Rice's rule for its bins, removing a bias that inflated sigma on short chunks, and short clean chunks are no longer skipped
@@ -232,69 +234,13 @@
 
 * **The wheel declares compatible dependency ranges instead of exact pins; breaking for anyone pinning on Poriscope's metadata**
 
-* Clustering no longer warns on every run (`hdbscan` 0.8.44 replaces 0.8.40)
-
 * Resetting a fitter channel no longer stalls for seconds in a large session
 
-* Fixed the Event Analysis DB-WRITER delete button's tooltip, which read 'Add eventwriter'
-
 * Plot Events in the Event Analysis and Metadata tabs no longer fails with matplotlib 3.11, which reports the colour cycle as RGB tuples instead of hex strings
-
-* **Load Plot Configuration replays one step at a time**, so the window stays responsive, and the tab's status-panel lines appear together when it ends; if a step fails, a dialog asks whether to **Go back** to before the load or **Keep** what was replayed
-
-* A **Replay Actions** button under the status panel continues the showing tab's replay from the step it stopped at, after Keep or after Abort Analysis
-
-* Abort Analysis and a tab's **❌ ALL** button also stop that tab's replay
-
-* Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back, and the status panel says which
-
-* A replay opens no error dialogs of its own: an error a replayed step logs, its finder's or fitter's included, goes to the log file and into the Go back / Keep question, which says what the step reported
-
-* **Fixed cancelling Save Session showing an error dialog**; a cancelled dialog now saves nothing
-
-* A session that cannot be loaded or restored now says why, and loading one restores its data plugins before its tabs
-
-* A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session; an error dialog says so
-
-* Load and Restore Session read each tab's saved actions once and keep them; until you replay or work in a tab, the autosave keeps them too, so a Restore after a crash still has them
-
-* A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
-
-* After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
-
-* After Load or Restore Session, the tab you last worked in is showing, and a dialog lists the tabs with saved actions, all ticked: **Replay** replays the ticked ones at once, and a tab left out keeps its **Replay Actions**; replaying redoes no commit, export or save
-
-* A replay shows each step's recorded values in its tab's panel - plugins, channels, ranges, filters and plot settings - so a restored tab shows what produced its result, and the next click starts from those values
-
-* **A replay starts Find Events and Fit Events on several channels together**, as one click does, instead of one after another, and a plot waits only for the channel it shows; a run that fails asks Go back / Keep at once, Go back stops the runs still going, and after Keep, Replay Actions replays only what did not finish
-
-* **Fixed a Metadata plot that draws nothing after Plot Events leaving the events off the screen but in the history**, so a saved session or plot configuration brought back events you no longer saw; the events are now redrawn
-
-* **Fixed Plot Events recording a raw filter's text from before `event_id` was added to it**, in the Metadata and Protein tabs, so the restored panel did not select that filter
-
-* **Fixed a replayed Find leaving its event finder with time limits for one channel only** when the finder's channels could not be read at first, so a Find on another channel was refused
-
-* Save Plot Configuration saves only the plots on screen, not the ones a later plot replaced, and Load Session of a plot configuration says what it is
-
-* Deleting a plugin removes the recorded actions that use it from every tab's history and saved session; renaming one without changing its settings makes them follow the new name; editing a setting removes them, with those of the plugins built on it, and the status panel says so
-
-* A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
 
 * **New Data Plugin: `NIBinaryReader`** reads one binary file from the lab's NI DAQ setups (16 channels in mV), taking the sample rate from the file name and converting to pA with the amplifier's sensitivity
-
-* **New Data Plugin: `NIConditioningLoader`** reads a conditioning experiment folder from the lab's LabVIEW and NI DAQ setups, under **Data** → **Load Conditioning Experiment**; several CSVs are read as one, in the order of the time stamps in their names
-
-* **New analysis tab: Conditioning** (Analysis → New Analysis Tab → `ConditioningController`) plots each channel's pore size against cycle with the 1 Hz noise of its PSD recordings at positive and negative bias, computed in the background and kept, so a replot with the same experiment and fit range is immediate; ported from the lab's conditioning analysis script
-
-* A Conditioning plot whose 1 Hz noise does not finish for every channel is still drawn but is not saved in the tab's history, and in a replay it stops the replay with Go back / Keep; a replot from kept values that cannot read the experiment is refused
-
-* **Fixed a Fit with no good fits being saved in the tab's history:** like a Find that finds no events, it is no longer saved, so a restored session does not replay it, and a replay that fails on one no longer saves it anyway
-
-* Hovering over a Conditioning panel shows, in the toolbar, the nearest cycle's pore size and the 1 Hz noise of each PSD taken at it, instead of a position on the pore-size axis
-
-* **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 
@@ -303,10 +249,6 @@
 * **Fixed a channel's progress bar disappearing while PeakFinder was still classifying it**, and its results being writable before then; a channel is ready to write once its own fitting and post-processing are done, whatever the other channels are doing
 
 * PeakFinder and Basic_PeakFinder now give durations, and Basic_PeakFinder its time settings, in `us` like every other plugin; a database written before keeps `μs`
-
-* The Metadata tab's overlays and all-points histograms and the Protein tab's blockage now use every padding sample; a padding could lose up to a few samples at MHz sample rates
-
-* The Kernel Density Plot no longer warns about a deprecated SciPy namespace
 
 * Event finding's no-voltage chunk skip now works with `ThresholdBlockageFinder`'s sigma threshold
 
@@ -360,8 +302,6 @@
 
 * `level_id` and `levels_left` can now be used in metadata queries and filters
 
-* **Fixed CSV subset exports failing on a filter that names a sublevel or experiment column**; the export now selects the same events as the plots, so a bare `id` in such a filter must now be written `e.id` there too
-
 * **Fixed a plugin whose settings edit was refused becoming impossible to edit or delete until restart**; a refused edit now leaves the plugin exactly as it was
 
 * A plugin built in a script no longer changes the settings dict it was given, so one dict can build several plugins
@@ -376,57 +316,97 @@
 
 * Quitting now closes every plugin even when one fails to close
 
-* The Protein tab's event navigation arrows now say on the status panel when no experiment or channel is in scope, as the Metadata tab's do
+* **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
 
-* **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last
+* Closing the analysis-tabs dropdown now puts the sidebar highlight back on the page that is showing
 
-* The Metadata and Protein tabs now say on the status panel when plotting an Event ID past the last filtered event starts from the first filtered event instead
+* **The Help icon now stays highlighted for as long as the Help window is open**, alongside the icon of the page you are on, instead of switching off when you click another sidebar icon, and clicking Help while its window is already open brings that window to the front
+
+* **Fixed Help → Tutorial on a tab that has no working walkthrough locking the app**; the tutorial is now treated as not running, so tabs, Settings and Help stay usable
+
+* **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
+
+* An event finder run that finds no events now reports `no events found` for the channel instead of `event finding incomplete`; an aborted run still reports `incomplete`
+
+* Clustering, Protein and Metadata scatterplots colour each cluster or overlaid dataset from `tab20`, its ten dark shades before its ten light ones
+
+* Protein and Metadata scatterplots show a size-8 legend dot as Clustering's does, and Protein's peak-fit points are size 3 like the other scatterplots (were 4)
+
+#### Sessions and replay:
+
+* **Load Plot Configuration replays one step at a time**, so the window stays responsive, and the tab's status-panel lines appear together when it ends; if a step fails, a dialog asks whether to **Go back** to before the load or **Keep** what was replayed
+
+* A **Replay Actions** button under the status panel continues the showing tab's replay from the step it stopped at, after Keep or after Abort Analysis
+
+* Abort Analysis and a tab's **❌ ALL** button also stop that tab's replay
+
+* A replay opens no error dialogs of its own: an error a replayed step logs, its finder's or fitter's included, goes to the log file and into the Go back / Keep question, which says what the step reported
+
+* **Fixed cancelling Save Session showing an error dialog**; a cancelled dialog now saves nothing
+
+* A session that cannot be loaded or restored now says why, and loading one restores its data plugins before its tabs
+
+* A plugin can no longer be named like an analysis tab (`MetadataController`, say), which replaced that tab's saved state in the session; an error dialog says so
+
+* Load and Restore Session read each tab's saved actions once and keep them; until you replay or work in a tab, the autosave keeps them too, so a Restore after a crash still has them
+
+* A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
+
+* After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
+
+* After Load or Restore Session, the tab you last worked in is showing, and a dialog lists the tabs with saved actions, all ticked: **Replay** replays the ticked ones at once, and a tab left out keeps its **Replay Actions**; replaying redoes no commit, export or save
+
+* A replay shows each step's recorded values in its tab's panel - plugins, channels, ranges, filters and plot settings - so a restored tab shows what produced its result, and the next click starts from those values
+
+* **A replay starts Find Events and Fit Events on several channels together**, as one click does, instead of one after another, and a plot waits only for the channel it shows; a run that fails asks Go back / Keep at once, Go back stops the runs still going, and after Keep, Replay Actions replays only what did not finish
+
+* Save Plot Configuration saves only the plots on screen, not the ones a later plot replaced, and Load Session of a plot configuration says what it is
+
+* Deleting a plugin removes the recorded actions that use it from every tab's history and saved session; renaming one without changing its settings makes them follow the new name; editing a setting removes them, with those of the plugins built on it, and the status panel says so
+
+#### Raw Data and Event Analysis:
+
+* A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
+
+#### Raw Data:
+
+* **Fixed a replayed Find leaving its event finder with time limits for one channel only** when the finder's channels could not be read at first, so a Find on another channel was refused
+
+* **Raw Data's Update PSD has PSD Options:** the points per average and overlap of its segments, and a 1/f fit over a frequency range whose 1 Hz value is shown in the legend and on the status panel, with each channel shaded green, orange or red by Good and Decent noise thresholds
 
 * **The Raw Data tab's baseline readout now uses the event finders' baseline fit**, so it no longer reads high in sigma or lands on an occupied level when the trace spends over half the window there
+
+* A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
+
+#### Event Analysis:
+
+* Fixed the Event Analysis DB-WRITER delete button's tooltip, which read 'Add eventwriter'
+
+* **Fixed a Fit with no good fits being saved in the tab's history:** like a Find that finds no events, it is no longer saved, so a restored session does not replay it, and a replay that fails on one no longer saves it anyway
 
 * The Event Analysis tab's event navigation arrows now say on the status panel when a shift would go below event 0, as the Raw Data tab's do
 
 * **Commit Events in the Event Analysis tab no longer refuses to run when the selected event loader is not the one the writer's results were fitted on**; the writer writes its own fitter's results whichever loader is shown, so one fitter's results can be written while another loader's events are on screen, and fitting and plotting still check the selection
 
-* A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
+#### Metadata and Protein:
+
+* **Fixed Plot Events recording a raw filter's text from before `event_id` was added to it**, in the Metadata and Protein tabs, so the restored panel did not select that filter
+
+* The Metadata tab's overlays and all-points histograms and the Protein tab's blockage now use every padding sample; a padding could lose up to a few samples at MHz sample rates
+
+* **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last
+
+* The Metadata and Protein tabs now say on the status panel when plotting an Event ID past the last filtered event starts from the first filtered event instead
 
 * The Metadata and Protein event navigation arrows now refuse a scope with more than one experiment, channel or filter, as Plot Events does, instead of moving the Event ID without plotting
 
 * Closing the Metadata and Protein experiment and channel selection with nothing ticked now keeps the previous selection and says so, instead of leaving an empty selection that every plot refused and that reopening the selection silently re-ticked in full
-
-* The Metadata tab's normalised all-points histograms now export the curves as they are drawn, each with its peak at 1
-
-* A Metadata plot whose calculation fails - a density with nothing to estimate, a capture rate with nothing to fit - is no longer counted as drawn, so plotting it again is not skipped
-
-* A Metadata plot with a Bins entry that holds no number (only a comma), or the same column on two axes, is now refused on the status panel instead of raising an error or opening a dialog, and the figure is left as it was
-
-* A Metadata plot after Reset, or redrawn by Undo, no longer records a second reset, and a refused plot on an empty figure leaves nothing in the action history
-
-* The Metadata tab's Plot Events and its arrows are now part of the plot history: Undo steps back one block of events at a time and then to the plot they replaced, Undo of Plot Events on an empty figure clears it, and a saved plot configuration replays them
-
-* The Protein tab's Update Plot, Plot Events, Plot Histogram and their arrows are now recorded for replay, each distribution plot on its own mode's figures, though the tab has no Undo or plot configuration buttons yet; Commit and Report All read the fit of the plot on screen
-
-* A refused Protein plot (more than one experiment, channel or subset, or no usable events) now leaves the previous plot in place instead of clearing it
-
-* The Protein tab's Plot Events and Plot Histogram now refuse more than one experiment, channel or filter before reading the filtered events, so a raw filter is not asked about `event_id` for a plot that is then refused
-
-* **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
-
-* A new Metadata tab opens on empty axes, as it shows after Reset, instead of a blank canvas
-
-* **Fixed the Metadata tab's X, Y and Z axes keeping the enabled state of the previous plot type** for Normalized Histogram, Categorical Histogram, Capture Rate, the event overlays and the normalised all-points histograms; each plot type now enables only the axes it draws from
-
-* **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
-
-* **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
 
 * **A raw SQL subset filter can now be plotted, not only saved:** it scopes itself with `:experiment_id` and `:channel_id`, replaced by the selected experiment's id and channel for each ticked channel, and warns on the status panel when it omits them; a plot missing a column it needs says which, and every plot of events takes them from the query's `event_id`
 
 * **A raw SQL filter that ends in its own `LIMIT` can now be saved:** the check added `LIMIT 0` to its text, which made it a syntax error
 
 * The subset filter dialog shows an example in its empty filter box (Tab inserts it), a condition for Assisted and a scoped query for Raw SQL, and in Raw SQL mode an info icon beside the chosen mode whose tooltip explains the mode (for Raw SQL, to add `:experiment_id` and `:channel_id` to follow the Scope selection and to start with `event_id`) and points to Help → Help → Documentation → Filtering and Querying
-
-* **Export Subset - CSV now takes a raw SQL filter:** it writes the events the query names in each selected channel, and refuses a filter that does not use `:experiment_id` and `:channel_id`, saying how to fix it
 
 * A raw filter that leaves out a column its plot needs now says how to add it, including the join for a column of another table such as `sublevel_duration`
 
@@ -454,27 +434,67 @@
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog
 
-* **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
+#### Metadata:
 
-* Closing the analysis-tabs dropdown now puts the sidebar highlight back on the page that is showing
+* Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back, and the status panel says which
 
-* **The Help icon now stays highlighted for as long as the Help window is open**, alongside the icon of the page you are on, instead of switching off when you click another sidebar icon, and clicking Help while its window is already open brings that window to the front
+* **Fixed a Metadata plot that draws nothing after Plot Events leaving the events off the screen but in the history**, so a saved session or plot configuration brought back events you no longer saw; the events are now redrawn
 
-* **Fixed Help → Tutorial on a tab that has no working walkthrough locking the app**; the tutorial is now treated as not running, so tabs, Settings and Help stay usable
+* The Kernel Density Plot no longer warns about a deprecated SciPy namespace
 
-* **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
+* **Fixed CSV subset exports failing on a filter that names a sublevel or experiment column**; the export now selects the same events as the plots, so a bare `id` in such a filter must now be written `e.id` there too
 
-* An event finder run that finds no events now reports `no events found` for the channel instead of `event finding incomplete`; an aborted run still reports `incomplete`
+* The Metadata tab's normalised all-points histograms now export the curves as they are drawn, each with its peak at 1
+
+* A Metadata plot whose calculation fails - a density with nothing to estimate, a capture rate with nothing to fit - is no longer counted as drawn, so plotting it again is not skipped
+
+* A Metadata plot with a Bins entry that holds no number (only a comma), or the same column on two axes, is now refused on the status panel instead of raising an error or opening a dialog, and the figure is left as it was
+
+* A Metadata plot after Reset, or redrawn by Undo, no longer records a second reset, and a refused plot on an empty figure leaves nothing in the action history
+
+* The Metadata tab's Plot Events and its arrows are now part of the plot history: Undo steps back one block of events at a time and then to the plot they replaced, Undo of Plot Events on an empty figure clears it, and a saved plot configuration replays them
+
+* **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
+
+* A new Metadata tab opens on empty axes, as it shows after Reset, instead of a blank canvas
+
+* **Fixed the Metadata tab's X, Y and Z axes keeping the enabled state of the previous plot type** for Normalized Histogram, Categorical Histogram, Capture Rate, the event overlays and the normalised all-points histograms; each plot type now enables only the axes it draws from
+
+* **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
+
+* **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
+
+* **Export Subset - CSV now takes a raw SQL filter:** it writes the events the query names in each selected channel, and refuses a filter that does not use `:experiment_id` and `:channel_id`, saying how to fix it
+
+#### Protein:
+
+* The Protein tab's event navigation arrows now say on the status panel when no experiment or channel is in scope, as the Metadata tab's do
+
+* The Protein tab's Update Plot, Plot Events, Plot Histogram and their arrows are now recorded for replay, each distribution plot on its own mode's figures, though the tab has no Undo or plot configuration buttons yet; Commit and Report All read the fit of the plot on screen
+
+* A refused Protein plot (more than one experiment, channel or subset, or no usable events) now leaves the previous plot in place instead of clearing it
+
+* The Protein tab's Plot Events and Plot Histogram now refuse more than one experiment, channel or filter before reading the filtered events, so a raw filter is not asked about `event_id` for a plot that is then refused
+
+* The Protein tab's Commit Individual writes `prolate_reachable_fraction` and `oblate_reachable_fraction`, the share of each event's fitted blockage distribution that some prolate or oblate spheroid in the pore can produce, and replaces a fit committed before them; Report All shows both for the Ensemble fit
+
+#### Clustering:
+
+* Clustering no longer warns on every run (`hdbscan` 0.8.44 replaces 0.8.40)
 
 * Clustering's Commit with no clustering yet now says so on the status panel instead of raising an error inside the tab
 
 * Clustering's Merge now says on the status panel how many events it moved, and refuses the same label in both dropdowns instead of redrawing and recording a merge that changed nothing
 
-* The Protein tab's Commit Individual writes `prolate_reachable_fraction` and `oblate_reachable_fraction`, the share of each event's fitted blockage distribution that some prolate or oblate spheroid in the pore can produce, and replaces a fit committed before them; Report All shows both for the Ensemble fit
+#### Conditioning:
 
-* Clustering, Protein and Metadata scatterplots colour each cluster or overlaid dataset from `tab20`, its ten dark shades before its ten light ones
+* **New Data Plugin: `NIConditioningLoader`** reads a conditioning experiment folder from the lab's LabVIEW and NI DAQ setups, under **Data** → **Load Conditioning Experiment**; several CSVs are read as one, in the order of the time stamps in their names
 
-* Protein and Metadata scatterplots show a size-8 legend dot as Clustering's does, and Protein's peak-fit points are size 3 like the other scatterplots (were 4)
+* **New analysis tab: Conditioning** (Analysis → New Analysis Tab → `ConditioningController`) plots each channel's pore size against cycle with the 1 Hz noise of its PSD recordings at positive and negative bias, computed in the background and kept, so a replot with the same experiment and fit range is immediate; ported from the lab's conditioning analysis script
+
+* A Conditioning plot whose 1 Hz noise does not finish for every channel is still drawn but is not saved in the tab's history, and in a replay it stops the replay with Go back / Keep; a replot from kept values that cannot read the experiment is refused
+
+* Hovering over a Conditioning panel shows, in the toolbar, the nearest cycle's pore size and the 1 Hz noise of each PSD taken at it, instead of a position on the pore-size axis
 
 ### Documentation:
 
