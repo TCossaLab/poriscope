@@ -50,7 +50,7 @@ class MetaFilter(BaseDataPlugin):
     Thread safety
     -------------
 
-    A filter must be thread-safe. It is handed out as a plain callable (:meth:`get_callable_filter`) and run inside other plugins' loops: on several worker threads at once, one per channel, and on the GUI thread for plots. No lock is held around it, and ``force_serial_channel_operations`` is never consulted for a filter, so overriding that method changes nothing. If ``_apply_filter`` touches anything shared between calls, guard it there with a lock of your own.
+    A filter must be thread-safe. It is handed out as a plain callable (:py:meth:`~poriscope.utils.MetaFilter.MetaFilter.get_callable_filter`) and run inside other plugins' loops: on several worker threads at once, one per channel, and on the GUI thread for plots. No lock is held around it, and ``force_serial_channel_operations`` is never consulted for a filter, so overriding that method changes nothing. If ``_apply_filter`` touches anything shared between calls, guard it there with a lock of your own.
 
     Attributes:
         logger (logging.Logger): Logger instance for logging messages.
