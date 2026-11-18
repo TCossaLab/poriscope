@@ -26,6 +26,7 @@ program still work for a person using it?*
 - V18 A test that skips without a generated artefact passes silently wherever it is missing
 - V19 A run from a second working copy can import the first one's code
 - V20 Measure against the commit the branch actually starts from
+- V21 A deliberate departure from a reference is a decision, not a bug, until planted truth says otherwise
 
 ## The verification routine
 
@@ -336,3 +337,17 @@ the cheapest sign that the code did too.
 branch. The branch had 29 more tests: the base had been fast-forwarded by ten unrelated commits before
 the branch was cut, and the "before" run was on the older commit. The comparison was redone on the real
 base before any figure was recorded.
+
+## V21 · A deliberate departure from a reference is a decision, not a bug, until planted truth says otherwise
+
+When code differs from the reference it was written from - a paper, a published implementation, an
+original program - and a case fails, find the dated decision that introduced the difference before
+calling it a bug; it was probably a fix for something. Then run the failing case on input with planted
+truth and trace it step by step through both forms, so the choice rests on what each costs on that case,
+not on which one is canonical.
+
+*Case:* 2026-10-07, a change-point detector gated its reset behind an accepted jump, departing from its
+public reference, to cure variance inflation after a transition. A sample-by-sample trace of one planted
+event showed the cost: after a rejected crossing the anchor stayed put, the running variance swallowed the
+rest of the ramp, and two planted steps never registered. Restoring the reference's reset took one
+variant's worst band from 0 of 25 events found to 25 of 25.

@@ -20,6 +20,7 @@ it exercise the program the way the program really runs?*
 - N15 Never reshape production code to keep a test passing
 - N16 Pin the invariant, not the census
 - N17 Clean up a process-wide resource at process scope, and arm a guard on it
+- N18 An expected failure is evidence only that something failed
 
 ## N3 · Enter, set up and tear down through the application's own doors
 
@@ -78,6 +79,8 @@ it. Another asymmetric window, perturbed over unimodal noise, moved sigma 0.13 p
 as dead; over a bimodal baseline it was worth several percent. A mutation script anchored on a
 string occurring twice spliced the wrong region; the test "passed" because nothing had changed.
 
+*Also:* a system that recovers - a reset, a retry, a running estimate that decays - hides a defect whenever the input gives it time to: size the input so the defective form cannot recover, and prove it by reverting the fix. *Case:* 2026-10, a change-point detector mutated to reset late still found a 60 σ edge on 100-sample plateaus, because the inflated variance decayed before the next step arrived and the cumulative minimum put the edge back.
+
 ## N5 · Stub a collaborator the way it really behaves
 
 A bare `Mock()` where the real collaborator has a side effect makes every downstream assertion
@@ -89,6 +92,8 @@ test passed because the model was a `Mock`, and the new test asserted the tuple 
 bug. Only a real reader in an end-to-end test raised `missing 1 required positional argument`.
 Later, a stub answered with a bare string where the collaborator returns `(str, str)`; in production
 the tuple was always truthy, so two "empty query" guards could never fire.
+
+*Also:* a synthetic input file is a stub of whatever writes the real ones. A writer built by reading the parser supplies exactly what the parser reads, so open its files with an independent reader before they serve as goldens. *Case:* 2026-10-09, a synthetic writer for a binary recording format supplied only the header fields the project's own parser read; every reader test passed, and no other reader of the format could open the files - found when the parser was being replaced by a library.
 
 ## N6 · A stub standing in for a collaborator hides that the collaborator is untested
 
@@ -147,6 +152,8 @@ with itself about a world that does not exist.
 
 *Case:* 47 generator tests passed generating into `user_plugins`; the real folder is `User Plugins`,
 and the first real use produced a `SyntaxError` in a generated import.
+
+*Also:* a test of which input goes where needs inputs that differ. *Case:* 2026-10, a patch release's export test let a mutation that swapped channels survive: both fixture channels came from the generator's default seed, so channel 1's event *k* held exactly channel 0's samples. Each population now gets its own seed, and the pin was proved by mutating the pairing (N4).
 
 ## N11 · Never keep a self-generated golden across a move
 
@@ -233,3 +240,15 @@ an application-wide event filter, so building one controller took 52 ms with non
 1,000, and a full collection 2.5 s against 0.1 s alone. The worst symptom, a 127 s teardown, sat in the
 victim file. One root-level teardown destroying every top-level window took the suite from 1,650 s to
 493 s with no assertion changed.
+
+## N18 · An expected failure is evidence only that something failed
+
+A test marked as expected to fail, or seen red before a fix, is satisfied by any exception - a misspelt
+method, a fixture that cannot build, an import error - and then reads as the defect it names. Pin the
+reason: declare the exception the defect raises (an assertion error, for a wrong value), or run the module
+once with the expected-failure marks disabled and read why each test fails. N7's "seen red" needs the same
+reading.
+
+*Case:* during the 3.0 release, two strict expected-failure pins written to hold known defects sat red for
+test errors - one called a method that did not exist, the other used a fixture that could not build its
+loader - and were read as the defects.

@@ -129,6 +129,12 @@ instrument, re-derive the baseline, and let the instrument become the definition
 committed instrument reproduced it exactly - and later, a "7 functions over complexity 10"
 figure from another ad-hoc script turned out to be 8, because it had scored `with` as a branch.
 
+*Also:* before copying a table of figures from a working page into a permanent record, regenerate it
+from the code at each commit it cites; the regeneration also recovers parameters the table left out.
+*Case:* during the 3.0 release, loading a fit from four commits with `git show` reproduced a decision's
+results table in a minute and showed which random seed one row had used; copying the page into the
+decision log would have carried that ambiguity with it.
+
 ## P4 · A recorded blocker is a claim like any other
 
 Re-derive a dependency before obeying it. An unexamined block is worse than a wrong number,
@@ -139,6 +145,11 @@ living in docstrings and decision logs: every recorded reason is a hypothesis wi
 uniform thing in the cluster - same names, same types, ~290 lines already byte-identical - so it
 was the strongest argument *for* the shared base. A base-class docstring claimed two copies of a
 method "differ" and must stay separate; they differed by one blank line.
+
+*Also:* an expected-failure mark whose reason blames a mechanism ("a resolution limit, by design") is the
+same kind of claim: re-measure every such mark whenever the mechanism it blames changes. *Case:*
+2026-10-07, a test of 20-sample steps was marked as a resolution limit of every variant of a change-point
+detector; after one change to the detector's reset rule, all three variants resolved it (0/25 to 25/25).
 
 ## P7 · "Pure" is a claim about the whole body, not about the signature
 
@@ -167,6 +178,12 @@ Probe a recorded defect before designing its fix. "Silently mangled" is a differ
 *Case:* the plan said a raw query "fails validation and is dropped". A six-line probe showed it was
 accepted, spliced into invalid SQL, and committed under a renamed, reclassified label.
 
+*Also:* a defect filed against an external file format or protocol is a claim about the format, and the
+arithmetic alone cannot tell a bug from a convention. Check it against the specification, a reference
+implementation or the format's owner before planning a fix. *Case:* during the 3.0 release, a queued item
+read a binary reader's offset handling as a bug from its arithmetic; the format's owner knew it as the
+format's convention, and a reference reader library later served as the oracle.
+
 ## P14 · A step can be wrong while every one of its numbers is right
 
 Verifying figures is necessary and not sufficient. Ask what the step counts as success and whether
@@ -187,6 +204,10 @@ occurrences is not a count of call sites.
 *Case:* "omit private methods from the docs" would have deleted 259 of 516 pages that were the
 plugin author's contract - on those bases a leading underscore marks a subclass obligation. "8 call
 sites" were mostly an unrelated dict key (3 real). Two of "13 parameters" were passed and never read.
+
+*Also:* a count of tests or assertions is the same kind of claim: "no assertions on X" from a grep for
+X's name counts the name, not the tests. Count by reading the test file's classes. *Case:* during the 3.0
+release, a draft plan said a baseline fit had no assertions; its test class held six.
 
 ## P17 · An exit criterion has to survive the step's other constraints
 

@@ -52,6 +52,7 @@ building-skills) add their own lessons under the same ID scheme; IDs are unique 
 - **N15** Never reshape production code to keep a test passing
 - **N16** Pin the invariant, not the census
 - **N17** Clean up a process-wide resource at process scope, and arm a guard on it
+- **N18** An expected failure is evidence only that something failed
 
 ## Measurement (I) - [measurement.md](measurement.md)
 
@@ -114,6 +115,7 @@ building-skills) add their own lessons under the same ID scheme; IDs are unique 
 - **V18** A test that skips without a generated artefact passes silently wherever it is missing
 - **V19** A run from a second working copy can import the first one's code
 - **V20** Measure against the commit the branch actually starts from
+- **V21** A deliberate departure from a reference is a decision, not a bug, until planted truth says otherwise
 
 ## Finishing (X) - [finishing.md](finishing.md)
 
@@ -140,3 +142,4 @@ building-skills) add their own lessons under the same ID scheme; IDs are unique 
 - **C14** Before every release, audit the records and docs on the release branch
 - **C15** A line number in a long-lived record is a measurement with a date
 - **C16** An approval page must hand its decisions back through a channel you can read
+- **C17** A saved file's format follows the release's version discipline

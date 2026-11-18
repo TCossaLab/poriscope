@@ -22,6 +22,7 @@ interruption costs nothing.
 - C14 Before every release, audit the records and docs on the release branch
 - C15 A line number in a long-lived record is a measurement with a date
 - C16 An approval page must hand its decisions back through a channel you can read
+- C17 A saved file's format follows the release's version discipline
 
 ## C1 · Logic changes need an approved plan
 
@@ -59,6 +60,11 @@ written 908 lines of the decision log and three-quarters of the contributor QA p
 would have held most of the approved cuts; asked with those figures, the user chose the narrow one (their
 active feature tracks only), and later released one entry the blame rule had held that was not on either
 track.
+
+*Also:* a scope claim about owner-held files ("signature-only", "mechanical") is checked against their
+bodies before it goes into the plan or the ask. *Case:* 2026-10, a change to another owner's peak-fitting
+files was planned as signature-only; two calls inside those files passed `None`, which made the step's
+exit depend on the owner after all.
 
 ## C3 · One branch per piece of work
 
@@ -109,6 +115,11 @@ lost. The next session - which may be you with no memory - should re-measure rat
 
 Keep all of them terse: several are read by agents, and every needless sentence is context spent.
 Forward-looking status claims in old entries ("will be fixed in X") are corrected when they go stale.
+
+*Also:* a landed entry does not delete itself. The commit that lands the work owns deleting its queue
+entry, and starting each step greps the queue for the earlier steps' headings. *Case:* during the 3.0
+release, one step's queue section stayed in the work queue through the next four steps with every item
+landed.
 
 ## C7 · Keep the wrong turns
 
@@ -216,3 +227,30 @@ on the page how the decisions get back.
 *Case:* 2026-11-16, a 75-item cleanup review saved each mark in browser storage. "Proceed as marked"
 arrived with nothing readable: no comments, no shared state. The work waited until the user pasted the
 page's copied summary. The copy button was the one channel that worked.
+
+## C17 · A saved file's format follows the release's version discipline
+
+C6 counts a format change as breaking; this says when one is allowed. Only a major release may stop
+reading a file, or write one that an earlier release of the same major cannot read. So:
+
+1. A format number changes only in a major release.
+2. Within a major, a change to a saved file is additive, and every reader of that major ignores keys,
+   columns and tables it does not know rather than refusing them.
+3. A reader refuses only a file whose format belongs to another major, and says which version wrote it.
+4. The tolerant reader has to ship before the first file that needs it, so settle the rule before the
+   release whose readers will meet later files.
+5. A writer refuses to append to a file in a newer format: that is the one mismatch that damages data,
+   where a reader only fails.
+
+*Case:* 2026-11-18, before a major release of a desktop analysis application, the six kinds of file it
+saves were found to follow three different rules - one refused any format number but its own, one read
+anything up to its own number, one refused a file that did not name its format - and three carried no
+version at all. The owner ruled that minor versions never break saved files and refusal happens only
+across majors, before the release shipped, because the shipped reader is the one that meets files written
+later.
+
+*Also:* until tolerant readers have shipped, what an old reader accepts is a measurement: before adding to
+a saved format, open a file the change writes with the oldest release still in use. *Case:* 2026-10-08,
+every database loader since an old minor release refused a table it did not know; the oldest one still in
+use refused a new provenance table and opened a file carrying it as a column, with new indexes and a
+version stamp, so the data went in as a column.

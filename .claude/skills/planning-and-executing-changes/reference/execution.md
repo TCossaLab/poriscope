@@ -46,6 +46,11 @@ metaclass for this. A `try/except ... else:` around a signal emit could never fi
 exception does not propagate to the emitter. (A nested function hiding a linter's violation is
 V14's case.)
 
+*Also:* a state meant to be temporary is judged by how it actually ends: count how often each exit path
+is taken before judging it by its intent. *Case:* 2026-10-09, a proposed pause on a rejected detector
+crossing was meant to end early on an accepted edge; counted, it did so 2 times in 3,021, so it was a
+reset delayed by its window.
+
 ## E5 · Showing a mechanism has an effect is not showing the effect is wanted
 
 A measurement can establish magnitude without establishing sign. Between "inert" and "a feature" sits
