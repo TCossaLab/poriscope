@@ -47,6 +47,11 @@ class MetaFilter(BaseDataPlugin):
 
     :ref:`MetaFilter` will provide a common API with which to define data preprocessing steps that can be swapped in and out of data analysis pipelines.
 
+    Thread safety
+    -------------
+
+    A filter must be thread-safe. It is handed out as a plain callable (:meth:`get_callable_filter`) and run inside other plugins' loops: on several worker threads at once, one per channel, and on the GUI thread for plots. No lock is held around it, and ``force_serial_channel_operations`` is never consulted for a filter, so overriding that method changes nothing. If ``_apply_filter`` touches anything shared between calls, guard it there with a lock of your own.
+
     Attributes:
         logger (logging.Logger): Logger instance for logging messages.
     """
@@ -101,6 +106,9 @@ class MetaFilter(BaseDataPlugin):
         :return: A function that can be called to filter a 1-d npt.NDArray[np.float64] object
         :rtype: Callable
         """
+        # The bound method itself, with no lock around it: whoever receives it calls it
+        # from its own thread, alongside every other channel's. That is why a filter has
+        # to be thread-safe, and why it has no say in serialising channels.
         return self.filter_data
 
     @log(logger=logger)
@@ -131,18 +139,6 @@ class MetaFilter(BaseDataPlugin):
         :param channel: ignored; accepted so every plugin shares one signature
         :type channel: int
         """
-
-    @log(logger=logger)
-    def force_serial_channel_operations(self) -> bool:
-        """
-        **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
-
-        For plugins that do not depend on other data plugins, by default this simply returns ``False``, meaning that it is acceptable and thread-safe to run operations on different channels in different threads on this plugin. If such operation is not thread-safe, this function should be overridden to simply return ``True``. In the case where your plugin depends on another plugin (for example, event finder plugins depend on reader plugins), then your plugin should defer thread safety considerations to the plugin on which it depends.
-
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-        """
-        return False
 
     # public API, must be implemented by subclasses
     @abstractmethod
@@ -240,6 +236,8 @@ class MetaFilter(BaseDataPlugin):
         **Purpose:** Called to actually filter or otherwise preprocess data
 
         Take in a 1D timeseries and apply the filter or preprocessing step provided by your plugin.
+
+        This must be thread-safe: it is called from several threads at once with no lock held (see the class docstring). Guard any state it shares between calls with a lock of your own.
 
         :param data: The data to be filtered
         :type data: npt.NDArray[np.float64]

@@ -335,6 +335,20 @@ OPTIONAL_HOOKS: Tuple[str, ...] = (
     "get_plot_features",
 )
 
+# A hook that nothing consults for one family, and why. A variant in that family is not
+# offered it, and asking for it by name is refused with the reason: an override that is
+# generated cleanly reads as though it does something.
+HOOKS_NOT_CONSULTED: Dict[str, Dict[str, str]] = {
+    "MetaFilter": {
+        "force_serial_channel_operations": (
+            "a filter is never serialised. It is handed out as a plain callable and "
+            "run inside other plugins' loops, on several threads at once, so make "
+            "_apply_filter thread-safe instead: guard any shared state with a lock "
+            "of its own."
+        ),
+    },
+}
+
 # Reaching a prompt with nothing to read means the tool was run without arguments from
 # somewhere that cannot answer - a CI step, or a pipe. Say so rather than hanging or
 # reporting an empty answer as if the user had given one.
@@ -1477,8 +1491,14 @@ def overridable_methods(plugin_cls: type) -> List[str]:
     :return: the method names, sorted, excluding get_empty_settings
     :rtype: List[str]
     """
-    abstract = set(family_base(family_of(plugin_cls)).__abstractmethods__)
-    hooks = {hook for hook in OPTIONAL_HOOKS if hasattr(plugin_cls, hook)}
+    family = family_of(plugin_cls)
+    abstract = set(family_base(family).__abstractmethods__)
+    not_consulted = HOOKS_NOT_CONSULTED.get(family, {})
+    hooks = {
+        hook
+        for hook in OPTIONAL_HOOKS
+        if hasattr(plugin_cls, hook) and hook not in not_consulted
+    }
     return sorted((abstract | hooks) - {SETTINGS})
 
 
@@ -1833,6 +1853,13 @@ def build(
         )
 
     if is_variant:
+        not_consulted = HOOKS_NOT_CONSULTED.get(family_of(base_cls), {})
+        pointless = sorted(set(args.override) & set(not_consulted))
+        if pointless:
+            raise GenerationError(
+                f"{base_cls.__name__} has nothing to gain from overriding "
+                f"{pointless[0]}: {not_consulted[pointless[0]]}"
+            )
         available = overridable_methods(base_cls)
         unknown = sorted(set(args.override) - set(available))
         if unknown:

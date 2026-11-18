@@ -18,6 +18,29 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-18 - A filter is never serialised: it is told to be thread-safe, and an override is not refused
+
+**Context.** A filter is handed out as a bare callable (`MetaFilter.get_callable_filter`) and run
+inside other plugins' generators, on several worker threads at once and on the GUI thread for plots.
+Nothing ever consulted `force_serial_channel_operations` for one, yet `MetaFilter` carried a
+word-for-word copy of `BaseDataPlugin`'s method and its docs page listed it as an optional override.
+
+**Decision** (Kyle, 2026-11-18). The copy goes. The method is still inherited from the base, so
+nothing a plugin can observe changes and this is not a break. `MetaFilter`'s class docstring,
+`get_callable_filter` and `_apply_filter` say a filter must be thread-safe, as do the filter page and
+the serial-operations page, and `new_plugin.py` neither offers that override for a filter nor
+generates it when asked by name.
+
+**Not taken.** Refusing to load a filter class that defines the method: it would turn a false sense
+of safety into an error, but it breaks a filter that loads today, for a method that does nothing.
+Wrapping the callable in the plugin's guard, so that the declaration would mean something for a
+filter: the requirement is stated instead of adding a lock on every filter call.
+
+**Revisit if** a filter is needed that cannot be made thread-safe; wrapping the callable that
+`get_callable_filter` returns is the place to start.
+
+---
+
 ## 2026-11-18 - Saved files break only at a major version: one rule for every file Poriscope writes
 
 **Context.** Six kinds of file followed three rules. The session file refused any format number but
