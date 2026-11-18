@@ -81,9 +81,7 @@ def unchanged(data):
 
 
 @pytest.fixture(scope="module")
-def chain(
-    chimera_log_path, tmp_path_factory
-) -> Iterator[Tuple[MetaEventFinder, Path]]:
+def chain(chimera_log_path, tmp_path_factory) -> Iterator[Tuple[MetaEventFinder, Path]]:
     """
     A finder that has found its events, and an events database the shipped writer made.
 
@@ -285,4 +283,3 @@ def test_a_database_missing_a_core_table_is_refused(written: Path) -> None:
 
     with pytest.raises(ValueError, match="Missing tables: columns"):
         build_event_loader(str(written))
-
