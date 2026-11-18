@@ -18,6 +18,46 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-18 - 3.0's readers ignore what a later minor adds: four fixes, one accepted loss, and what a minor must not add
+
+**Context.** The saved-file rule (2026-11-18, below) lets a minor add to a file only if every reader
+of the major ignores the addition, and the tolerant reader has to ship before the first file that
+needs it. Probes on a real saved session and on databases written by the shipped writers found four
+additions 3.0 did not tolerate. A recorded action that gained a parameter had every saved call of
+it dropped: the recorder saves every parameter with its default, and the fit check refused a name
+it did not have. A plugin setting 3.0 does not declare restored, but then New Plugin of that class
+raised `KeyError` in its pre-fill, and Edit raised for a type the dialog has no field for. A setting
+left `None` refused the plugin, everything built on it and every recorded step using it. A tab 3.0
+lacks was skipped with an error dialog naming only the class, and was not counted.
+
+**Decision** (Kyle, 2026-11-18). Fix the readers before 3.0 ships. A saved value under a name the
+action does not take is set aside before the entry is checked, and the panel says which
+(`MetaController.values_an_action_takes`). The pre-fill copies only the settings a class declares.
+The settings dialog shows a setting it cannot edit greyed out and leaves its value as it came. A
+setting carrying `"Optional": True` may be empty. A tab that is not installed is said on the panel
+and counted with the entries that were not restored.
+
+**Accepted.** An unknown key in a tab's or a plugin's session entry loads, but 3.0 does not write
+it back to its autosave. A later minor's per-tab state is lost if its session is opened in 3.0 and
+then restored from 3.0's autosave; a file the user saved is not rewritten. Carrying unknown keys
+through was not taken: more code in the session path, during the burn-in.
+
+**A 3.x minor must not** add a top-level session key named `format`, or a table named
+`experiments` to an events database, since 3.0 reads either as another kind of file; register a
+column for a table other than events, sublevels and experiments, which the Metadata tab would offer
+as an axis it cannot plot; put anything but filter text in a Save Filter file, which 3.0 would
+refuse whole; or make optional a setting that 3.0's plugin code reads. A recorded action may gain a
+parameter only with a default, since 3.0 replays the call without the value.
+
+**Evidence.** Both databases tolerate added columns, tables, indexes and provenance keys: opened,
+queried, read as event data, exported and fitted, and no reader picks a column by position. Unknown
+keys at every level of the session and the plot configuration, unknown action names and unknown
+plugin classes were already ignored or skipped with a line.
+
+**Revisit if** a minor needs one of the additions ruled out here. It is then a 4.0 change.
+
+---
+
 ## 2026-11-18 - A filter is never serialised: it is told to be thread-safe, and an override is not refused
 
 **Context.** A filter is handed out as a bare callable (`MetaFilter.get_callable_filter`) and run

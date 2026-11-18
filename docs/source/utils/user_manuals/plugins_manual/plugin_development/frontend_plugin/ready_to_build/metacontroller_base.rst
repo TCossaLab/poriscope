@@ -74,7 +74,9 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   call passed it, so a saved file says what each value is. Keep a recorded method's parameters
   nameable: a method with ``*args`` or a positional-only parameter is saved as it was called.
   Renaming a parameter of a recorded method stops older files from replaying that action: those
-  entries are reported and skipped
+  entries are reported and skipped. Adding one is safe only with a default: an older file then
+  replays with the default, and a release that lacks the parameter replays the call without the
+  value and says so on the status panel
 - A method that can do nothing - refused, or with nothing to show - opts out of recording with
   ``@register_action("name", skip_on_false=True)`` and returns ``False`` when it did nothing. That
   call is not recorded, so it never replaces a good run in the saved actions, which keep only the

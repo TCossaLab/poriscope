@@ -36,7 +36,7 @@ import logging
 import os
 import re
 import sys  ### FIX: Imported sys to check the operating system
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -113,6 +113,8 @@ class DictDialog(QDialog):
         labels: Dict[str, QLabel] = {}
         self.entrywidgets: Dict[str, Any] = {}
         self.unitwidgets: Dict[str, Any] = {}
+        # Settings shown but not editable here, which OK must leave as they came.
+        self._read_only: Set[str] = set()
         self.ok_button = QPushButton("OK", self)
         self.ok_button.setEnabled(False)  # Initially disable the OK button
         cancel_button = QPushButton("Cancel", self)
@@ -208,10 +210,17 @@ class DictDialog(QDialog):
                     self.entrywidgets[key] = QCheckBox()
                     self.entrywidgets[key].setChecked(val.get("Value"))
                 else:
-                    raise ValueError(
-                        f"Unsupported value type for plugin setting {key!r}: "
-                        f"{val.get('Type')} (value {val.get('Value')!r})"
+                    # A type this dialog has no field for, which a session saved by a
+                    # later release can hold. Shown so it is not silently dropped,
+                    # greyed out because it cannot be edited here; on_ok leaves its
+                    # value as it came.
+                    self.entrywidgets[key] = QLineEdit(str(val.get("Value")))
+                    self.entrywidgets[key].setEnabled(False)
+                    self.entrywidgets[key].setToolTip(
+                        "This version of Poriscope cannot edit this setting; "
+                        "its value is kept as it is."
                     )
+                    self._read_only.add(key)
 
             if key not in ["Input File", "Output File", "Folder"]:
                 self.unitwidgets[key] = QLabel(val.get("Units"))
@@ -367,6 +376,8 @@ class DictDialog(QDialog):
     @log(logger=logger)
     def on_ok(self) -> None:
         for key in self.params:
+            if key in self._read_only:
+                continue
             if key not in ["Input File", "Output File", "Folder"]:
                 try:
                     self.params[key]["Value"] = self.params[key]["Type"](

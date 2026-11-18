@@ -1627,6 +1627,61 @@ def test_load_session_counts_an_analysis_tab_that_could_not_be_restored(
     controller.data_plugin_controller.validate_and_instantiate_plugin.assert_called_once()
 
 
+def test_load_session_counts_a_tab_this_release_does_not_have_without_an_error(
+    controller: MainController,
+    mock_main_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    A session saved by a later release can name an analysis tab this one lacks.
+
+    It is said on the status panel and counted with the entries that could not be
+    restored; it is not logged as an error, which would raise a dialog naming only the
+    tab's class.
+
+    :param controller: Controller under test.
+    :param mock_main_view: Mocked main view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.data_plugin_controller.validate_and_instantiate_plugin.return_value = (
+        True
+    )
+    controller.main_model.get_plugin_classes = mocker.Mock(return_value={})
+    controller.main_model.load_session = mocker.Mock(
+        return_value=LoadedSession(
+            OrderedDict(
+                [
+                    (
+                        "SpectrumController",
+                        {
+                            "metaclass": "MetaController",
+                            "subclass": "SpectrumController",
+                        },
+                    ),
+                    (
+                        "reader_key",
+                        {"metaclass": "MetaReader", "subclass": "R", "settings": {}},
+                    ),
+                ]
+            )
+        )
+    )
+    controller.logger = mocker.Mock()
+
+    controller.load_session("session.json")
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert any(
+        "SpectrumController" in m and "this version of Poriscope" in m for m in messages
+    ), messages
+    assert any(
+        "1 of 2 entries could not be restored (SpectrumController)" in m
+        for m in messages
+    ), messages
+    controller.logger.error.assert_not_called()
+    controller.data_plugin_controller.validate_and_instantiate_plugin.assert_called_once()
+
+
 # ------------- renaming a plugin in the session history -------------------
 
 

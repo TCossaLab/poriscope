@@ -598,6 +598,10 @@ class BaseDataPlugin(ABC):
         away from the bound comparisons below, which would otherwise raise ``TypeError``
         from a method whose contract promises ``ValueError``.
 
+        One exception: a setting carrying ``"Optional": True`` may be empty. No plugin
+        in this release declares one. A later release may add such a setting, and a
+        session it saves has to load here.
+
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
         :raises ValueError: If a required value is missing, out of range, or not an allowed option
@@ -609,6 +613,8 @@ class BaseDataPlugin(ABC):
                 options = val.get("Options", None)
                 value = val.get("Value")
                 if value is None:
+                    if val.get("Optional") is True:
+                        continue
                     raise ValueError(f"{param} requires a value")
                 if min_value is not None and value < min_value:
                     raise ValueError(f"{param} must be larger than {min_value}")

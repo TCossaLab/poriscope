@@ -72,15 +72,6 @@ until its plan is approved; each lands on its own branch, tests first.
   `MetadataController.py:519`, `MetaSubsetTabController.fetch_event_plot_data:659`) show "nothing
   matched" for a failure today. 15 in-loader call lines in 9 functions test for `None`, and 21 tests
   pin it. `DECISIONS.md` 2026-09-04 kept `None` only for the signal bus, which is gone. **M**
-- **3.0's readers must tolerate what a later minor adds** (probed 2026-11-18 on a real saved
-  session). A recorded action that gains a parameter has every saved call dropped: the recorder saves
-  every parameter, and the check refuses a name it lacks (`MetaController.resolve_replayed_entry:743`).
-  A plugin that gains a setting restores, but New Plugin of that class then fails
-  (`DataPluginController.py:971-973`, `KeyError`) and Edit crashes if the dialog cannot draw the
-  type. A setting left `None` refuses the plugin (`BaseDataPlugin._validate_param_ranges:601`). An
-  unknown tab is skipped with a cryptic error and not counted (`main_controller.py:727-734`). Fix the
-  reader in 3.0, or none of these can ship in a minor. Both databases, plot configurations and
-  `config.json` tolerate additions as they are. **M**
 
 ### Release prep, after the burn-in
 
@@ -283,7 +274,9 @@ addition, or the change waits for 4.0.
   event-sourced log like `@register_action`. Restore with signals blocked, after the tab's plugins
   exist and before the restore dialog offers a replay. A replay writes each step's recorded values back
   into the panel (`MetaView.write_back`); this is for a tab the user does not replay
-  (`DECISIONS.md` 2026-09-27 anticipates it). **M-L, ruling** (which controls)
+  (`DECISIONS.md` 2026-09-27 anticipates it). 3.0 loads a session holding such a key but does not
+  write it back to its autosave (`DECISIONS.md` 2026-11-18), so the snapshot must survive being
+  dropped. **M-L, ruling** (which controls)
 - **One Plot Events request may ask for any number of events.** Recording the range as text (3.0)
   fixes the session file, not the request: a typed `0-99999` still builds the full list, makes one
   plugin call and one subplot per event, and its out-of-range message lists every index. Both panels
@@ -430,10 +423,11 @@ contribution, and the notice for what 4.0 removes.
 
 ### Plugin contract
 
-- **`_validate_param_ranges:582` rejects any `None`** (`:602`), so a plugin cannot declare an
-  optional parameter. A minor may add one only as a new setting, and only if 3.0 ships a reader that
-  lets `None` through for it (3.0, before the cut); a setting 3.0's plugin code reads cannot become
-  optional before 4.0. **S-M**
+- **No plugin can declare an optional setting yet.** 3.0's validator accepts `Value: None` for a
+  setting carrying `"Optional": True` (`BaseDataPlugin._validate_param_ranges`), so a minor may add
+  one as a new setting. Still to do: the settings dialog has no way to leave a field empty, and the
+  schema check (`settings_schema.py`) does not know the flag. A setting 3.0's plugin code reads
+  cannot become optional before 4.0. **S-M**
 - **`_validate_param_types` accepts only the exact type** (`BaseDataPlugin.py:577-578`): at apply
   time `Type: float` rejects an integer `5`. Accepting it is additive. **S**
 - **Provenance stops at the fitter (2026-10-08).** A database's `channels.provenance` records the

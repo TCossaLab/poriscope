@@ -136,11 +136,32 @@ class TestWidgetForEachType(DictDialogTestCase):
         )
         self.assertIsInstance(dlg.entrywidgets["Flag"], QCheckBox)
 
-    def test_an_unsupported_type_is_refused_rather_than_skipped(self):
-        """A setting the dialog cannot render must not be silently dropped."""
-        with self.assertRaises(ValueError) as caught:
-            DictDialog(params(Odd={"Type": list, "Value": []}), "plugin_0")
-        self.assertIn("Odd", str(caught.exception))
+    def test_a_type_the_dialog_cannot_edit_is_shown_read_only(self):
+        """
+        A setting saved by a later release, of a type this dialog has no field for, is
+        neither dropped nor fatal: it is shown, greyed out, with its value.
+        """
+        dlg = self.build(params(Odd={"Type": "list", "Value": [3, 4]}))
+
+        shown = dlg.entrywidgets["Odd"]
+        self.assertIsInstance(shown, QLineEdit)
+        self.assertFalse(shown.isEnabled())
+        self.assertEqual(shown.text(), "[3, 4]")
+
+    def test_ok_keeps_the_value_of_a_setting_the_dialog_cannot_edit(self):
+        dlg = self.build(
+            params(
+                Odd={"Type": "list", "Value": [3, 4]},
+                Size={"Type": float, "Value": 1.0},
+            )
+        )
+        dlg.entrywidgets["Size"].setText("2.5")
+
+        dlg.on_ok()
+
+        result, _ = dlg.get_result()
+        self.assertEqual(result["Odd"]["Value"], [3, 4])
+        self.assertEqual(result["Size"]["Value"], 2.5)
 
     def test_units_are_shown_beside_the_field(self):
         dlg = self.build(params(Size={"Type": float, "Value": 1.0, "Units": "pA"}))

@@ -267,7 +267,11 @@ class TestReplay:
             _entry("overlay_plot", "x", "an extra value"),
             {"action": "overlay_plot", "args": [], "kwargs": {"colour": "red"}},
         ],
-        ids=["a value missing", "a value too many", "a name it does not take"],
+        ids=[
+            "a value missing",
+            "a value too many",
+            "a value missing beside a name it does not take",
+        ],
     )
     def test_an_entry_whose_values_do_not_fit_its_action_is_reported_and_skipped(
         self, controller: _Controller, entry: Dict[str, Any]
@@ -283,6 +287,46 @@ class TestReplay:
         message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
         assert message.startswith("Not replayed")
         assert "overlay_plot" in message
+
+    def test_a_value_under_a_name_the_action_does_not_take_is_set_aside(
+        self, controller: _Controller
+    ) -> None:
+        """
+        What an entry saved by a later release looks like once an action there has
+        gained a parameter: the recorder saves every parameter, so every saved call
+        carries the new one. The call still runs, without it, and the panel says so.
+        """
+        controller.replay([_entry("overlay_plot", "x", opacity=0.3)])
+
+        assert controller.calls == ["overlay:x"]  # type: ignore[attr-defined]
+        message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
+        assert "opacity" in message
+        assert "overlay_plot" in message
+        assert not message.startswith("Not replayed")
+
+    def test_the_values_the_action_does_take_are_handed_on_without_the_others(
+        self, controller: _Controller
+    ) -> None:
+        """What the entry resolves to is also what the panel is asked to show."""
+        entry = {
+            "action": "start_run",
+            "args": [],
+            "kwargs": {"name": "a", "repeats": 3, "priority": 9, "colour": "red"},
+        }
+
+        resolved = controller.resolve_replayed_entry(entry)
+
+        assert resolved is not None
+        _, args, kwargs = resolved
+        assert (args, kwargs) == ([], {"name": "a", "repeats": 3})
+        message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
+        assert "colour" in message
+        assert "priority" in message
+
+    def test_an_entry_that_fits_says_nothing(self, controller: _Controller) -> None:
+        controller.replay([_entry("overlay_plot", "x")])
+
+        controller.add_text_to_display.emit.assert_not_called()  # type: ignore[attr-defined]
 
     def test_an_action_that_raises_a_type_error_itself_is_not_mistaken_for_a_misfit(
         self, controller: _Controller

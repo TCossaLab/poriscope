@@ -709,6 +709,7 @@ class MainController(QObject):
         plugin history), or reuse the existing instance if a tab of that type has already been
         instantiated.
 
+        A subclass that is not installed is said on the status panel and nothing is opened.
         Exceptions raised while instantiating the controller itself are caught and logged here.
         Exceptions raised afterward, while wiring up or registering the new tab, are not caught
         by this method and will propagate to the caller.
@@ -725,10 +726,22 @@ class MainController(QObject):
             )
         else:
             try:
-                # Instantiate the analysis tab
-                new_analysis_tab = self.main_model.get_plugin_classes("MetaController")[
+                tab_class = self.main_model.get_plugin_classes("MetaController")[
                     subclass
-                ](self.main_model.get_available_plugins())
+                ]
+            except KeyError:
+                # A session saved by a later release, or one naming a user tab that
+                # is no longer installed. Not an error of this run, so it is said on
+                # the panel rather than raised as a dialog naming only the class.
+                self.main_view.add_text_to_display(
+                    f"The analysis tab {subclass} is not available in this version "
+                    "of Poriscope.",
+                    "MainController",
+                )
+                return
+            try:
+                # Instantiate the analysis tab
+                new_analysis_tab = tab_class(self.main_model.get_available_plugins())
             except Exception as e:
                 self.logger.error(f"Error instantiating analysis tab: {e}")
                 return
@@ -915,8 +928,11 @@ class MainController(QObject):
                     unrestored.append(key)
                     continue
                 tab = self.analysis_tabs.get(subclass)
-                if tab is not None:
-                    self._restore_tab(tab, plugin, file_name)
+                if tab is None:
+                    # It did not open, and instantiate_analysis_tab has said why.
+                    unrestored.append(key)
+                    continue
+                self._restore_tab(tab, plugin, file_name)
             else:
                 settings = plugin.get("settings")
                 try:

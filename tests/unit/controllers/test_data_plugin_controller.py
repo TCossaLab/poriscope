@@ -1969,6 +1969,31 @@ class TestSettingsFromNewPluginDialog:
         assert mock_view.get_user_settings.call_args[0][1] == "MyReader_1"
         assert (settings, key) == ({"ok": True}, "MyReader_1")
 
+    def test_a_saved_setting_the_class_does_not_declare_is_left_out_of_the_prefill(
+        self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
+    ) -> None:
+        """
+        A session saved by a later release can hold a setting this release's plugin
+        lacks. The dialog for a new plugin of that class still opens, pre-filled with
+        the settings both know.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        temp = mocker.Mock()
+        temp.get_empty_settings.return_value = {"Threshold": {"Value": None}}
+        ctrl._history_lookup = mocker.Mock(
+            return_value={"Threshold": {"Value": 7}, "Channel Map": {"Value": [3]}}
+        )
+        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+        mock_view.get_user_settings.return_value = ({"ok": True}, "MyReader_1", False)
+
+        settings, key = ctrl._settings_from_new_plugin_dialog(
+            "MetaReader", "MyReader", temp
+        )
+
+        offered = mock_view.get_user_settings.call_args[0][0]
+        assert offered == {"Threshold": {"Value": 7}}
+        assert (settings, key) == ({"ok": True}, "MyReader_1")
+
     def test_passes_a_cancelled_dialog_straight_back(
         self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
     ) -> None:

@@ -970,7 +970,10 @@ class DataPluginController(QObject):
         historical_settings = self._history_lookup(metaclass, subclass)
         if historical_settings:
             for setting_key, val in historical_settings.items():
-                settings[setting_key]["Value"] = val.get("Value")
+                # A session saved by another release can hold a setting this class
+                # does not declare; it has no field to pre-fill.
+                if setting_key in settings:
+                    settings[setting_key]["Value"] = val.get("Value")
 
         if "Folder" in settings.keys() and settings["Folder"].get("Value") is None:
             # default to the data server in the absence of better things

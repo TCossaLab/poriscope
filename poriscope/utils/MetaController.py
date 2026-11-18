@@ -753,6 +753,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         action's parameters - one saved before they changed. The fit is checked here, so
         an action's own ``TypeError`` still comes from the call.
 
+        A value saved under a name the action does not take is set aside, and the panel
+        says which: a later release may have given the action a parameter, and its
+        recorder saves every parameter with every call.
+
         :param entry: a recorded entry, ``{"action": name, "args": [...], "kwargs": {...}}``
         :type entry: Any
         :return: the bound method, its positional and its keyword values; None if the
@@ -773,7 +777,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             )
             return None
         args = list(entry.get("args") or [])
-        kwargs = dict(entry.get("kwargs") or {})
+        kwargs, unknown = self.values_an_action_takes(method, entry.get("kwargs") or {})
         try:
             inspect.signature(method).bind(*args, **kwargs)
         except TypeError:
@@ -786,7 +790,38 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 f"Not replayed: {described}", self.__class__.__name__
             )
             return None
+        if unknown:
+            described = (
+                f"'{name}' is replayed without {', '.join(unknown)}, which "
+                f"{self.__class__.__name__} does not have in this version of Poriscope"
+            )
+            self.logger.warning(described)
+            self.add_text_to_display.emit(described, self.__class__.__name__)
         return method, args, kwargs
+
+    def values_an_action_takes(
+        self, method: Callable[..., Any], kwargs: Mapping[str, Any]
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """
+        Split a recorded entry's named values into those its action takes and the rest.
+
+        A session saved by a later release can carry a value for a parameter this
+        release's action lacks. Dropping the value rather than the entry is what lets a
+        release add a parameter to a recorded action without an earlier one losing
+        every saved call of it.
+
+        :param method: the action the entry names
+        :type method: Callable[..., Any]
+        :param kwargs: the entry's values by parameter name
+        :type kwargs: Mapping[str, Any]
+        :return: the values the action takes, and the sorted names of those it does not
+        :rtype: Tuple[Dict[str, Any], List[str]]
+        """
+        parameters = inspect.signature(method).parameters
+        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+            return dict(kwargs), []
+        taken = {name: value for name, value in kwargs.items() if name in parameters}
+        return taken, sorted(set(kwargs) - set(taken))
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:

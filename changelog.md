@@ -192,6 +192,10 @@
 
 * A filter must be thread-safe, and `MetaFilter` now says so: its redundant copy of `force_serial_channel_operations`, which nothing consulted for a filter, is gone (the method is still inherited), and `new_plugin.py` no longer offers or generates that override for a filter
 
+* A setting carrying `"Optional": True` may be left empty (`Value: None`); no shipped plugin declares one yet
+
+* `MetaController.values_an_action_takes` splits a recorded entry's named values into those its action takes and the rest
+
 ### Analysis Tabs:
 
 * `MetaModel.power_spectral_density` and `MetaModel.fit_power_law` are new, a Welch PSD and a power-law fit any tab can use; Raw Data's Update PSD now uses the first, with the same result
@@ -373,6 +377,8 @@
 * Save Plot Configuration saves only the plots on screen, not the ones a later plot replaced, and Load Session of a plot configuration says what it is
 
 * Deleting a plugin removes the recorded actions that use it from every tab's history and saved session; renaming one without changing its settings makes them follow the new name; editing a setting removes them, with those of the plugins built on it, and the status panel says so
+
+* A session saved by a later 3.x release loads here: a recorded action's value that this version has no parameter for is set aside and named on the status panel instead of the whole step being dropped, a plugin setting this version does not declare no longer stops a new plugin of that class from being created or the plugin from being edited, and an analysis tab this version does not have is named and counted with the entries that were not restored
 
 #### Raw Data and Event Analysis:
 

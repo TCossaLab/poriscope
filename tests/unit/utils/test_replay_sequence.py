@@ -296,6 +296,30 @@ class TestResults:
         assert tab.calls == ["find:A/1", "show:A/1"]
         assert panel == ["replay done"]
 
+    def test_a_result_saved_with_a_value_this_version_lacks_still_holds_its_view_back(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        """
+        A later release's Find carries a parameter this one does not have. The run still
+        starts, and the view drawn from it still waits for that run to end.
+        """
+        find = {
+            "action": "find",
+            "args": [],
+            "kwargs": {"finder": "A", "channel": 1, "notch": 60},
+        }
+        sequence = _replay(tab, [find, _entry("show", "A", 1)], qtbot)
+
+        assert sequence.runs == {("A", 1): 0}
+        assert tab.calls == ["find:A/1"]
+
+        _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["find:A/1", "show:A/1"]
+        assert panel[-1] == "replay done"
+        assert any("notch" in line for line in panel)
+
     @pytest.mark.parametrize("plugin", ["A", "F"])
     def test_a_run_that_did_not_finish_stops_the_replay(
         self, tab: _Tab, panel: List[str], qtbot: Any, plugin: str

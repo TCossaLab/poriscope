@@ -207,3 +207,32 @@ class TestABooleanIsNotANumber:
             plugin.apply_settings({"Count": {"Type": int, "Value": True}})
 
         assert plugin.settings == {"Count": {"Value": 5}}
+
+
+class TestAnOptionalSettingMayBeEmpty:
+    """
+    A later release may add a setting a user can leave empty. Its session then holds
+    ``Value: None`` under a setting marked ``Optional``, and this release has to read it.
+    """
+
+    def test_an_empty_value_is_accepted_when_the_setting_says_it_is_optional(
+        self, plugin
+    ):
+        settings = {"Smoothing": {"Type": int, "Value": None, "Optional": True}}
+
+        plugin.apply_settings(settings)
+
+        assert plugin.settings == {"Smoothing": {"Value": None}}
+
+    @pytest.mark.parametrize("flag", [False, None, "yes", 1])
+    def test_only_a_true_flag_makes_a_setting_optional(self, plugin, flag):
+        with pytest.raises(ValueError, match="Smoothing requires a value"):
+            plugin._validate_param_ranges(
+                {"Smoothing": {"Type": int, "Value": None, "Optional": flag}}
+            )
+
+    def test_an_optional_setting_that_has_a_value_is_still_checked(self, plugin):
+        with pytest.raises(ValueError, match="must be larger than"):
+            plugin._validate_param_ranges(
+                {"Smoothing": {"Type": int, "Value": -1, "Min": 0, "Optional": True}}
+            )

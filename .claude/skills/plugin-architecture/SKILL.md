@@ -145,6 +145,17 @@ there only when preparing a major release.
 Both database writers refuse to add to a file with a newer number. A stamp says which version
 *created* the file: a file from before 3.0 reads 0 and keeps 0 when a later writer adds to it.
 
+What 3.0's readers tolerate was probed on real files (`DECISIONS.md` 2026-11-18, "3.0's readers
+ignore what a later minor adds"). A 3.x minor may add: a parameter with a default to a recorded
+action (3.0 replays the call without it), a setting to a plugin, an empty value for a new setting
+marked `"Optional": True`, a tab, a plugin class, a key at any level of a session or plot
+configuration, and a column, table or index in either database. It must not: add a top-level session
+key named `format` or an events-database table named `experiments` (3.0 reads either as another
+kind of file); register a column for a table other than events, sublevels and experiments; put
+anything but filter text in a Save Filter file; or make optional a setting that 3.0's plugin code
+reads. 3.0 does not write an unknown session key back to its autosave, so per-tab state a minor
+adds has to survive being dropped.
+
 ## Trap questions: check before designing
 
 Each area below lists questions whose obvious answer has been wrong before. Before designing in that area,

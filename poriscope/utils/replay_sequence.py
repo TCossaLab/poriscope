@@ -471,10 +471,13 @@ class ReplaySequence:
             return None, None
         declaration: ActionDeclaration = getattr(method, ACTION_DECLARATION_ATTR)
         names = declaration.key if declaration.kind == "result" else ()
+        # As the call itself will be made: without the values this release has no
+        # parameter for.
+        kwargs, _ = self._controller.values_an_action_takes(
+            method, entry.get("kwargs") or {}
+        )
         try:
-            bound = inspect.signature(method).bind(
-                *(entry.get("args") or []), **(entry.get("kwargs") or {})
-            )
+            bound = inspect.signature(method).bind(*(entry.get("args") or []), **kwargs)
         except TypeError:
             return None, None
         bound.apply_defaults()
