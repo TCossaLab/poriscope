@@ -172,6 +172,32 @@ def test_a_saved_session_loads_back_as_what_was_saved(main_model, tmp_path):
     assert list(loaded.plugin_history) == ["R1", "F1", "MetadataController"]
 
 
+def test_a_session_with_keys_this_version_does_not_know_still_loads(
+    main_model, tmp_path
+):
+    """
+    A later release of the same major may add to the file. What this version does not
+    know is ignored at the top level and carried inside an entry, never a reason to
+    refuse the session.
+    """
+    path = tmp_path / "session.json"
+    main_model.save_session(HISTORY, path, last_tab="MetadataController")
+    content = _written(path)
+    content["added_by_a_later_release"] = {"anything": 1}
+    content["plugins"][0]["added_later"] = True
+    content["tabs"]["MetadataController"]["added_later"] = [1, 2]
+    path.write_text(json.dumps(content))
+
+    loaded = main_model.load_session(path)
+
+    assert list(loaded.plugin_history) == ["R1", "F1", "MetadataController"]
+    assert loaded.last_tab == "MetadataController"
+    assert loaded.plugin_history["MetadataController"]["subset_filters"] == {
+        "long": "duration > 1"
+    }
+    assert loaded.plugin_history["R1"]["settings"] == {}
+
+
 def test_a_type_in_the_settings_comes_back_a_type(main_model, tmp_path):
     path = tmp_path / "session.json"
     history = {

@@ -99,6 +99,15 @@ def test_appending_to_an_older_database_leaves_its_version_alone(
     assert user_version(written) == 0
 
 
+def test_the_writer_adds_to_a_database_at_the_current_version(
+    written: Path, events_db_path
+) -> None:
+    """A file this version created takes a second run, and keeps its version."""
+    write_metadata_database(events_db_path, written, CUSUM, SQLiteDBWriter)
+
+    assert user_version(written) == SQLiteDBWriter.SCHEMA_VERSION
+
+
 def test_a_creation_that_fails_leaves_no_version(
     events_db_path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -143,3 +152,16 @@ def test_a_newer_database_is_refused_by_version(written: Path) -> None:
 
     with pytest.raises(ValueError, match=r"schema version 2.*reads up to 1"):
         build_db_loader(SQLiteDBLoader, str(written))
+
+
+def test_the_writer_refuses_to_add_to_a_newer_database(
+    written: Path, events_db_path
+) -> None:
+    """
+    Results in this version's layout are never added to a file a later major version
+    created: the refusal comes when the writer is configured, before anything is written.
+    """
+    stamp(written, SQLiteDBWriter.SCHEMA_VERSION + 1)
+
+    with pytest.raises(ValueError, match=r"schema version 2.*writes up to 1"):
+        write_metadata_database(events_db_path, written, CUSUM, SQLiteDBWriter)
