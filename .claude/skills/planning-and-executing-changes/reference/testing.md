@@ -57,6 +57,12 @@ its harness also ran the history recorder, but nothing read the history, and the
 pinned the status as the only question asked. With history assertions added, five tests failed on the
 unchanged code.
 
+*Case:* (2026-10-26 to 2026-11-10) five methods that write a replayed step's values back into a panel were
+built test-first, ahead of their caller, each with 7 to 11 mutations killed. No commit wired them in, and
+every gate stayed green for two weeks until a manual pass found the panels unchanged. Code built ahead of
+its caller is proven only in isolation: name the commit that will call it, and give that commit a test
+that fails without the call.
+
 ## N4 · Prove every pin discriminates, and confirm the mutation happened
 
 Change each constant or clause a test claims to cover and watch the test fail. Run it as a pass over
@@ -94,6 +100,15 @@ Later, a stub answered with a bare string where the collaborator returns `(str, 
 the tuple was always truthy, so two "empty query" guards could never fire.
 
 *Also:* a synthetic input file is a stub of whatever writes the real ones. A writer built by reading the parser supplies exactly what the parser reads, so open its files with an independent reader before they serve as goldens. *Case:* 2026-10-09, a synthetic writer for a binary recording format supplied only the header fields the project's own parser read; every reader test passed, and no other reader of the format could open the files - found when the parser was being replaced by a library.
+
+*Also:* planted-truth data handed straight to the stage under test is a stub of every stage before it.
+Produce it through the stages a user's data passes through, or the stage is tested on idealised inputs.
+*Case:* 2026-10, accuracy tests for event fitters. On unfiltered synthetic traces with sharp edges every
+fitter landed within 0.52 sigma of the planted levels; once the generator passed the traces through the
+shipped low-pass filter, one fitter found the planted levels on 2 of 24 events at the settings that had
+passed on white noise. Later another fitter passed every planted band and still put an event's end after the
+whole trailing edge, seen by eye in the application: the bands had fed it boundaries at the 50% points of
+3-sample edges, where the real finder's were 20 samples early and 13 late.
 
 ## N6 · A stub standing in for a collaborator hides that the collaborator is untested
 
@@ -154,6 +169,13 @@ with itself about a world that does not exist.
 and the first real use produced a `SyntaxError` in a generated import.
 
 *Also:* a test of which input goes where needs inputs that differ. *Case:* 2026-10, a patch release's export test let a mutation that swapped channels survive: both fixture channels came from the generator's default seed, so channel 1's event *k* held exactly channel 0's samples. Each population now gets its own seed, and the pin was proved by mutating the pairing (N4).
+
+*Also:* where a result depends on pairing or order, write the fixture out of order. Rows inserted in key
+order make an unordered query look ordered. *Case:* 2026-10-08, the same export paired three unordered
+queries by position. That is right wherever insertion order equals index order, which was every
+single-channel fixture, so the defect shipped in every release from the one that introduced it; on a
+database whose channels were not written in channel order, 10 of 10 exported trace files held another
+event's samples.
 
 ## N11 · Never keep a self-generated golden across a move
 
@@ -252,3 +274,8 @@ reading.
 *Case:* during the 3.0 release, two strict expected-failure pins written to hold known defects sat red for
 test errors - one called a method that did not exist, the other used a fixture that could not build its
 loader - and were read as the defects.
+
+*Also:* a test that asserts a refusal is satisfied by any refusal, so match the message or the type that
+names this one. *Case:* 2026-10-08, a test expecting the application's own guidance for an ambiguous
+filter passed on the database's "ambiguous column" error instead; mutation testing showed it, and the test
+was tightened.

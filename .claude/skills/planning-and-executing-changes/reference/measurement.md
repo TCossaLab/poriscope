@@ -112,12 +112,24 @@ data ran only on pull requests; the refactor merged locally with no PR, so the g
 its local tests skipped with a message that read like a setup nit. A docs build was also bypassed by the
 same merge strategy.
 
+*Also:* a gate that runs and fails is no better if nothing in the routine reads it. Read every workflow a
+push triggers, not only the one you were waiting for. *Case:* 2026-10-29 to 2026-11-03, a documentation
+render check was red on the integration branch for five days: each merge was gated on the test suite in a
+clean copy, which builds no docs, and nobody opened the other workflow's result.
+
 ## I16 · A cached artefact needs a staleness check
 
 An instrument that reads a cached artefact (coverage data written at the end of the previous run) returns
 confident wrong answers: adding a method and its test failed on the first full run and passed on the
 second, which looked like a flaky regression. Skip or fail unless the artefact postdates every source
 change. If the check cannot be written cheaply, the artefact should not be trusted in that position.
+
+*Also:* an incremental build is a cached artefact. A documentation build that re-reads only the sources
+that changed re-emits warnings only for those, so "warnings are errors" passes from a warm cache while
+unchanged pages still hold theirs. Count a build as a gate only when it ran from clean. *Case:* 2026-10-09,
+checking a handoff's gates: the docs build passed with warnings as errors from a warm cache, which showed
+only that the pages edited since the last build were clean; it was rebuilt from scratch into fresh
+directories before it was counted.
 
 ## I18 · A check between a copy and its source must run in both directions
 

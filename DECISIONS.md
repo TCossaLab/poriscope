@@ -80,7 +80,9 @@ event named. Required bands: 15 and 50 pA at 83- and 40-sample steps, 15 pA at 2
 exceeds the 150 pA step).
 
 **Why wider than white-noise intuition.** A median over low-pass noise has far fewer effective
-samples than the step is wide.
+samples than the step is wide: about 9 per 83-sample step and about five per 40. ClassicCUSUM's
+step is 10 sigma because the 3 sigma first proposed, 12.7 pA at the post-filter sigma, found the
+planted levels on 2 of 24 events.
 
 **Revisit if** a fitter's mechanism changes - re-measure every expected-failure mark that blames
 it - or a fitter that models events differently is added, which opts in by name (2026-10-06).
@@ -716,7 +718,7 @@ history keeping every entry; only Undo reads that, and no tab with a Find or Fit
 
 **Rejected.** Closing the gap from the plugin side instead: the rerun puts the channel's earlier results back, so the
 earlier run's history entry stays true (built 2026-11-03, `f4cbcc67`). It turned out to be the enabler of a larger
-change, so it was withdrawn and is queued in `future_fixes.md`, 3.1 "Session replay", "Keep a channel's earlier
+change, so it was withdrawn and is queued in `future_fixes.md`, 3.2, "Keep a channel's earlier
 results when a Find/Fit rerun doesn't produce results".
 
 **Revisit both together** when that queued work lands. If a rerun keeps the earlier results, decision 2 must go (the
@@ -988,21 +990,35 @@ one session). Replaying without asking (it can take long).
 
 ## 2026-10-20 - The Event Analysis commit is not gated on the selected loader; fitting and plotting are
 
-**Context.** 2.0.0 made `EventAnalysisController.write_events` refuse a commit when the selected
-loader was not the one the writer's fitter was built on, alongside the same check on fitting and
-on plotting fits. A user (Nada, 2026-10-20) found it blocked writing one fitter's results while
-looking at another loader's events, which is a routine thing to do.
+**Context.** A guard added on 2026-10-10, in no release, made
+`EventAnalysisController.write_events` refuse a commit when the selected loader was not the one the
+writer's fitter was built on, alongside the same check on fitting and on plotting fits. A user
+(Nada, 2026-10-20) found it blocked writing one fitter's results while looking at another loader's
+events, which is a routine thing to do.
 
 **Decision** (Kyle, 2026-10-20). The commit guard is removed, with the loader argument it needed on
 `write_requested` and `write_events`. The fitting and plotting guards stay.
 
 **Evidence.** A writer reads its fitter, which reads only its own loader, so the selection never
-changes what a commit writes; the guard only stopped the user. Fitting and plotting read the
-selected loader's events against the fitter, so a mismatch there fits one file's events over
-another's and the plot is nonsense - that is the case the guards were added for. A channel the
-writer's fitter has not fitted is still reported and skipped per channel (changelog 2.0.0).
+changes what a commit writes; the guard only stopped the user. A plot takes its traces from the
+selected loader and its fit from the fitter, so a crossed plot draws one file's fits over another's
+events. A fitter also fits its own loader whatever is selected, so the fit guard protects what the
+user believes was fitted, not what is computed: on two synthetic events databases with one CUSUM
+built on the first (2026-10-10), a crossed Fit Events raised `No samplerate found for channel 1`
+when only the selected loader had the channel, and when both had channel 0 it fitted its own
+loader's 5 events while the screen showed the other's 2, with the "start over?" prompt describing
+the fitter's file. A channel the writer's fitter has not fitted is still reported and skipped per
+channel.
+
+**Why a crossing is explained, not prevented** (ruled 2026-10-10). A crossed plot draws the traces,
+which are valid, without fit overlays and names the fitter's loader on the status panel; refusing
+the whole plot was rejected because the traces are right. A crossed fit is refused before any
+prompt, and so is a fitter whose loader cannot be read. Listing only the fitters built on the
+selected loader would remove the cases at the source, but needs View and controls work and a way
+to plot with no fit; it is queued in `future_fixes.md`, unscheduled.
 
 **Revisit if** a writer ever takes the loader from the tab rather than from its fitter's parents.
+Dropping the fit guard as the commit guard was dropped needs an answer to the silent case above.
 
 ---
 
@@ -1365,8 +1381,8 @@ file; the stitched sets read identically across file boundaries. `test_real_reco
 the two recordings present there.
 
 **Revisit if** a `pyabf` release renames those private attributes, or a recording reads differently
-from what the acquisition software shows. `LegacyElementsReader` is still to be run on the real
-Legacy recording, which is only on the first machine.
+from what the acquisition software shows. `LegacyElementsReader` has since been run on the real
+Legacy recording, which is only on the first machine, and passed (Kyle, 2026-11-18).
 
 ---
 
@@ -1576,6 +1592,32 @@ then the change to make.
 
 ---
 
+## 2026-10-08 - A database loader adds the foreign-key indexes to any file it opens, best-effort
+
+**Context.** The metadata database had no index on its foreign keys; its three named indexes
+duplicated `UNIQUE` autoindexes. A scoped metadata query with a sublevel filter was quadratic
+(871 ms at 5k events, 31.1 s at 20k), and clearing a channel, which runs on every aborted database
+write, cascaded through un-indexed children (19.8 s at 5k, 333 s at 20k).
+
+**Decision** (2026-10-08). The writer creates indexes on `data(event_db_id)`,
+`sublevels(event_db_id)` and `events(channel_db_id)`, and `SQLiteDBLoader` adds any that are missing
+to every file it opens, after its schema check: `CREATE INDEX IF NOT EXISTS` under a 0.25 s lock
+timeout (`INDEX_LOCK_TIMEOUT_S`). A read-only or locked file logs one line, opens as before and is
+tried again at the next open.
+
+**Evidence** (writer-built databases, 2026-10-08). At 20k events the filtered query fell from
+31.1 s to 15 ms and clearing one channel from 333 s to 168 ms. Building the three indexes takes
+60 ms at 5k events and 162 ms at 20k; the first open of the 20k file takes 165 ms, later opens 1 ms.
+
+**Why a reader may write.** An index changes no row, and the oldest loader still in use opened a
+file carrying the new indexes (checked 2026-10-08), so it is an addition, which the saved-file rule
+(2026-11-18) allows inside a major.
+
+**Revisit if** a loader must open a file it may not modify, such as a shared or archived database,
+or an index build becomes slow enough to notice at open.
+
+---
+
 ## 2026-10-08 - Database loaders keep one connection per call
 
 **Context.** Every `SQLiteDBLoader` method opens and closes its own connection in a
@@ -1592,7 +1634,9 @@ Clustering and Protein tabs add columns. No WAL.
 fresh against 20 µs on a held connection. One metadata plot opens 23 connections (about 4 ms), a
 CSV export 25 (under 1% of 2.7 s), a fit of 500 events 502 (about 85 ms of 623 ms). The loaders
 run on the GUI thread and on workers at once, so a held connection would need one per thread. The
-lab does not work from network storage, where an open costs milliseconds.
+lab does not work from network storage, where an open costs milliseconds. Populating `event_counts`
+(`_ensure_event_counts`) takes 48 ms at 16k events and 59 ms at 160k, since the autoindex covers
+the `GROUP BY`, so it stays on the GUI thread.
 
 **Revisit if** a per-connect cost measured on the storage people actually use shows in a plot or
 a fit; a schema cache is the first step then, before any held connection.
@@ -1780,6 +1824,23 @@ commented out. Its threshold is still the bare step size, not `_calculate_thresh
 staircase above it fires at the start of the 64 σ ramp, the variance takes the rest of it, and
 the step at 140 is missed with either reset (edges `[0, 98, 178, 217]`; `[0, 98, 219]` before).
 Left as it is while the method is uncalled; revisit if it is ever wired back in.
+
+---
+
+## 2026-10-06 - A read request in seconds rounds to the nearest sample; no sample-indexed read on the reader base
+
+**Context.** `MetaReader._slice_request` truncated a time in seconds to a sample index, and three
+callers build those seconds from integer sample indices. Floating point put 7.7% of indices at
+100 kHz one sample early (191 of 3,052 one-sample requests in the test that pins it), so a chunk
+boundary duplicated one sample and dropped another.
+
+**Decision** (Kyle, 2026-10-06). Round, in `_slice_request` only. The end is rounded as its own
+time, so a request ending at the channel end lands on it.
+
+**Rejected.** A sample-indexed `load_samples` on the reader base: a new method on every reader's
+contract is not worth a rounding error, and the one change makes every seconds-based caller exact.
+
+**Revisit if** a caller needs a sample-exact read that a time in seconds cannot express.
 
 ---
 
@@ -2168,7 +2229,10 @@ path removes the ambiguity.
 
 **Evidence.** The writer shortcut was the only producer; no view, export, filter or loader
 consumed a raw symbol. `datareaders` duplication fell 446 -> 401. A conformance test pins a
-stored trace to `load_data` under Scale=2, Offset=100 (798 of 798 samples differed before).
+stored trace to `load_data` under Scale=2, Offset=100 (798 of 798 samples differed before). A
+database written through the old shortcut records no Scale, so it cannot be found automatically;
+its `baseline_mean` divided by the median of an event's padding is roughly the Scale, and the
+remedy is to commit the events again to a new file.
 
 **Revisit if** a format needs lossless integer storage - that would be a writer choosing its
 own output dtype, not a second read path.
@@ -3401,7 +3465,7 @@ conflation being fixed.
 **Revisit** when the emit-then-read pattern is gone, since raising on failure is then the better
 contract. *Met: the bus was removed in 2.0.0 and every tab gets a return value from `call()`, but
 the loaders still return `Optional[pd.DataFrame]` (`MetaDatabaseLoader.py:1412`, `:1527`, `:1591`).
-"Raise on a failed query instead of returning None" is queued in `future_fixes.md` for 3.1.*
+"Raise on a failed query instead of returning None" is queued in `future_fixes.md` for 4.0, since it is a break.*
 
 ---
 

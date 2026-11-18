@@ -23,6 +23,7 @@ interruption costs nothing.
 - C15 A line number in a long-lived record is a measurement with a date
 - C16 An approval page must hand its decisions back through a channel you can read
 - C17 A saved file's format follows the release's version discipline
+- C18 Parallel tracks share the branch, not the files or the record sections
 
 ## C1 · Logic changes need an approved plan
 
@@ -254,3 +255,24 @@ a saved format, open a file the change writes with the oldest release still in u
 every database loader since an old minor release refused a table it did not know; the oldest one still in
 use refused a new provenance table and opened a file carrying it as a column, with new indexes and a
 version stamp, so the data went in as a column.
+
+## C18 · Parallel tracks share the branch, not the files or the record sections
+
+When two people or sessions work one release at once, split the work where the code already splits:
+files and instruments that do not overlap, joined by an interface neither track changes. Then give each
+track its own part of every shared record, so no merge has two authors' edits in one paragraph:
+
+- each track edits only its own sections of the work queue and its own changelog lines;
+- a change to a shared baseline or ratchet file goes in the commit that causes it;
+- one branch per piece (C3), rebased onto the integration branch before it is finished;
+- each landed piece posts a two-line status, and the plan's resume block (C5) is built from those;
+- the plan names the gate each track waits on, and what waits for both.
+
+A figure one track measured moves under the other, with no pull to announce it: re-measure every shared
+figure where the tracks join (planning P1).
+
+*Case:* 2026-10-05 to 2026-11-17, a release run as two tracks by two developers, one on the data-plugin
+layer and one on the analysis tabs, joined only by the dispatch method the tabs call plugins through, on
+these rules. One cost still crossed over unseen: the count of dead links in the docs, measured at 97 for
+one track's last step, was 139 when that step began, 42 of them added by the other track, because no gate
+counted them.

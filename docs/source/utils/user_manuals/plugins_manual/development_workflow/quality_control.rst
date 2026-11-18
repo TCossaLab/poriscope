@@ -94,6 +94,10 @@ strictly:
    count, because it sees what the hook cannot - a controller calling a method its View
    does not have, for instance. See ``DECISIONS.md``, 2026-08-24.
 
+   Neither run can check a call a tab makes through ``MetaModel.call()``: it dispatches to
+   the plugin method by name, so an argument of the wrong type gets past both. Compare the
+   call site with the plugin method's signature by hand.
+
    The mypy version is pinned three times - mirrors-mypy's ``rev`` in
    ``.pre-commit-config.yaml``, and ``mypy==`` in ``pyproject.toml``'s ``[dev]`` extra and
    in ``requirements-dev.txt`` - and the three move together in one commit.
@@ -160,6 +164,10 @@ To run exactly what the docs check runs:
 
    python scripts/generate_all_autodoc_rst.py
    sphinx-build -W --keep-going -b html -d docs/.doctrees docs/source docs/build
+
+CI builds from nothing. Locally ``docs/.doctrees`` is a cache, and Sphinx re-reads only the
+sources that changed, so a warning on an unchanged page is not reported again: add ``-E``
+when your build has to stand in for the check.
 
 ``--keep-going`` reports every warning in one pass instead of stopping at the first, so
 you can fix them all in a single edit. The ``post-merge`` git hook uses the same flags

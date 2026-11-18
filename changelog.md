@@ -57,7 +57,7 @@
 
 #### Saved files:
 
-* **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 2.1 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
+* **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 3.0 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
 
 * **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
 
@@ -352,7 +352,7 @@
 
 * Load and Restore Session read each tab's saved actions once and keep them; until you replay or work in a tab, the autosave keeps them too, so a Restore after a crash still has them
 
-* A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 2.1's format, so it does not appear again
+* A loaded session whose tabs hold no saved actions says so, and the first Restore after upgrading from 2.0 says the old `tab_action_history.json` cannot be replayed; the file is left in place, and the line says the autosave was saved in 3.0's format, so it does not appear again
 
 * After Load or Restore Session, **Replay Actions** replays the showing tab's saved actions and is disabled once they have all replayed, until Go back or another load; after Keep or Go back, the status panel says which steps the autosave, which holds only what ran, does not have, and how to get them back
 

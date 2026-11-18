@@ -95,8 +95,9 @@ Each kind of information lives in one place, as tersely as the facts survive:
   ABC, are called out as breaking. Docs-only changes get no entry.
 - `DECISIONS.md` - the reasoning: alternatives rejected, the measurement that settled it, what
   would make it worth revisiting. Check it before re-litigating a settled question.
-- `future_fixes.md` - what is still queued, under 3.0/3.1/Later/Owner-held, one to three lines
-  with `file:line` and the measured number. Delete a landed entry outright (no `**Fixed**`,
+- `future_fixes.md` - what is still queued, under the release it is planned for (the series and its
+  compatibility rule are at the top), then Any release, Unscheduled, Watching and Owner-held: one to
+  three lines with `file:line` and the measured number. Delete a landed entry outright (no `**Fixed**`,
   `~~` or `DONE`); rewrite a partly landed one as what remains.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded

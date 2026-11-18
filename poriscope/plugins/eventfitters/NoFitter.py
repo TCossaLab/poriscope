@@ -98,7 +98,7 @@ class NoFitter(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def construct_fitted_event(  ##TODO
+    def construct_fitted_event(
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:
         """

@@ -104,8 +104,8 @@ style = "sphinx"
 # signature hints - an AST scan disproved that (the large majority carry at
 # least one hint), and the false setting turned 663 of the baseline's 709
 # entries into DOC108 "you have hints but policy says you shouldn't" noise
-# that masked nothing and fixed nothing. See future_fixes.md's
-# type-annotation pass for the work that closes the remaining DOC106/DOC107.
+# that masked nothing and fixed nothing. The type-annotation pass has since closed
+# the remaining DOC106/DOC107, and the baseline is empty.
 arg-type-hints-in-signature = true
 # Every __init__ in this codebase has its own docstring separate from the
 # class docstring; that's an established convention here, not a violation.

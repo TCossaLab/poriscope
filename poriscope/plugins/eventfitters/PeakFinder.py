@@ -7198,8 +7198,8 @@ class PeakFinder(MetaEventFitter):
 
         This is a relative/ordinal score, not a calibrated probability: it
         comes from the same symmetric-Gaussian model ``fit_threshold`` uses,
-        so on data where a population is genuinely skewed (see the log-normal
-        upper prominence component noted in ``future_fixes.md``) it will read
+        so on data where a population is genuinely skewed (see the log-scale
+        prominence fit in ``DECISIONS.md``, 2026-09-15) it will read
         as overconfident approaching that skewed shoulder.
 
         Whether this is guaranteed to cross 0.5 exactly at ``fit_threshold``'s

@@ -53,6 +53,14 @@ the whole finding.
 half - one symmetrised a histogram window, one did not - meant the promotion changed one plugin's
 science whichever way it went.
 
+*Also:* a difference in behaviour is closed before the promotion, not by it. Land each behaviour change in
+the copy that needs it, with its own red test, and promote once the bodies are identical: one shared body
+cannot hold two behaviours. Work the candidate rule through by hand first, since the right one may be
+neither copy's. *Case:* 2026-10, a plan said "promote, then change" for two tabs' range-shift methods. One
+shared body could not keep one tab silent and the other reporting, so each change landed in its own copy
+first; and working the arithmetic showed both copies' overflow rules skipped an event on one arrow, so
+neither was kept.
+
 ### E2 · A numeric difference between near-copies may be the domain's rule, not drift
 
 Near-identical code that differs in a constant is not only "drift" or "bug". Ask whoever owns the

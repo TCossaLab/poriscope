@@ -229,7 +229,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     # Added 2026-09-27 with the completeness check. The two filters share
     # close_resources and reset_channel byte for byte, 16 removable lines on entry;
-    # 0 since both moved onto the bases in 2.1.
+    # 0 since both moved onto the bases in 3.0.
     # Added with its first plugin, so nothing can be duplicated yet.
     "conditioningloaders": (
         "poriscope/plugins/conditioningloaders/NIConditioningLoader.py",

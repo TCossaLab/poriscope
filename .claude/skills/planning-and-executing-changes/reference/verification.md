@@ -162,6 +162,11 @@ cleanup or deliberate drop) and what the changelog may claim.
 at execution did tracing the callers show every in-app writer passes fixed, parenthesis-free column names, so
 nothing could trigger it; the framing and changelog wording had to be walked back.
 
+*Also:* probe at the layer the user is on. *Case:* 2026-10-10, a probe that called a plugin directly saw an
+exception. In the application a worker caught it, the status panel showed a different message, and an
+output file was left holding one experiment row and no channels: a different defect, with a different
+risk, from the one the probe reported.
+
 ## V9 · "Not reproducible" is a result; a quiet probe measures the wrong program
 
 Exonerate hypotheses by measurement, record what was ruled out, and invent nothing to fill the gap. If a
@@ -324,6 +329,11 @@ have any comparison print the file path of the module it imported.
 checkout: scripts launched there imported the main checkout's code. The gates were moved to `python -m`
 from the worktree root, and the final comparison against the original application printed the imported
 module's path to show it had measured the worktree.
+
+*Also:* a test that starts its own subprocess is a second route: the child gets the interpreter's default
+path, not the runner's. *Case:* 2026-11-10, a test that runs a documented script in a subprocess failed in
+a clean copy because the child imported the main checkout's package. While the two trees are identical it
+passes, testing the wrong one.
 
 ## V20 · Measure against the commit the branch actually starts from
 

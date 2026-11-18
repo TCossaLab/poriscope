@@ -27,6 +27,11 @@ before relying on it.
   panel was moved by hand before the generator was fixed.
 - **One instance per tab type** - `MainController.analysis_tabs` is keyed by the Controller class. A tab
   without a sidebar button opens from **Analysis -> New Analysis Tab -> `<Name>Controller`**.
+- **Bind no tab or controller into a signal connection.** A connection is held on the Qt side, where
+  Python's collector cannot see it, so a `functools.partial` or lambda that captures a tab keeps it and its
+  plugin classes alive after it closes. Find the tab from `sender()` in the slot instead. *Case:*
+  2026-11-06, `MainController.show_tab_text` was connected through a partial holding the tab: 5 closed tabs
+  were still alive and the full suite hung; 0 after it became a `sender()` slot.
 
 ## Where the data comes from
 

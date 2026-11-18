@@ -143,3 +143,4 @@ building-skills) add their own lessons under the same ID scheme; IDs are unique 
 - **C15** A line number in a long-lived record is a measurement with a date
 - **C16** An approval page must hand its decisions back through a channel you can read
 - **C17** A saved file's format follows the release's version discipline
+- **C18** Parallel tracks share the branch, not the files or the record sections

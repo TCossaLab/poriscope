@@ -144,10 +144,9 @@ class MetadataModel(MetaSubsetTabModel):
         """
         Bin two columns into a 2-D histogram and return it log2-scaled.
 
-        The arrays arrive already filtered and log-scaled: that step is still
-        ``MetaView``'s, and stays there until all eight of its call sites can be
-        converted together, so this method is handed exactly what the View's own
-        filter produced.
+        The arrays arrive already filtered and log-scaled: the Controller runs
+        ``MetaModel.logscale_and_filter_columns`` first and hands this method what
+        that produced.
 
         Empty bins come back as ``-1`` rather than ``-inf``, which is what lets the
         caller's colourbar label them as a count of zero.

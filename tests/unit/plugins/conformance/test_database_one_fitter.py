@@ -37,7 +37,7 @@ pytestmark = pytest.mark.conformance
 @pytest.fixture
 def cusum_file(events_db_path, tmp_path: Path) -> Path:
     """
-    A metadata database holding one channel of CUSUM results, written by 2.1.
+    A metadata database holding one channel of CUSUM results, written by 3.0.
 
     :param events_db_path: the conformance events database
     :param tmp_path: per-test scratch directory

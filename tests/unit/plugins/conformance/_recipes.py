@@ -488,9 +488,8 @@ def build_reader(log_path: str) -> MetaReader:
     """
     Build a ``ChimeraReader20240501`` over a synthetic recording.
 
-    Readers are not yet a conformance family of their own - that needs one synthetic
-    writer per on-disk format - so this returns the single reader the other families
-    need as a parent rather than being parametrised.
+    Readers have their own conformance family (``test_readers.py``); this returns the
+    single reader the other families need as a parent rather than being parametrised.
 
     :param log_path: Path to the synthetic Chimera ``.log``.
     :type log_path: str
