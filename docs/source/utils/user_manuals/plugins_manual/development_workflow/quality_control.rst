@@ -80,6 +80,8 @@ strictly:
 - If you edit the code they measure: the :ref:`duplication_ratchet`, the
   :ref:`shell_complexity_ratchet`, the :ref:`mvc_boundary` and
   :ref:`recorded_actions_read_no_widgets`.
+- If you change a file Poriscope saves, or the plugin that reads it:
+  :ref:`saved_file_formats`.
 
 .. warning::
 
@@ -1071,6 +1073,31 @@ not. A scenario whose action runs several channels on worker threads at once com
 calls in any order. The replay writes each step's recorded values into the panel before the
 step runs, so this check cannot see a step that reads the panel; the static test above is what
 catches that.
+
+.. _saved_file_formats:
+
+Saved-File Format Versions
+--------------------------
+
+This one affects you if you change what a saved file contains, or how a reader checks it: the
+session file, a plot configuration, or the events and metadata databases.
+
+**A saved file breaks only at a major version.** A user on one release of a major version has
+to be able to open what a colleague saved on any other release of it. So:
+
+- A format number - ``SESSION_FORMAT_VERSION``, ``PLOT_CONFIGURATION_FORMAT_VERSION`` and the
+  ``SCHEMA_VERSION`` of each SQLite writer and loader - changes only in a major release.
+- Within a major version, add to a file; never rename, remove or re-type what is there. A
+  reader ignores what it does not know: an unknown key in a JSON file, an unknown table in a
+  database.
+- A reader refuses a file with a newer number and says so, and a writer refuses to add to one.
+
+``tests/unit/test_saved_file_formats.py`` pins the four numbers for each major version,
+reading the release being prepared from the first header of ``changelog.md``. If it fails
+because you changed a number, the change is breaking and the release has to be a major one;
+add that major's row, never edit the row of one that has shipped. The test cannot see an
+incompatible change that keeps its number, so before changing a writer, open a file your
+change writes with the oldest release of the current major version.
 
 .. _golden_net_armed:
 
