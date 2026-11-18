@@ -262,8 +262,9 @@ def test_committing_with_another_loader_selected_writes_the_writers_own_fit(
     one fitter's results while looking at another loader's events. The guard that refused
     this went too far.
 
-    The report arrives when the writer's thread finishes, which can be after the rows
-    land, so it is waited for before the panel is read.
+    Each report arrives when its thread finishes, which can be after the fit returns or
+    the rows land. So the fit's own report is waited for and set aside before the commit,
+    and the writer's is waited for before the panel is read.
     """
     other_db = generate_events_database(
         tmp_path / "other_events.sqlite3", channel_id=0, num_events=5, seed=3
@@ -275,10 +276,14 @@ def test_committing_with_another_loader_selected_writes_the_writers_own_fit(
     other.apply_settings(other_settings)
     event_analysis_tab.register(other, "MetaEventLoader", "other")
 
-    fit_events(event_analysis_tab, qtbot, [0])
     controller = event_analysis_tab.tab_controller
     messages: List[str] = []
     controller.add_text_to_display.connect(lambda text, _source: messages.append(text))
+    fit_events(event_analysis_tab, qtbot, [0])
+    qtbot.waitUntil(
+        lambda: any("good fits" in text for text in messages), timeout=120_000
+    )
+    messages.clear()
 
     commit_events(event_analysis_tab, qtbot, [0], 25, loader="other")
     qtbot.waitUntil(lambda: bool(messages), timeout=120_000)

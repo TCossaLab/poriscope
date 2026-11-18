@@ -765,6 +765,9 @@ def test_the_log_file_keeps_a_record_containing_a_micro_sign(tmp_path) -> None:
         root.setLevel(level_before)
 
 
+@pytest.mark.exceeds_time_budget(
+    reason="imports the whole app in a fresh interpreter, which is what it tests"
+)
 def test_importing_the_app_adds_no_root_logging_handler() -> None:
     """
     Importing ``main_app`` and validating a line edit leaves the root logger untouched.

@@ -45,6 +45,85 @@ and the replay would wait for it. Or if "Skip this step" lands.
 
 ---
 
+## 2026-11-17 - Flow tests keep rediscovering plugins and drawing figures: two speed-ups measured and dropped
+
+**Context.** Each flow test builds a whole app, which loads all 51 plugin files again (~155 ms
+locally) and draws its figures. Two test-only speed-ups were built: a cache that discovered plugins
+once per process and shared the classes, with a guard that restored any class state a test changed;
+and a stub that skipped `FigureCanvasAgg.draw` unless a test was marked `renders`.
+
+**Decision.** Neither landed (Carolina, 2026-11-17). Every flow test rediscovers plugins and draws
+its figures for real, as the app does.
+
+**Evidence.** Locally, clean worktrees, one run at a time, no standby, 2 workers: with the cache the
+flow tests took 270 s summed against 720 s on develop `f411056c`, and the full suite 636 s to 396 s
+with both speed-ups; the stub alone was worth 7 s (352 s against 359 s on `33f57ad5`). On CI the
+test steps did not change within their run-to-run noise of about +/-25 s per leg, with both (#733
+`a64182ab` against #734 `33f57ad5`) or with the stub alone (#734 against #735 `92a05345`),
+2026-11-17. A benchmark of one discovery explains it (locally 2026-11-17; CI #742 `e3d5005c`,
+2026-11-18): ~155 ms locally against 28-42 ms on CI's four legs, Windows and Linux alike. The
+difference is opening the compiled plugin files - about 68 ms per discovery locally against 1-3 ms
+on the runners - while the abstract-base-class subclass checks cost tens of milliseconds everywhere.
+At CI's cost the cache saves roughly 25 s per leg, the size of the noise. The cost is in how that
+machine opens files, not in the code: the same files open several times faster on every CI runner, Windows
+ones included; what slows them there was not established. Against it: under the cache the flow tests
+diverged from the app (a session reset gets new plugin classes in the app, the same ones under the
+cache), plugin modules' import-time code ran once per process (30 sklearn warnings the app hides),
+and it needed the guard and an import ratchet; the stub hid draw-time errors.
+
+**Revisit if** plugin discovery or rendering becomes a measured share of CI's test time (the junit
+artifacts show it per test), or several developers' machines show the cost after machine-side
+causes are ruled out.
+---
+
+## 2026-11-17 - Test time is recorded on every CI run and checked two ways, both warn-only
+
+**Context.** The suite slowed several-fold twice with every test green (Aug 2026; 2026-10-29, CI test
+step 313 s to 713 s, tests +5%), and CI kept only the summary line.
+
+**Decision.** Every test job writes `--junitxml` (`junit_duration_report = total`) and a
+per-directory summary; branch CI keeps it 30 days. On the Linux 3.12.0 leg only: `--time-budget`
+warns on a test over its tier's budget (unit 5 s, integration 20 s, e2e 60 s; wider fixture setup and
+scope-closing teardown not counted; opt-out `exceeds_time_budget(reason)`), and
+`test_durations.py check` warns above 1.3x the suite's or 1.5x a directory's expected time. Both warn,
+neither fails (Carolina, 2026-11-11). Every warning is acted on before merging: fixed, marked with a reason, or noted as noise (Carolina, 2026-11-17). Under xdist the worker attaches each test's own time and markers
+to its teardown report for the controller (Carolina, 2026-11-16); the alternative, computing from the
+junit file, loses the fixture-time corrections and the opt-out. The baseline is each directory's
+median over several CI runs.
+
+**Evidence.** One test's time varied up to +60% over 12 local loops; CI's Linux leg ranged 187-298 s
+in one day, so ~25% is run-level noise. A real `-n 2` run warned on slow tests and skipped the marked
+one.
+
+The budget becomes failing once 30 develop runs in a row show no false failure - a test over its
+budget in one run and within it in the runs around it, with no change to it (Carolina, 2026-11-17).
+
+**Revisit if** the size check warns on runs with no real change.
+
+---
+
+## 2026-11-17 - A test that leaves a QThread running fails at teardown
+
+**Context.** Destroying a window whose worker thread runs aborts the interpreter, and an abort names
+no test. Measured on `642648b0`, no integration or e2e test reaches teardown with a running thread.
+
+**Decision.** A root autouse fixture records each `QThread.start` (weak references), is torn down
+before the window cleanup, waits up to 5 s per running thread, then writes the test and thread past
+pytest's capture and fails the test (Carolina, 2026-11-16). Names come from `key`/`channel`
+attributes, not `isinstance`: importing `WorkerThread` would load all of `poriscope` (7 s) into every
+run's root conftest.
+
+Teardown runs replays, then threads, then windows: `stop_replays_after_each_test` asks for this guard,
+and this guard for the window cleanup, so a replay left running is stopped and named as a replay
+before its threads are checked (Carolina, 2026-11-17).
+
+**Evidence.** A deliberate 7 s thread was named on the terminal and errored at teardown, no abort; the
+full suite passes under the guard.
+
+**Revisit if** a thread is started outside Python's `QThread.start` (a `QThreadPool`, C++).
+
+---
+
 ## 2026-11-16 - Two duplication floors stay: the loader bases' 66 lines and CUSUM/NoFitter's 171
 
 **Context.** `measure_duplication.py --verbose` (2026-11-16): `MetaDatabaseLoader` and `MetaEventLoader` carry the

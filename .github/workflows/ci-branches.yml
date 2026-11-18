@@ -191,17 +191,52 @@ jobs:
       # Runs the whole suite, e2e included - no marker filter. At ~6 minutes the
       # e2e tests are worth their cost.
       # -n auto: workers sized by tests/conftest.py from the runner's cores and memory.
+      # --junitxml keeps every test's duration (setup + call + teardown, per pytest.ini);
+      # without it a run leaves only its summary line, and a per-test cost growing across
+      # a family of tests stays invisible until the total has grown several-fold.
+      # The Linux 3.12.0 leg also warns about any test over its time budget
+      # (tests/conftest.py). One leg only, so the warnings come from one kind of runner.
       - name: Run tests under Xvfb
         if: runner.os == 'Linux'
         run: |
-          xvfb-run -a pytest -q -n auto
+          xvfb-run -a pytest -q -n auto --junitxml=pytest-junit.xml --durations=25 ${{ matrix.lint && '--time-budget' || '' }}
 
       # Qt needs no display server here: QT_QPA_PLATFORM=offscreen is set at job
       # level and the e2e tests drive real widgets against that platform plugin.
       - name: Run tests (Windows, offscreen)
         if: runner.os == 'Windows'
         run: |
-          pytest -q -n auto
+          pytest -q -n auto --junitxml=pytest-junit.xml --durations=25
+
+      # Per-directory tests, summed seconds and ms/test on the job's summary page, and the
+      # whole per-test record as an artifact for scripts/test_durations.py compare.
+      # always(): a failing run's timings are the ones most worth having.
+      - name: Test durations summary
+        if: always() && hashFiles('pytest-junit.xml') != ''
+        shell: bash
+        run: |
+          echo "### Test durations - ${{ matrix.os }}, Python ${{ matrix.python-version }}, ${{ matrix.deps }}" >> "$GITHUB_STEP_SUMMARY"
+          python scripts/test_durations.py summary pytest-junit.xml >> "$GITHUB_STEP_SUMMARY"
+
+      # Warn when the run took far longer than its test count explains: each directory is
+      # expected to cost (its tests now) x (its ms/test in the baseline). Warn-only. The
+      # baseline is the median of several of this leg's artifacts - see the script.
+      - name: Test durations against the baseline
+        if: matrix.lint && hashFiles('pytest-junit.xml') != '' && hashFiles('tests/test_duration_baseline.json') != ''
+        shell: bash
+        run: |
+          echo "### Test durations against the baseline" >> "$GITHUB_STEP_SUMMARY"
+          python scripts/test_durations.py check pytest-junit.xml tests/test_duration_baseline.json > duration-check.txt
+          cat duration-check.txt                     # the ::warning lines become annotations
+          grep -v '^::' duration-check.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload test durations
+        if: always() && hashFiles('pytest-junit.xml') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: pytest-junit-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.deps }}
+          path: pytest-junit.xml
+          retention-days: 30
 
   # ---------------------------------------------------------------------------
   # Wheel smoke: the suite above runs against `pip install -e`, which never

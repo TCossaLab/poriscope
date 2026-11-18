@@ -1020,7 +1020,8 @@ class MetaEventFinder(BaseDataPlugin):
         # slices, each ending run - 1 samples past the previous one's beginning so no
         # window straddling a seam is missed
         stop = crossing + 1
-        span = 1024
+        # two runs wide at least, so no overlap reaches past the crossing
+        span = max(1024, 2 * run)
         while True:
             begin = max(first, stop - span)
             within = np.abs(data[begin:stop]) <= self.EDGE_BAND_SIGMA
@@ -1062,7 +1063,8 @@ class MetaEventFinder(BaseDataPlugin):
         # which made every event cost a pass over everything after it; each slice after
         # the first starts run - 1 samples early so no window straddling a seam is missed
         start = crossing
-        span = 1024
+        # two runs wide at least, so no overlap reaches back before the crossing
+        span = max(1024, 2 * run)
         length = len(data)
         while True:
             stop = min(length, start + span)

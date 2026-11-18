@@ -17,6 +17,7 @@ without losing a single thing the tests catch?*
 - T9 Sometimes the slow thing is the product - fix the algorithm
 - T10 Do not shrink data whose size is calibrated
 - T11 A speed claim counts only from a full run
+- T12 Under parallel workers, the summary sees only what the reports carry
 
 ## The speed pass, in order
 
@@ -148,7 +149,33 @@ broken a deliberate match with the integration parameters.
 
 Per-file and per-subset timings by several agents on a shared, loaded machine are estimates; their sum is
 not the suite's saving, and a single file's figure can be off by a factor. Accept a speed claim only from
-a full run, serial and parallel, in a clean copy of the exact commit.
+a full run, serial and parallel, in a clean copy of the exact commit, on the machine the claim is about: a
+saving measured on a developer's machine says nothing about CI's runners until a CI run shows it. A
+profile taken before a fix that changed the cost is stale; take it again before building on it.
 
 *Case:* subset measurements summed to about 890 s saved; the full run showed 1,157 s. One prototype was
 reported at 23.4 s to 7.1 s and measured 19.0 s to 15.0 s after landing.
+
+*Case:* 2026-11-17, two test-only speed-ups took a full two-worker run from 636 s to 396 s on one laptop;
+on CI the test steps did not change (98-265 s per leg against 104-290 s). One of them, skipping figure
+rendering, rested on a profile showing rendering at two thirds of a test, taken before a window-leak fix
+had removed most of that cost; measured again, it was worth 7 s. Both were dropped.
+
+## T12 · Under parallel workers, the summary sees only what the reports carry
+
+With xdist, collection, fixture setup and the test protocol run in the workers, and the terminal summary
+runs in the controller, which receives only each test's reports. A plugin or conftest that keeps per-test
+bookkeeping in hooks - markers indexed at collection, fixture time noted at setup - and reads it at
+summary time finds nothing in the controller, and says so silently: an empty table, or every test
+treated alike. Attach what the summary needs to the report in the worker (`pytest_runtest_makereport`);
+xdist serialises a report's attributes, and the controller's `pytest_runtest_logreport` reads them. A
+serial run takes the same path, so there is one mechanism to test. Prove it with a real `-n 2` run, and
+pin the hand-over with a test that sends a report through `pytest_report_to_serializable` and back.
+
+*Case:* a per-marker statistics report printed nothing under `-n auto` for days after parallel runs
+became the gate, and a per-test time budget written for serial runs would have warned on every test
+marked as exempt. Moving both onto the teardown report fixed both; seven mutations of the hand-over were
+killed.
+
+For keeping the next slowdown from needing an audit at all - per-test durations recorded on every CI run
+and checked against what the test count predicts - see the planning skill's I19.

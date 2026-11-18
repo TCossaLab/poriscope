@@ -206,6 +206,12 @@ Tab state onto the Models, heavy work off the GUI thread, CUSUM speed, splitting
 
 ### Workers and tests
 
+- **Other flow tests may read a worker's report before it arrives.** `fit_events` and similar
+  helpers wait on `model.workers`, which empties before `generate_report`'s queued slot shows the
+  report; one test read the fit's report as the commit's under load (fixed 2026-11-17). Delaying
+  `generate_report` 1.5 s across `tests/integration` gave 16 failures and 16 errors, but a report
+  that fires after its test ends breaks later tests too, so real races are not yet told apart.
+  A probe that cancels its delayed reports at teardown would separate them.
 - **`EventWorker`/`MetaModel`'s worker lifecycle has no direct tests**, nor does
   `App.configure_logger`; owed by whoever owns test-writing. Scenarios worth encoding:
   - *Generator failure*: happy path, mid-run `TypeError`, abort, empty generator.
@@ -468,6 +474,13 @@ The rest are readability only; each is behaviour-preserving and wants the coveri
 
 ### Types, tests and CI
 
+- **`--time-budget` and the duration check only warn.** Once on develop, build
+  `tests/test_duration_baseline.json` from the median of several Linux 3.12.0 CI artifacts. Add a `history` report
+  to `scripts/test_durations.py` that reads the last 30 develop runs' artifacts, counts false failures (over budget
+  in one run, within it in the runs around it, the test unchanged) and lists tests near their budget; switch
+  `--time-budget` to failing when it counts none (`DECISIONS.md` 2026-11-17).
+  `test_peak_finder.py::test_two_channels_fitted_together_each_get_their_own_report` took 4.8 s serial and 6.3 s
+  under 2 workers (local, 2026-11-17) against its 5 s budget.
 - **Mocks are almost all unspecced**: 698 bare `Mock()`/`MagicMock()` against 23
   `spec`/`autospec`/`spec_set` (2026-11-16). Adopt specs one fixture file at a time, controllers
   and views first.

@@ -98,7 +98,13 @@ jobs:
 
       - name: Run tests (unit + E2E)
         run: |
-          xvfb-run -a pytest -n auto  # workers sized by tests/conftest.py
+          xvfb-run -a pytest -n auto --junitxml=pytest-junit.xml --durations=25  # workers sized by tests/conftest.py
+
+      - name: Test durations summary
+        if: always() && hashFiles('pytest-junit.xml') != ''
+        run: |
+          echo "### Test durations" >> "$GITHUB_STEP_SUMMARY"
+          python scripts/test_durations.py summary pytest-junit.xml >> "$GITHUB_STEP_SUMMARY"
 
       # Build the wheel and source distribution
       - name: Build package

@@ -17,6 +17,7 @@ skills; N, P and V lessons cited in this skill are in `planning-and-executing-ch
 - **T9** Sometimes the slow thing is the product - fix the algorithm
 - **T10** Do not shrink data whose size is calibrated
 - **T11** A speed claim counts only from a full run
+- **T12** Under parallel workers, the summary sees only what the reports carry
 
 ## Value (Q) - [value.md](value.md)
 

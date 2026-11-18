@@ -20,7 +20,9 @@ Run the app with the `poriscope` console-script entry point (`poriscope.main_app
 
 ```
 pytest -n auto                                       # full suite in parallel: the commit gate, what CI runs
-pytest --marker-stats                                # per-marker counts and mean durations (serial only)
+pytest --marker-stats                                # per-marker counts and mean durations
+pytest -n auto --time-budget --junitxml=run.xml      # warn on a test over its budget; keep each test's time
+python scripts/test_durations.py compare old.xml new.xml  # per-test cost between two runs
 pytest tests/unit/plugins/test_plugin_compliance.py  # plugin interface compliance
 
 pre-commit run --all-files --hook-stage manual       # auto-fix: black, ruff --fix (never runs on commit)
@@ -67,6 +69,9 @@ persistence, even with no code planned. Regardless:
   the checkout before touching anything (why: `DECISIONS.md`).
 - Qt cleanup belongs in the root `tests/conftest.py`, which deletes every leftover window and
   fails the test on a survivor - never in one directory's conftest (lesson N17).
+- A cost paid once per test, multiplied across a growing family, slows the suite with every
+  test green. Build expensive setup once per session, and compare a new family's per-test
+  time with its directory's (`scripts/test_durations.py`, QA page "Test Durations").
 - `tests/unit/` mirrors `poriscope/`, except that analysis-tab triads are tested in
   `tests/unit/views/` and `tests/unit/controllers/`.
 - `test_plugin_compliance.py` compares generic annotations by equality: copy a base method's

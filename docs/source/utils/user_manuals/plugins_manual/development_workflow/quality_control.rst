@@ -214,8 +214,10 @@ What CI Runs
   non-blocking mypy report, then the full test suite on four legs - Python 3.12.0 (the
   floor) with the runtime stack pinned to ``requirements.txt``, and the newest supported
   Python with the ranges in ``pyproject.toml`` resolved fresh, each on Linux and Windows.
-  A second job builds the wheel and sdist, checks them with ``twine check --strict``, and
-  imports the installed wheel, wavelet library included, outside the checkout.
+  Every leg records each test's duration, and the Linux 3.12.0 leg warns about a slow test
+  or a suite slower than its size (:ref:`test_durations`). A second job builds the wheel
+  and sdist, checks them with ``twine check --strict``, and imports the installed wheel,
+  wavelet library included, outside the checkout.
 - **Pull requests**: one workflow for pull requests from inside the repository, and a
   restricted, read-only one for forks (strict hooks and the full suite, no auto-fix).
 - **Docs Render Check**: see :ref:`docs_render_check`.
@@ -380,16 +382,21 @@ exclusions, and ``mypy.ini`` enforces that:
 Test Suite Configuration
 -------------------------
 
-``pytest.ini`` is the only pytest configuration in the repository. Four settings there are
+``pytest.ini`` is the only pytest configuration in the repository. Six settings there are
 worth knowing about before you add tests:
 
 - ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
   exists because a hung Qt test otherwise runs to GitHub Actions' six-hour job limit. It
-  is not a performance budget: the slowest unit test measures about 1.4 seconds, and the
+  is not a performance budget - that is the ``time_budget_*`` settings below - and the
   explicit ``@pytest.mark.timeout`` markers under ``tests/e2e/`` and
   ``tests/integration/`` are all 90 seconds or less and still override the default. **If
   your test trips this value, that is a finding about the test, not a reason to raise
   the number.**
+- ``time_budget_unit``, ``time_budget_integration``, ``time_budget_e2e`` — seconds one
+  test of each tier may take (5, 20 and 60) before ``pytest --time-budget`` warns about
+  it. See :ref:`test_durations`.
+- ``junit_duration_report = total`` — a ``--junitxml`` file records each test's setup,
+  call and teardown together, so fixture and teardown cost is not hidden.
 - ``--strict-markers`` — an unregistered marker name is a collection error rather than an
   expression that matches nothing. Register any new marker in the ``markers`` list.
 - ``--dist loadfile`` — under ``-n``, each test file runs whole on one worker, in its own
@@ -415,6 +422,14 @@ would open a dialog, from a set the whole process shares, so one left running hi
 of every later test. If your test fails with "A replay was still running after the test", stop
 the replay in the test's own fixture, as ``tab.replay_sequence.stop(quitting=True)``.
 
+After any leftover replay is stopped and before the windows go, the same conftest **fails a
+test whose worker thread is still running**. Destroying a window while its ``QThread`` runs
+aborts the interpreter, and an abort names no test, so each thread a test starts is recorded
+and, at teardown, given up to five seconds to end. One still running is named - a
+``WorkerThread`` by its key and channel - on the terminal straight away and in the failure.
+If your test fails with "left threads running", wait for its work to finish (the flow tests
+wait on ``model.workers``) before it ends.
+
 .. note::
 
    If you add a dev dependency, it must go in **both** ``pyproject.toml``'s ``[dev]`` extra
@@ -434,6 +449,67 @@ Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` ext
 Run it deliberately when you want the number. No CI workflow collects coverage: the plain
 ``pytest -n auto`` invocation is the gate everywhere, and coverage instrumentation would slow every
 run for a figure nothing acts on.
+
+.. _test_durations:
+
+Test Durations and Time Budgets
+--------------------------------
+
+A cost paid once per test - a window left alive, an application rebuilt - grows with the
+number of tests that pay it, and can slow the suite several-fold while every test still
+passes. A pass/fail gate cannot see that, so every CI run records how long each test took,
+and two checks read the record. Both only warn.
+
+**What CI records.** Every test job runs pytest with ``--junitxml=pytest-junit.xml`` and
+``--durations=25``. The job's summary page gets a table of tests, summed seconds and
+milliseconds per test for each directory; under ``-n auto`` the summed seconds are more than
+the wall time. Branch CI also keeps the file as an artifact for 30 days. Read or compare
+files with ``scripts/test_durations.py``:
+
+.. code-block:: bash
+
+   pytest -n auto --junitxml=run.xml
+   python scripts/test_durations.py report run.xml --top 50   # per file, then the slowest tests
+   python scripts/test_durations.py compare old.xml new.xml   # what changed between two runs
+
+``compare`` splits the change between new tests, removed tests and tests in both runs, which
+is the first question about a slowdown: more tests, or dearer tests?
+
+**The per-test budget.** ``pytest --time-budget`` warns about every test over its tier's
+budget in ``pytest.ini``: 5 seconds for a unit test, 20 for an integration test, 60 for an
+e2e test. A test's own time leaves out setting up a fixture wider than the function, and
+the teardown that closes a module or class, since pytest bills those to whichever test
+happens to run first or last. It works the same under ``-n auto``. A test that needs its
+time says why:
+
+.. code-block:: python
+
+   @pytest.mark.exceeds_time_budget(reason="imports the whole app in a fresh interpreter")
+   def test_importing_the_app_adds_no_root_logging_handler(): ...
+
+**The size check.** ``scripts/test_durations.py check`` expects each directory to cost (its
+tests now) x (its milliseconds per test in ``tests/test_duration_baseline.json``); a new
+directory is expected at its tier's average, and no test counts for more than its budget.
+It warns when the suite takes more than 1.3 times what it expects, or a directory of at least
+five tests more than 1.5 times. Both margins sit above a CI runner's ordinary run-to-run
+variation.
+
+Both checks run on branch CI's Linux 3.12.0 leg only, so their warnings come from one kind
+of runner, and neither fails the build: one test's time is noisy from run to run, and a cost
+leaked by one test can land on another. The size check is skipped until the
+baseline file exists. Make or refresh it from several of that leg's artifacts - the median
+of each directory is kept, so one unusual run does not set it - when a slowdown is accepted
+or a speed-up should be held:
+
+.. code-block:: bash
+
+   python scripts/test_durations.py baseline a.xml b.xml c.xml > tests/test_duration_baseline.json
+
+**When a check warns,** act on it before merging: make the test cheaper, or mark it
+``exceeds_time_budget`` with a reason; or say in the pull request why the run was noise.
+
+``pytest --marker-stats`` prints the number of tests and their mean time per marker, with or
+without ``-n``.
 
 .. _plugin_compliance_testing:
 
