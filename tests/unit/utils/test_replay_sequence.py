@@ -971,6 +971,26 @@ def test_a_failed_step_s_errors_are_in_the_one_dialog_and_open_none_of_their_own
     assert tab.view.ask_after_replay_failure.call_args.args[-1] == "the column is gone"
 
 
+def _settled(sequence: ReplaySequence, qtbot: Any) -> ReplaySequence:
+    """
+    Let a replay take every turn it can, and return it once it is waiting on a run.
+
+    A replay takes a turn of the event loop per step and schedules the next one before the
+    turn ends, so no turn pending means nothing more happens until a run ends. Waiting for
+    that state, where a fixed wait stood, lets a test assert what has happened and what
+    has not without depending on how fast the event loop is.
+
+    :param sequence: the replay that was just started
+    :type sequence: ReplaySequence
+    :param qtbot: the pytest-qt fixture
+    :type qtbot: Any
+    :return: the same replay
+    :rtype: ReplaySequence
+    """
+    qtbot.waitUntil(lambda: not sequence._turn_pending)
+    return sequence
+
+
 class TestRunsTogether:
     """
     Runs that do not depend on one another start together, as one click on several channels
@@ -980,8 +1000,7 @@ class TestRunsTogether:
     @staticmethod
     def _start(tab: _Tab, entries: List[Dict[str, Any]], qtbot: Any) -> ReplaySequence:
         assert tab.start_replay(entries)
-        qtbot.wait(50)
-        return tab.replay_sequence
+        return _settled(tab.replay_sequence, qtbot)
 
     @staticmethod
     def _history(tab: _Tab) -> List[str]:
@@ -1066,6 +1085,38 @@ class TestRunsTogether:
         assert tab.calls == ["find:A/1", "show:A/1", "find:A/1"]
 
         _run_ends(tab, sequence, 1, "A")
+        _ended(sequence, qtbot)
+
+    def test_a_second_run_waits_for_a_view_of_the_first_that_is_still_to_be_drawn(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        """
+        The first run on channel 2 has ended, but its view keeps its place behind
+        channel 1's, which waits for a run still going: the rerun waits for that view,
+        or the view would be drawn from the rerun's results.
+        """
+        sequence = self._start(
+            tab,
+            [
+                _entry("find", "A", 1),
+                _entry("find", "A", 2),
+                _entry("show", "A", 1),
+                _entry("show", "A", 2),
+                _entry("find", "A", 2),
+            ],
+            qtbot,
+        )
+        assert tab.calls == ["find:A/1", "find:A/2"]
+
+        _run_ends(tab, sequence, 2, "A")
+        _settled(sequence, qtbot)
+        assert tab.calls == ["find:A/1", "find:A/2"]
+
+        _run_ends(tab, sequence, 1, "A")
+        qtbot.waitUntil(lambda: len(tab.calls) == 5)
+        assert tab.calls[2:] == ["show:A/1", "show:A/2", "find:A/2"]
+
+        _run_ends(tab, sequence, 2, "A")
         _ended(sequence, qtbot)
 
     def test_the_other_steps_keep_their_order(self, tab: _Tab, qtbot: Any) -> None:
@@ -1170,8 +1221,7 @@ class TestAFailureWhileRunsAreGoing:
     @staticmethod
     def _start(tab: _Tab, entries: List[Dict[str, Any]], qtbot: Any) -> ReplaySequence:
         assert tab.start_replay(entries)
-        qtbot.wait(50)
-        return tab.replay_sequence
+        return _settled(tab.replay_sequence, qtbot)
 
     def _four(self) -> List[Dict[str, Any]]:
         return [_entry(*values) for values in self.ENTRIES]
@@ -1227,8 +1277,7 @@ class TestAFailureWhileRunsAreGoing:
         tab.model.finished["B"] = False  # type: ignore[attr-defined]
         tab.hold_session_actions(self._four(), "session.json")
         assert tab.start_replay()
-        qtbot.wait(50)
-        sequence = tab.replay_sequence
+        sequence = _settled(tab.replay_sequence, qtbot)
         _run_ends(tab, sequence, 1, "B")
         _run_ends(tab, sequence, 2, "A")
         _run_ends(tab, sequence, 1, "A")

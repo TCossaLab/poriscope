@@ -30,6 +30,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+from poriscope.utils.scatter_palette import scatter_color
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 
 # ===========================================================================
@@ -706,6 +707,38 @@ class TestUpdatePlot:
                 units=["ms", "pA"],
                 plot=[True, True, False],
             )
+
+    def test_each_cluster_is_drawn_in_its_own_colour_of_the_shared_order(self, view):
+        """
+        Clusters take the scatter palette in label order, as the datasets of every other
+        scatterplot do, so two clusters are never drawn alike.
+        """
+        df, labels, conf = self._make_labelled_df()
+        self._setup_axes(view)
+        with (
+            patch.object(view.canvas, "draw"),
+            patch.object(view, "_update_cache"),
+            patch.object(view, "_commit_cache"),
+        ):
+            view.update_plot(
+                df,
+                labels,
+                conf,
+                logs=[False, False],
+                normalized=[False, False],
+                units=["ms", "pA"],
+                plot=[True, True, False],
+            )
+
+        drawn = {
+            scatter.get_label(): tuple(scatter.get_facecolor()[0][:3])
+            for scatter in view.axes.collections
+        }
+        assert drawn == {
+            "0": pytest.approx(scatter_color(0)[:3]),
+            "1": pytest.approx(scatter_color(1)[:3]),
+        }
+        assert drawn["0"] != pytest.approx(drawn["1"])
 
     def test_axis_labels_come_from_the_shared_format_axis_label(self, view):
         df, labels, conf = self._make_labelled_df()

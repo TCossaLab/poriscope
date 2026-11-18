@@ -473,6 +473,9 @@ The rest are readability only; each is behaviour-preserving and wants the coveri
 
 ### Types, tests and CI
 
+- **`test_replay_runs_together_no_gui.py` records a real Find for each of its three tests** (the `recorded`
+  fixture, about 1.1 s of setup each; 2026-11-18 audit). Build the recorded history once for the module; it needs
+  a wait helper that is not tied to the per-test `qtbot`.
 - **`--time-budget` and the duration check only warn.** Once on develop, build
   `tests/test_duration_baseline.json` from the median of several Linux 3.12.0 CI artifacts. Add a `history` report
   to `scripts/test_durations.py` that reads the last 30 develop runs' artifacts, counts false failures (over budget

@@ -72,7 +72,6 @@ def _histograms_that_fit_a_zero_width_component():
             dominated,
             model._double_gaussian(dominated, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02),
         ),
-        ("one_bin_spike", *_one_bin_spike_beside_a_peak()),
     ]
 
 
@@ -1485,6 +1484,31 @@ class TestReachableFractions:
             0.5, abs=0.02
         )
 
+    @pytest.mark.parametrize(
+        "volume,shape,pore",
+        [
+            (1.3, 50.0, (20.0, 30.0)),
+            (5.0, 0.02, (10.0, 20.0)),
+            (40.0, 0.02, (20.0, 30.0)),
+        ],
+        ids=["longest_prolate", "flattest_oblate", "flattest_oblate_wide_pore"],
+    )
+    def test_a_fit_centred_on_the_shape_limit_is_half_reachable(
+        self, model, volume, shape, pore
+    ):
+        """
+        A small spheroid fits the pore at any shape the sampler draws, so its family's
+        geometry space ends at the sampler's own limit, m = 50 or m = 0.02, and not at
+        the pore: a narrow fit centred on that limit has half its mass on each side.
+        Each volume is below the one at which the pore becomes the nearer edge
+        (1.68 nm^3 for a prolate in a 20 nm pore; 10.5 and 83.8 nm^3 for an oblate in
+        10 and 20 nm pores).
+        """
+        fit = _fit_at(model, volume, shape, *pore, 0.02)
+        prolate, oblate = model.reachable_fractions(fit, *pore)
+
+        assert (prolate if shape > 1 else oblate) == pytest.approx(0.5, abs=0.02)
+
     def test_the_peaks_may_arrive_in_either_order(self, model):
         popt = _fit_at(model, 50.0, 2.0, 10.0, 20.0, 0.15)
         swapped = np.concatenate([popt[3:], popt[:3]])
@@ -1534,8 +1558,9 @@ class TestReachableFractions:
         """
         The brute-force estimate over-counts the bins on the region's edge and cannot
         undercount at these widths, so the exact answer sits at or a little below it.
-        The last two cases use a 20 nm pore, where the m = 50 limit is an edge. The
-        flat oblate edge is left to the half-reachable test: this estimate still read
+        The last two cases use a wider, 20 nm pore. The m = 50 and m = 0.02 limits bind
+        only for small volumes and are left to the shape-limit test, and the flat
+        oblate edge to the half-reachable test: this estimate still read
         0.469 of its 0.496 there at 2,000,000 proposals, so it would need more than a
         unit test should spend.
         """

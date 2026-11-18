@@ -128,6 +128,8 @@
 
 ### Developer Tooling:
 
+* The tests added since the 2026-11-12 audit were audited before the release: a replay test that depended on the speed of the event loop now waits for the replay to settle, four tests that could not see what they named were armed, and the Clustering colours and the leftover-replay cleanup gained tests
+
 * The replay guard covers the Conditioning tab: its recorded plot has a replay scenario, as each shipped tab's actions do
 
 * The root `tests/conftest.py` stops every replay a test leaves running and fails that test, since a running replay hides the error dialogs of every later test

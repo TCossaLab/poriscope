@@ -293,4 +293,4 @@ class TestReportEnsembleFit:
         """
         text = self.reported(view, prolate_reachable=0.9913, oblate_reachable=0.0)
 
-        assert "Reachable fraction: prolate 0.991, oblate 0" in text
+        assert "Reachable fraction: prolate 0.991, oblate 0<br>" in text
