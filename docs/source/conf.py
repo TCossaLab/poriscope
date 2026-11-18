@@ -129,9 +129,14 @@ _NAME_ALIASES: Dict[str, str] = {
     "WalkthroughStep": "poriscope.views.widgets.walkthrough_mixin.WalkthroughStep",
 }
 
+# A reference that resolves to nothing is a warning, and the docs are built with -W, so
+# a dead link fails the build. How to write a reference that resolves is on the
+# contributor QA page ("Docs Render Check").
+nitpicky = True
+
 # Names no inventory can link: our own type alias and TypeVar, a numpy-internal TypeVar
 # autodoc reaches through numpy's annotations, and the PySide6 package, which Qt for
-# Python's inventory does not list as a module. They only matter once nitpicky is on.
+# Python's inventory does not list as a module.
 nitpick_ignore = [
     ("py:class", "Numeric"),
     ("py:class", "F"),
