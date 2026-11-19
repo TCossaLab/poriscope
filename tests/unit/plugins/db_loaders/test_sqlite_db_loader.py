@@ -646,11 +646,58 @@ class TestSQLiteDBLoader:
         assert df.empty
         assert "name" in df.columns
 
-    def test_load_metadata_db_error(self, loader: SQLiteDBLoader) -> None:
-        """None is reserved for a query that could not be run at all."""
+    def test_load_metadata_db_error(
+        self, loader: SQLiteDBLoader, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A query that could not be run raises the database's own error, for the caller to report."""
         loader.db_path = Path("/nonexistent/path.db")
-        df = loader._load_metadata("SELECT * FROM experiments")
-        assert df is None
+        with caplog.at_level("DEBUG"):
+            with pytest.raises(sqlite3.OperationalError, match="unable to open"):
+                loader._load_metadata("SELECT * FROM experiments")
+        # The caller reports it once; an ERROR here would open a second dialog.
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+    def test_a_query_that_fails_while_running_raises_the_database_error(
+        self, loader: SQLiteDBLoader, mock_db: Path
+    ) -> None:
+        """It passes the query plan check, so only the run can say it failed."""
+        loader.db_path = mock_db
+        query = "SELECT * FROM experiments WHERE abs(-9223372036854775808) > 0"
+        with pytest.raises(sqlite3.OperationalError, match="integer overflow"):
+            loader.query_database_directly(query)
+
+    def test_a_rejected_query_raises_with_the_database_reason(
+        self, loader: SQLiteDBLoader, mock_db: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The reason alone, as a status panel shows it; the query goes to the debug log."""
+        loader.db_path = mock_db
+        with caplog.at_level("DEBUG"):
+            with pytest.raises(ValueError) as raised:
+                loader.query_database_directly("SELECT nope FROM experiments")
+        assert str(raised.value) == "no such column: nope"
+        assert not [r for r in caplog.records if r.levelname in ("WARNING", "ERROR")]
+        assert any(
+            "SELECT nope FROM experiments" in r.getMessage() for r in caplog.records
+        )
+
+    def test_a_rejected_query_is_raised_by_both_generators_on_their_first_step(
+        self, loader: SQLiteDBLoader, mock_db: Path
+    ) -> None:
+        """An empty generator would read as a subset with no events."""
+        loader.db_path = mock_db
+        rows = loader.query_database_directly_and_get_generator(
+            "SELECT nope FROM events"
+        )
+        with pytest.raises(ValueError, match="no such column: nope"):
+            next(rows)
+        with patch.object(
+            loader,
+            "construct_event_data_query",
+            return_value=("", "Invalid query\n\nx\n\nno such column: nope"),
+        ):
+            events = loader.load_event_data("nope > 0")
+            with pytest.raises(ValueError, match="no such column: nope"):
+                next(events)
 
     def test_load_metadata_generator_success(
         self, loader: SQLiteDBLoader, mock_db: Path

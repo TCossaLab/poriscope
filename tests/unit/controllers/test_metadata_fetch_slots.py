@@ -383,9 +383,11 @@ class TestLoadRawMetadataSubset:
         self, controller: MetadataController
     ) -> None:
         """
-        ``query_database_directly`` answers None for a query it could not run.
+        ``query_database_directly`` raises, with the reason, for a query it could not run.
         """
-        controller.model = RecordingModel(self.answers(query_database_directly=None))
+        controller.model = RecordingModel(
+            self.answers(query_database_directly=ValueError("incomplete input"))
+        )
 
         subset = controller.load_metadata_subset(
             "ldr", ["duration"], "SELECT", SCOPE, "q_raw"
@@ -416,13 +418,7 @@ class TestLoadRawMetadataSubset:
         What a SQL viewer would have said, not a pointer to the log.
         """
         controller.model = RecordingModel(
-            self.answers(
-                query_database_directly=None,
-                validate_filter_query=(
-                    False,
-                    "Invalid query\n\nSELECT nope FROM events\n\nno such column: nope",
-                ),
-            )
+            self.answers(query_database_directly=ValueError("no such column: nope"))
         )
 
         subset = controller.load_metadata_subset(

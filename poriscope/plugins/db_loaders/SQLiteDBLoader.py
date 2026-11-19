@@ -864,15 +864,16 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
+    def _load_metadata(self, query: str) -> pd.DataFrame:
         """
         Load and return the data specified by a valid SQL query formatted as a pandas dataframe
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
 
-        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows, or None if the query could not be run
-        :rtype: Optional[pd.DataFrame]
+        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows
+        :rtype: pd.DataFrame
+        :raises sqlite3.Error: if the query could not be run; logged at DEBUG only, since the caller reports it
         """
         conn = None
         cursor = None
@@ -884,9 +885,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             cursor = conn.cursor()
             cursor.execute(query)
             result = cursor.fetchall()
-            # A query that matched nothing returns an empty frame, not None, so
-            # that callers can tell "no rows" from "the query failed" - None is
-            # reserved for the latter.
+            # A query that matched nothing returns an empty frame; one that failed
+            # raises, so callers can tell "no rows" from "the query failed".
             column_names = (
                 [description[0] for description in cursor.description]
                 if cursor.description
@@ -894,8 +894,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             )
             return pd.DataFrame(result, columns=column_names)
         except sqlite3.Error as e:
-            self.logger.error(f"Database error executing query {query}: {e}")
-            return None
+            self.logger.debug(f"Database error executing query {query}: {e}")
+            raise
         finally:
             if cursor:
                 cursor.close()

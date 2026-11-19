@@ -146,12 +146,9 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
         valid, debug = self.validate_filter_query(query)
         if valid:
+            # A query that could not run raises, for the caller to report; an empty
+            # frame means nothing matched, so there is nothing to plot.
             result = self.query_database_directly(query)
-            # None means the query could not be run, which query_database_directly
-            # has already logged at its own level; an empty frame means nothing
-            # matched. Either way there is nothing to plot.
-            if result is None:
-                return None, None, None, None, None, None
             if len(result) == 0:
                 self.logger.info(
                     "Empty dataframe, no features to plot for event",

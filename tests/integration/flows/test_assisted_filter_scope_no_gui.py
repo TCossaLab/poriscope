@@ -74,8 +74,7 @@ def count_events(loader: SQLiteDBLoader, condition: str, scope: Any) -> int:
     :return: how many events came back
     :rtype: int
     """
-    generator = loader.load_event_data(condition, scope)
-    return 0 if generator is None else sum(1 for _ in generator)
+    return sum(1 for _ in loader.load_event_data(condition, scope))
 
 
 @pytest.mark.timeout(120)
@@ -147,8 +146,10 @@ def test_a_condition_whose_brackets_do_not_balance_is_refused(
 
     assert query == ""
     assert "brackets" in debug
-    assert loader.load_metadata(["duration"], condition, {"exp_a": [0]}) is None
-    assert count_events(loader, condition, {"exp_a": [0]}) == 0
+    with pytest.raises(ValueError, match="brackets do not balance"):
+        loader.load_metadata(["duration"], condition, {"exp_a": [0]})
+    with pytest.raises(ValueError, match="brackets do not balance"):
+        count_events(loader, condition, {"exp_a": [0]})
 
 
 @pytest.mark.timeout(120)
@@ -199,8 +200,10 @@ def test_a_condition_that_starts_with_select_is_refused(
 
     assert query == ""
     assert "cannot start with SELECT" in debug
-    assert loader.load_metadata(["duration"], condition, {"exp_a": [0]}) is None
-    assert count_events(loader, condition, {"exp_a": [0]}) == 0
+    with pytest.raises(ValueError, match="cannot start with SELECT"):
+        loader.load_metadata(["duration"], condition, {"exp_a": [0]})
+    with pytest.raises(ValueError, match="cannot start with SELECT"):
+        count_events(loader, condition, {"exp_a": [0]})
 
 
 @pytest.mark.timeout(120)

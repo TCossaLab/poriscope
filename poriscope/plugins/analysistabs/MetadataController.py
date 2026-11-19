@@ -516,7 +516,7 @@ class MetadataController(MetaSubsetTabController):
         if subset is None:
             return None
         label += subset.scope_note
-        if subset.rows is None or subset.rows.empty:
+        if subset.rows.empty:
             self._say(f"No data matching the subset {label}, skipping")
             return False
         self._say(f"{len(subset.rows)} rows in subset {label}")

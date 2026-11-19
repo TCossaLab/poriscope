@@ -4,12 +4,11 @@ Tests for ``SQLitePeakDBLoader.get_plot_features``'s nothing-to-plot branches.
 The loader is built with ``object.__new__`` and its database collaborators are
 replaced by stand-ins returning what the real ones return in each case: the column
 lookups a list of names, ``validate_filter_query`` a ``(valid, debug)`` pair, and
-``query_database_directly`` a DataFrame, empty when nothing matched, or ``None``
-when the query could not be run - a failure it has already logged itself.
+``query_database_directly`` a DataFrame, empty when nothing matched; it raises
+when the query could not be run.
 """
 
 import logging
-from typing import Optional
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -20,7 +19,7 @@ from poriscope.plugins.db_loaders.SQLitePeakDBLoader import SQLitePeakDBLoader
 NOTHING = (None, None, None, None, None, None)
 
 
-def _loader(result: Optional[pd.DataFrame]) -> SQLitePeakDBLoader:
+def _loader(result: pd.DataFrame) -> SQLitePeakDBLoader:
     loader = object.__new__(SQLitePeakDBLoader)
     loader.logger = MagicMock(spec=logging.Logger)
     loader.get_column_names_by_table = MagicMock(return_value=[])
@@ -43,16 +42,17 @@ def test_an_empty_result_is_reported_as_nothing_to_plot() -> None:
     assert _logged_empty_dataframe(loader)
 
 
-def test_a_failed_query_is_not_reported_as_an_empty_result() -> None:
+def test_a_failed_query_is_raised_not_reported_as_an_empty_result() -> None:
     """
-    A query that could not run returns nothing to plot without claiming it was empty.
+    A query that could not run raises, for the Metadata tab to report per event.
 
-    ``query_database_directly`` has already logged the failure at its own level, so
-    reporting "Empty dataframe" here as well told the log something untrue.
+    Answering "nothing to plot" would read as an event with no features.
     """
-    loader = _loader(None)
+    loader = _loader(pd.DataFrame())
+    loader.query_database_directly.side_effect = ValueError("no such column: nope")
 
-    assert loader.get_plot_features(1, 0, 0) == NOTHING
+    with pytest.raises(ValueError, match="no such column: nope"):
+        loader.get_plot_features(1, 0, 0)
     assert not _logged_empty_dataframe(loader)
 
 

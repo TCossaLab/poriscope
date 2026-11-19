@@ -18,6 +18,47 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-19 - Database loaders raise on a failed query
+
+**Context.** `MetaDatabaseLoader.load_metadata`, `load_metadata_raw`, `query_database_directly`
+and the abstract `_load_metadata` answered `None` for a failure (2026-09-04, kept for the signal
+bus, which 2.0.0 removed). Every tab call site already caught `Exception`, but three folded `None`
+into their "nothing matched" message, so a locked file or a typo read as an empty subset; three
+others said "see the log". `None` came from two places: a query the validator or the condition
+check refused, logged at WARNING, and a run that failed, logged at ERROR, which opened a dialog.
+
+**Decision** (Kyle, 2026-11-18, rulings G1-G5). The four return a frame or raise; an empty frame
+means no rows. A refused condition or a query the database rejects raises `ValueError` whose
+message is the reason alone (`no such column: nope`), the query going to the debug log
+(`MetaDatabaseLoader._rejection_reason`); a run that fails raises the database's own error, re-raised.
+The loader logs neither above DEBUG: each caller already reports once, and an ERROR would open a
+second dialog. A Metadata overlay stops at a dataset that cannot be loaded, as it does for every
+other failure to load one. `load_event_data` and `query_database_directly_and_get_generator` raise
+on their first step instead of yielding nothing. `SQLitePeakDBLoader.get_plot_features` lets the
+failure through, to the Metadata tab's per-event handler. `report_status` raises for a database it
+cannot read; both app callers catch it, a script does not. No guard is added for a third-party
+`_load_metadata` that still returns `None`: it fails with an `AttributeError` where it lands.
+
+The export keeps one ERROR: `export_subset_to_csv` reads each table through `_read_for_export`,
+which logs the failing table at ERROR before the error propagates, because the export runs on a
+worker that reports a stopped run at WARNING (2026-09-04, "Worker generator failures report at
+WARNING"). `count_subset_events` runs on the GUI thread, where its caller reports, so it logs
+nothing. `_raw_failure_reason`, which re-ran the validator to recover a reason after a `None`, is
+deleted: the exception carries it.
+
+**Evidence.** Tests written first and seen red at each tab site against a real loader: an
+integer-overflow condition passes `EXPLAIN QUERY PLAN` and fails only while running, so it reaches
+the load after the query is built; Clustering said "No data matches the given query", the overlay
+skipped the dataset and drew the next, the raw filter and the event-id cache said "see the log",
+and a file that is not a database read as "No data available" and as "has no experiment named".
+`tests/integration/flows/test_failed_query_is_not_empty_no_gui.py`.
+
+**Revisit if** a tab needs to tell a refused query from a failed run by type rather than by
+message; that would be a named exception on the base. The eleven other loader getters that answer
+`None` for both "failed" and "nothing there" are queued for 4.0.
+
+---
+
 ## 2026-11-19 - One Chimera VC400 reader, and a session's old class names are mapped where it is read
 
 **Context.** Two readers opened Chimera VC400 `.log` files and differed in one method: where the
@@ -3587,6 +3628,9 @@ per-type handling in the worker loop.
 
 ## 2026-09-04 - A failed database query keeps returning None rather than raising
 
+*Superseded 2026-11-19 ("Database loaders raise on a failed query"): the revisit condition was met
+and the four methods now raise. Kept for the reasoning that split no-rows from failure.*
+
 **Context.** `_load_metadata`, `load_metadata` and `query_database_directly` all used `None`
 for both "the query matched no rows" and "the query could not be run", which made a
 legitimately-empty table indistinguishable from a failure (subset export rejected an event
@@ -3640,10 +3684,11 @@ each return the same 35 events in both. Aggregation inside a subquery
 (`GROUP BY event_db_id HAVING COUNT(*) > 3`) also works in assisted mode now, which the user
 guide had said was impossible.
 
-**A failed query is still not an empty subset.** `load_metadata` returning `None` means the
-query could not be built or run, which both caches log at ERROR so `QtHandler` raises its
-dialog; an empty frame keeps the quiet status-panel line. Same split as the subset-export fix
-above.
+**A failed query is still not an empty subset.** `load_metadata` raising means the query could
+not be built or run, which `MetaSubsetTabController.load_event_id_cache` reports on the status
+panel and logs at WARNING, below the dialog, leaving the View's answer at `None`; an empty frame
+keeps the quiet "No filtered events found" line. (Until 2026-11-19 the loader answered `None` and
+the caches logged at ERROR; the panel line replaced the dialog before that.)
 
 **Revisit if** a filter legitimately needs the outer row inside a subquery without naming it.
 Today the user writes `e.id`, which is what SQL requires of them anyway.

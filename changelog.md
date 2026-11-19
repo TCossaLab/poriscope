@@ -59,6 +59,8 @@
 
 * **`ChimeraReader20240501` is renamed `ChimeraReaderVC400` and `ChimeraReader20240101` is removed**; the one reader opens both Chimera VC400 `.log` layouts and reads the same values from each, a saved session naming either old class restores it as a `ChimeraReaderVC400`, and a script importing either name must import the new one
 
+* **`MetaDatabaseLoader.load_metadata`, `load_metadata_raw`, `query_database_directly` and `_load_metadata` raise on a failed query instead of returning `None`**: a refused condition or a query the database rejects raises `ValueError` with the reason, one that fails while it runs raises the database's own error, and an empty frame still means no rows; `load_event_data` and `query_database_directly_and_get_generator` raise on their first step instead of yielding nothing, `report_status` raises for a database it cannot read, and a loader's own `_load_metadata` must raise rather than return `None`
+
 #### Saved files:
 
 * **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 3.0 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
@@ -413,6 +415,8 @@
 * **Commit Events in the Event Analysis tab no longer refuses to run when the selected event loader is not the one the writer's results were fitted on**; the writer writes its own fitter's results whichever loader is shown, so one fitter's results can be written while another loader's events are on screen, and fitting and plotting still check the selection
 
 #### Metadata and Protein:
+
+* **A database query that fails is reported with the database's reason**, such as `no such column: nope` or `integer overflow`, in the Metadata, Protein and Clustering tabs, instead of "No data matches", "No data available" or "see the log"; a Metadata overlay stops at a dataset that cannot be loaded instead of skipping it, as it already did for every other failure to load one
 
 * **Fixed Plot Events recording a raw filter's text from before `event_id` was added to it**, in the Metadata and Protein tabs, so the restored panel did not select that filter
 

@@ -250,10 +250,9 @@ class ClusteringController(MetaController):
             )
             return False
 
-        # .empty as well as None: the loader returns an empty frame for a query that
-        # matched nothing, and clustering an empty frame raises an opaque error from
-        # deep inside sklearn.
-        if plot_data is None or plot_data.empty:
+        # The loader returns an empty frame for a query that matched nothing, and
+        # clustering an empty frame raises an opaque error from deep inside sklearn.
+        if plot_data.empty:
             self.add_text_to_display.emit(
                 "No data matches the given query", self.__class__.__name__
             )

@@ -235,7 +235,7 @@ class MetaSubsetTabModel(MetaModel):
         event_ids: Sequence[int],
         exp_id: Optional[int],
         channel: Optional[int],
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame:
         """
         Look up the database ids of these ``event_id`` values, within scope.
 
@@ -260,8 +260,8 @@ class MetaSubsetTabModel(MetaModel):
         :type exp_id: Optional[int]
         :param channel: the channel to scope to, or None for all channels
         :type channel: Optional[int]
-        :return: the matching rows, or None if the loader had nothing to say
-        :rtype: Optional[pd.DataFrame]
+        :return: the matching rows, empty if none matched; a failed query raises
+        :rtype: pd.DataFrame
         """
         id_list = ",".join(str(eid) for eid in event_ids)
         where_parts = [f"event_id IN ({id_list})"]
@@ -272,7 +272,7 @@ class MetaSubsetTabModel(MetaModel):
             where_parts.append(f"channel_id = {channel}")
 
         query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
-        result: Optional[pd.DataFrame] = self.call(
+        result: pd.DataFrame = self.call(
             "MetaDatabaseLoader", loader, "query_database_directly", query
         )
         return result

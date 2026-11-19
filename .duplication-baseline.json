@@ -2,7 +2,7 @@
   "*Controller.py": {
     "duplicated_functions": [],
     "files": 9,
-    "functions": 207,
+    "functions": 206,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -47,7 +47,7 @@
       "SQLiteEventLoader.py:SQLiteEventLoader._init"
     ],
     "files": 9,
-    "functions": 158,
+    "functions": 160,
     "identical_bodies": 4,
     "removable_lines": 87
   },

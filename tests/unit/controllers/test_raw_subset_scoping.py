@@ -734,9 +734,9 @@ class TestRawFilterLoadsItsOwnEvents:
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        ``query_database_directly`` answers None for a query it could not run.
+        ``query_database_directly`` raises, with the reason, for a query it could not run.
         """
-        controller = _event_controller(cls, mocker, None)
+        controller = _event_controller(cls, mocker, ValueError("incomplete input"))
 
         assert (
             controller._fetch_event_subset("ldr", "SELECT", SCOPE, "mine_raw") is None
@@ -1252,7 +1252,12 @@ def test_a_filter_is_put_back_if_the_query_with_event_id_cannot_be_used(
     ``event_id`` added fails to run, the view is told to restore the old text.
     """
     plain = f"SELECT duration FROM events WHERE {SCOPE_TEXT}"
-    controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}), None)
+    controller = _event_controller(
+        cls,
+        mocker,
+        pd.DataFrame({"duration": [1.0]}),
+        ValueError("no such column: event_id"),
+    )
     controller.view.offer_event_id.return_value = True
 
     assert controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw") is None

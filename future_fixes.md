@@ -52,20 +52,14 @@ Everything planned has landed. `develop` burns in with lab users for a few weeks
 
 ### Before the cut (ruled 2026-11-18)
 
-**Plans, awaiting approval:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>. Nothing is built
-until its plan is approved; each lands on its own branch, tests first.
+**Plans:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>, approved 2026-11-18 and all landed
+on `develop` by 2026-11-19. What remains:
 
 - **Run the real 2024-01 Chimera set through `ChimeraReaderVC400`.** The reader that opened it,
   `ChimeraReader20240101`, is merged into `ChimeraReaderVC400`; synthetic files in both layouts read
   sample for sample alike, and the real set (`vc400/v2024_01`, first machine only) has not been run:
   `PORISCOPE_REAL_DATA_DIR=<dir> pytest tests/unit/plugins/conformance/test_real_recordings.py`
   must reproduce the goldens recorded through the removed reader. **S, owner: Kyle**
-- **Database loaders raise on a failed query** (`MetaDatabaseLoader.load_metadata_raw:1408`,
-  `load_metadata:1425`, `query_database_directly:1526`, abstract `_load_metadata:1590`). All six tab
-  call sites already catch and report; three (`ClusteringController.py:256`,
-  `MetadataController.py:519`, `MetaSubsetTabController.fetch_event_plot_data:659`) show "nothing
-  matched" for a failure today. 15 in-loader call lines in 9 functions test for `None`, and 21 tests
-  pin it. `DECISIONS.md` 2026-09-04 kept `None` only for the signal bus, which is gone. **M**
 
 ### Release prep, after the burn-in
 

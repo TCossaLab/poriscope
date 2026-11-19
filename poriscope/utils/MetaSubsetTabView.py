@@ -175,8 +175,8 @@ class MetaSubsetTabView(MetaView):
 
     #: Where the Controller leaves the ``event_id`` rows :py:meth:`_rebuild_event_id_cache`
     #: asked for, to be read back on the next statement over the direct connection.
-    #: ``None`` means the query could not be run, which is ``load_metadata``'s own
-    #: contract; an empty frame means it ran and matched nothing.
+    #: ``None`` means no answer was handed over - the query could not be run, and the
+    #: Controller has said why; an empty frame means it ran and matched nothing.
     event_id_rows: Optional[pd.DataFrame]
 
     #: Assigned in each subclass's ``_init``, identically in both tabs today. The
@@ -233,10 +233,10 @@ class MetaSubsetTabView(MetaView):
         Receive the ``event_id`` rows the filtered-event cache asked for.
 
         Called by ``MetaSubsetTabController.load_event_id_cache`` only once the query
-        has run, so ``None`` means "that did not happen" rather than "the previous
-        answer still stands".
+        has run, so an ``event_id_rows`` still ``None`` means "that did not happen"
+        rather than "the previous answer still stands".
 
-        :param rows: the rows the loader returned, or None if the query failed
+        :param rows: the rows the loader returned
         :type rows: Optional[pd.DataFrame]
         :return: None
         :rtype: None

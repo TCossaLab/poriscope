@@ -580,7 +580,7 @@ class TestLogExpPdf:
 # goldens fixed that for the builder and these extend it to these two methods.
 #
 # The stubbed ``call`` answers from MetaDatabaseLoader's declared return types -
-# ``Optional[pd.DataFrame]`` for query_database_directly, a generator for
+# ``pd.DataFrame`` for query_database_directly, a generator for
 # load_event_data - rather than from whatever the method happens to do with them.
 
 
@@ -663,11 +663,14 @@ class TestResolveEventIds:
 
         assert model.resolve_event_ids("L", [1, 2], None, None) is frame
 
-    def test_a_failed_query_comes_back_as_none(self, model, mocker):
-        """``query_database_directly`` returns None when the query could not run."""
-        mocker.patch.object(model, "call", return_value=None)
+    def test_a_failed_query_raises_to_the_caller(self, model, mocker):
+        """``query_database_directly`` raises when the query could not run."""
+        mocker.patch.object(
+            model, "call", side_effect=ValueError("no such table: events")
+        )
 
-        assert model.resolve_event_ids("L", [1], None, None) is None
+        with pytest.raises(ValueError, match="no such table: events"):
+            model.resolve_event_ids("L", [1], None, None)
 
 
 class TestLoadEventsById:

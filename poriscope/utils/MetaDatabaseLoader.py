@@ -392,7 +392,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                     f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
                 )
                 result = self.query_database_directly(query)
-                if result is not None and not result.empty:
+                if not result.empty:
                     return result.at[0, "id"]
                 else:
                     return None
@@ -419,7 +419,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 return None
             query = f"SELECT id FROM channels WHERE experiment_id = {exp_id} AND channel_id = {channel_id} LIMIT 1"
             result = self.query_database_directly(query)
-            if result is not None and not result.empty:
+            if not result.empty:
                 return int(result.at[0, "id"])
             return None
         except Exception as e:
@@ -553,16 +553,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: the number of events the subset holds; 0 if it holds none
         :rtype: int
-        :raises ValueError: if the events table cannot be read
         """
         events_query = self._build_subset_events_query(
             conditions, experiments_and_channels
         )
-        events = self._load_metadata(events_query)
-        if events is None:
-            self.logger.error(f"Events query failed: {events_query}")
-            raise ValueError("Failed to load events table.")
-        return len(events)
+        return len(self._load_metadata(events_query))
 
     @serialize_channels
     @log(logger=logger)
@@ -590,21 +585,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :raises ValueError: if no matching data is found. An unknown experiment name, or a filter that builds invalid SQL, raises ``KeyError``/``ValueError`` out of ``_build_subset_events_query``
+        :raises ValueError: if no matching data is found. An unknown experiment name, or a filter that builds invalid SQL, raises ``KeyError``/``ValueError`` out of ``_build_subset_events_query``; a table that cannot be read raises the database's own error
         :yield: a float between 0 and 1 representing progress toward completion
         :ytype: float
         """
         events_query = self._build_subset_events_query(
             conditions, experiments_and_channels
         )
-        events = self._load_metadata(events_query)
-        if events is None:
-            # Logged at ERROR here, not left to the worker: EventWorker reports a
-            # stopped run at WARNING on the status panel, so a genuine failure has to
-            # raise QtHandler's dialog from the place that knows it is one. See
-            # DECISIONS.md, 2026-09-04. The same applies to every guard below.
-            self.logger.error(f"Events query failed: {events_query}")
-            raise ValueError("Failed to load events table.")
+        events = self._read_for_export(events_query, "events")
         if len(events) == 0:
             raise ValueError("No events found matching subset criteria")
 
@@ -615,12 +603,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 f"Malformed sublevels query:\n\n{self._format_debug_msg(debug)}"
             )
-        sublevels = self._load_metadata(sublevels_query)
-        if sublevels is None:
-            self.logger.error(
-                f"Query failed, could not load sublevels data: {sublevels_query}"
-            )
-            raise ValueError("Failed to load sublevels data.")
+        sublevels = self._read_for_export(sublevels_query, "sublevels")
 
         unique_exp_ids = [int(exp_id) for exp_id in np.unique(events["experiment_id"])]
         experiment_query = f"SELECT exp.* FROM experiments exp WHERE exp.id IN {self._id_tuple(unique_exp_ids)}"
@@ -629,12 +612,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 f"Malformed experiments query:\n\n{self._format_debug_msg(debug)}"
             )
-        experiments = self.query_database_directly(experiment_query)
-        if experiments is None:
-            self.logger.error(
-                f"Query failed, could not load experiments table: {experiment_query}"
-            )
-            raise ValueError("Failed to load experiments table.")
+        experiments = self._read_for_export(experiment_query, "experiments")
 
         channel_ids = [int(cid) for cid in events["channel_db_id"].values.astype(int)]
         channel_query = (
@@ -645,12 +623,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 f"Malformed channels query:\n\n{self._format_debug_msg(debug)}"
             )
-        channels = self.query_database_directly(channel_query)
-        if channels is None:
-            self.logger.error(
-                f"Query failed, could not load channels table: {channel_query}"
-            )
-            raise ValueError("Failed to load channels table.")
+        channels = self._read_for_export(channel_query, "channels")
 
         columns_query = "SELECT cols.* FROM columns cols"
         valid, debug = self.validate_filter_query(columns_query)
@@ -658,12 +631,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 f"Malformed columns query:\n\n{self._format_debug_msg(debug)}"
             )
-        columns = self.query_database_directly(columns_query)
-        if columns is None:
-            self.logger.error(
-                f"Query failed, could not load columns table: {columns_query}"
-            )
-            raise ValueError("Failed to load columns table.")
+        columns = self._read_for_export(columns_query, "columns")
 
         data_query = f"SELECT d.experiment_id, d.channel_id, d.channel_db_id, d.event_id, d.event_db_id FROM data d WHERE d.event_db_id IN {self._id_tuple(event_ids)}"
         valid, debug = self.validate_filter_query(data_query)
@@ -671,10 +639,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 f"Malformed data query:\n\n{self._format_debug_msg(debug)}"
             )
-        data = self.query_database_directly(data_query)
-        if data is None:
-            self.logger.error(f"Query failed, could not load data table: {data_query}")
-            raise ValueError("Failed to load data table.")
+        data = self._read_for_export(data_query, "data")
         if data.empty:
             self.logger.error(
                 f"Inconsistent database: {len(event_ids)} events selected but the data "
@@ -749,7 +714,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :return: a formatted string listing the number of experiments and the
             event count per channel for each experiment, or ``"No experiments found."``
-            if the database is empty.
+            if the database is empty. A database that cannot be read raises.
         :rtype: str
         """
         self._ensure_event_counts()
@@ -761,7 +726,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             ORDER BY exp.name, cs.channel_id
         """
         )
-        if result is None or result.empty:
+        if result.empty:
             return "No experiments found."
 
         counts: Dict[str, Dict[int, int]] = defaultdict(dict)
@@ -1409,14 +1374,16 @@ class MetaDatabaseLoader(BaseDataPlugin):
     def load_metadata_raw(
         self,
         conditions: Optional[str] = None,
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame:
         """
         Execute a raw SQL query directly, bypassing all query construction.
 
+        Raises as :py:meth:`query_database_directly` does.
+
         :param conditions: A complete SQL query string.
         :type conditions: Optional[str]
-        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query failed or did not validate
-        :rtype: Optional[pd.DataFrame]
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows
+        :rtype: pd.DataFrame
         """
         if not conditions:
             return self.query_database_directly("SELECT * FROM events")
@@ -1428,11 +1395,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
         columns: List[str],
         conditions: Optional[str] = None,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame:
         """
         Fetch specified columns from the metadata database given a query
 
         Will always include experiment_id, channel_id, and event_id in the dataframe in addition to requested columns.
+
+        A condition this loader refuses, or a query the database rejects, raises
+        ``ValueError`` with the reason; a query that fails while it runs raises the
+        database's own error. The caller reports either.
 
         :param columns: List of column names to retrieve.
         :type columns: List[str]
@@ -1440,22 +1411,17 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query could not be built or run
-        :rtype: Optional[pd.DataFrame]
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows
+        :rtype: pd.DataFrame
+        :raises ValueError: if the query could not be built, with the reason
         """
         query, debug, table = self.construct_metadata_query(
             columns, conditions, experiments_and_channels
         )
-        if query:
-            df = self._load_metadata(query)
-            if df is not None:
-                df = df.loc[:, ~df.columns.duplicated()]
-            return df
-        else:
-            self.logger.warning(
-                f"Unable to output subset due to malformed query string\n\n{self._format_debug_msg(debug)}"
-            )
-            return None
+        if not query:
+            raise ValueError(self._rejection_reason(debug))
+        df = self._load_metadata(query)
+        return df.loc[:, ~df.columns.duplicated()]
 
     @log(logger=logger)
     def load_event_data(
@@ -1470,6 +1436,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
         and the one to key anything written back to the ``events`` table on. The ``data`` table
         numbers its own rows separately, and its ``id`` is not exposed.
 
+        A query that could not be built raises ``ValueError`` with the reason on the
+        generator's first step, rather than ending it as if no event matched.
+
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
@@ -1477,71 +1446,70 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :return: a generator of dicts keyed id (the event's ``events.id``), event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, raw_data, filtered_data and fit_data, the paddings in microseconds and the last three numpy arrays
         :rtype: Generator[Dict[str, Any], bool, None]
+        :raises ValueError: if the query could not be built, with the reason
         """
         query, debug = self.construct_event_data_query(
             conditions, experiments_and_channels
         )
-        if query:
-            event_generator = self._load_event_data(query)
-            abort = False
-            try:
-                for event in event_generator:
-                    (
-                        db_id,
-                        experiment_id,
-                        channel_id,
-                        event_id,
-                        samplerate,
-                        padding_before,
-                        padding_after,
-                        raw_data,
-                        filtered_data,
-                        fit_data,
-                    ) = event
-                    abort = yield {
-                        "id": db_id,
-                        "event_id": event_id,
-                        "channel_id": channel_id,
-                        "experiment_id": experiment_id,
-                        "samplerate": samplerate,
-                        "padding_before": padding_before,
-                        "padding_after": padding_after,
-                        "raw_data": raw_data,
-                        "filtered_data": filtered_data,
-                        "fit_data": fit_data,
-                    }
-                    abort = bool(abort)
-                    if abort is True:
-                        break
-            finally:
-                event_generator.close()
-            if abort is True:
-                self.logger.info("Generator aborted")
-                return
-        else:
-            self.logger.warning(
-                f"Unable to output subset due to malformed query string\n\n{self._format_debug_msg(debug)}"
-            )
+        if not query:
+            raise ValueError(self._rejection_reason(debug))
+        event_generator = self._load_event_data(query)
+        abort = False
+        try:
+            for event in event_generator:
+                (
+                    db_id,
+                    experiment_id,
+                    channel_id,
+                    event_id,
+                    samplerate,
+                    padding_before,
+                    padding_after,
+                    raw_data,
+                    filtered_data,
+                    fit_data,
+                ) = event
+                abort = yield {
+                    "id": db_id,
+                    "event_id": event_id,
+                    "channel_id": channel_id,
+                    "experiment_id": experiment_id,
+                    "samplerate": samplerate,
+                    "padding_before": padding_before,
+                    "padding_after": padding_after,
+                    "raw_data": raw_data,
+                    "filtered_data": filtered_data,
+                    "fit_data": fit_data,
+                }
+                abort = bool(abort)
+                if abort is True:
+                    break
+        finally:
+            event_generator.close()
+        if abort is True:
+            self.logger.info("Generator aborted")
+            return
 
     @log(logger=logger)
-    def query_database_directly(self, query: str) -> Optional[pd.DataFrame]:
+    def query_database_directly(self, query: str) -> pd.DataFrame:
         """
         Run a given query on the DB after basic validation.
+
+        A query the validator rejects raises ``ValueError`` with the database's reason,
+        for example ``no such column: nope``; one that fails while it runs raises the
+        database's own error. Neither is logged above DEBUG here: the caller reports it.
 
         :param query: query to  run on the database
         :type query: str
 
-        :return: The matching rows, empty if nothing matched, or ``None`` if the query failed validation or could not be run - a failure already logged here or by the loader.
-        :rtype: Optional[pd.DataFrame]
+        :return: The matching rows, empty if nothing matched
+        :rtype: pd.DataFrame
+        :raises ValueError: if the query does not validate, with the reason
         """
         valid, debug = self.validate_filter_query(query)
-        if valid and not debug:
-            return self._load_metadata(query)
-        else:
-            self.logger.warning(
-                f"Unable to output subset due to malformed query string\n\n{self._format_debug_msg(debug)}"
-            )
-            return None
+        if not valid or debug:
+            raise ValueError(self._rejection_reason(debug))
+        return self._load_metadata(query)
 
     @log(logger=logger)
     def query_database_directly_and_get_generator(
@@ -1550,32 +1518,33 @@ class MetaDatabaseLoader(BaseDataPlugin):
         """
         Run a given querry on the DB after basic validation and return a generator that feeds out one row at a time
 
+        A query the validator rejects raises ``ValueError`` with the reason on the
+        generator's first step, rather than ending it as if no row matched.
+
         :param query: query to  run on the database
         :type query: str
 
         :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
         :rtype: Generator[pd.DataFrame, bool, None]
+        :raises ValueError: if the query does not validate, with the reason
         """
         valid, debug = self.validate_filter_query(query)
-        if valid and not debug:
-            metadata_generator = self._load_metadata_generator(query)
-            abort = False
-            try:
-                for event in metadata_generator:
-                    event = event.loc[:, ~event.columns.duplicated()]
-                    abort = yield event
-                    abort = bool(abort)
-                    if abort is True:
-                        break
-            finally:
-                metadata_generator.close()
-            if abort is True:
-                self.logger.info("Generator aborted")
-                return
-        else:
-            self.logger.warning(
-                f"Unable to get subset generator due to malformed query string\n\n{self._format_debug_msg(debug)}"
-            )
+        if not valid or debug:
+            raise ValueError(self._rejection_reason(debug))
+        metadata_generator = self._load_metadata_generator(query)
+        abort = False
+        try:
+            for event in metadata_generator:
+                event = event.loc[:, ~event.columns.duplicated()]
+                abort = yield event
+                abort = bool(abort)
+                if abort is True:
+                    break
+        finally:
+            metadata_generator.close()
+        if abort is True:
+            self.logger.info("Generator aborted")
+            return
 
     # private API, MUST be implemented by subclasses
     @abstractmethod
@@ -1588,18 +1557,19 @@ class MetaDatabaseLoader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
+    def _load_metadata(self, query: str) -> pd.DataFrame:
         """
-        **Purpose:** Load and return the data specified by a valid SQL query, or None if the query could not be run
+        **Purpose:** Load and return the data specified by a valid SQL query
 
         The data should be formatted as a pandas Dataframe object. A query that
-        matched no rows must return an empty dataframe rather than None, so that
-        callers can tell an empty result from a failed query.
+        matched no rows returns an empty dataframe; a query that could not be run
+        raises, so that callers can tell an empty result from a failed query. Raise
+        the database's own error, and do not log it above DEBUG: the caller reports it.
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
-        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows, or None if the query could not be run
-        :rtype: Optional[pd.DataFrame]
+        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows
+        :rtype: pd.DataFrame
         """
         pass
 
@@ -1663,6 +1633,48 @@ class MetaDatabaseLoader(BaseDataPlugin):
         If additional initialization operations are required beyond the defaults provided in :ref:`BaseDataPlugin` or :ref:`MetaDatabaseLoader` that must occur after settings have been applied to the reader instance, you can override this function to add those operations.
         """
         pass
+
+    def _rejection_reason(self, debug: str) -> str:
+        """
+        Say why this loader refused a query or the database rejected it.
+
+        ``debug`` is a refusal of the user's condition, one paragraph, or the
+        validator's ``Invalid query``, the query and the database's reason as
+        paragraphs. The reason is the last paragraph, which a status panel can show;
+        the whole text, query included, goes to the debug log.
+
+        :param debug: the refusal or the validator's explanation
+        :type debug: str
+        :return: the reason, for the ``ValueError`` the caller raises
+        :rtype: str
+        """
+        text = self._format_debug_msg(debug or "").strip()
+        self.logger.debug(f"Query refused: {text}")
+        return text.split("\n\n")[-1].strip() or "the query could not be built"
+
+    def _read_for_export(self, query: str, table: str) -> pd.DataFrame:
+        """
+        Read one table's rows for :py:meth:`export_subset_to_csv`.
+
+        A failure is logged at ERROR before it propagates: the export runs on a
+        worker, which reports a stopped run at WARNING on the status panel, so the
+        dialog has to come from here (DECISIONS.md, 2026-09-04).
+
+        :param query: the validated query for the table's rows
+        :type query: str
+        :param table: the table's name, for the log
+        :type table: str
+        :return: the rows
+        :rtype: pd.DataFrame
+        :raises Exception: whatever the read raised, once it is logged
+        """
+        try:
+            return self._load_metadata(query)
+        except Exception:
+            self.logger.error(
+                f"Could not read the {table} table for the export: {query}"
+            )
+            raise
 
     @log(logger=logger)
     def _format_debug_msg(self, debug: str) -> str:

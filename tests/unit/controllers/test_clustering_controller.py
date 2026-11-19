@@ -269,13 +269,18 @@ class TestLoadMetadataForClustering:
 
         controller.view.on_metadata_loaded.assert_not_called()
 
-    def test_none_rows_stop_and_are_reported(self, controller) -> None:
-        """The other empty shape, which the old guard conflated with a failure."""
-        controller.model.call.side_effect = [("SELECT 1", "", "events"), None]
+    def test_a_failed_load_stops_and_says_why(self, controller) -> None:
+        """A failure, not the "nothing matched" an empty result gets."""
+        controller.model.call.side_effect = [
+            ("SELECT 1", "", "events"),
+            ValueError("integer overflow"),
+        ]
 
         controller.load_metadata_for_clustering(self._config(), "L")
 
         controller.view.on_metadata_loaded.assert_not_called()
+        said = [c.args[0] for c in controller.add_text_to_display.emit.call_args_list]
+        assert said == ["Unable to load metadata: integer overflow"]
 
     def test_a_failing_query_build_is_reported(self, controller) -> None:
         """A raise from the plugin, which the bus swallowed entirely."""
@@ -936,7 +941,7 @@ class TestTheRunIsTheRecordedClusterRun:
             [RuntimeError("query refused")],
             [("", "no such column", "events")],
             [("SELECT 1", "", "events"), RuntimeError("load refused")],
-            [("SELECT 1", "", "events"), None],
+            [("SELECT 1", "", "events"), MagicMock(empty=True)],
         ],
         ids=["query raises", "empty query", "load raises", "no rows"],
     )

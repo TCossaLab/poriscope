@@ -266,7 +266,8 @@ def test_a_write_behind_a_with_changes_nothing(tmp_path: Any, sql: str) -> None:
     assert query(path, "SELECT COUNT(*), SUM(duration) FROM events") == before
 
     # the second layer: past Poriscope's check, the loader's own read cannot write
-    assert open_loader(path).query_database_directly(sql) is None
+    with pytest.raises(sqlite3.OperationalError, match="readonly database"):
+        open_loader(path).query_database_directly(sql)
     assert query(path, "SELECT COUNT(*), SUM(duration) FROM events") == before
 
 

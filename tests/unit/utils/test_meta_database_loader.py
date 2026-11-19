@@ -123,9 +123,10 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
     def _init(self) -> None:
         pass
 
-    def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
+    def _load_metadata(self, query: str) -> pd.DataFrame:
         if "SELECT" not in query:
-            return None
+            # A query the database cannot run raises, as the real loader's does.
+            raise sqlite3.OperationalError(f"not a query: {query}")
 
         # Determine what kind of query and return appropriate mock data
         if "events" in query.lower():
@@ -201,9 +202,8 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
         self, query: str
     ) -> Generator[pd.DataFrame, None, None]:
         df = self._load_metadata(query)
-        if df is not None:
-            for _, row in df.iterrows():
-                yield pd.DataFrame([row])
+        for _, row in df.iterrows():
+            yield pd.DataFrame([row])
 
     def _load_event_data(self, query: str) -> Generator[Any, bool, None]:
         """Load event data and yield tuples.
@@ -380,13 +380,15 @@ class TestMetaDatabaseLoader:
         assert "dwell_time" in df.columns
 
     def test_load_metadata_invalid_query(self, loader: ConcreteDatabaseLoader) -> None:
-        """Test loading metadata with invalid query."""
-        # Make validate_filter_query fail
+        """A query the database rejects raises with its reason, not an answer of None."""
         with patch.object(
-            loader, "validate_filter_query", return_value=(False, "Invalid query")
+            loader,
+            "validate_filter_query",
+            return_value=(False, "Invalid query\n\nSELECT ...\n\nno such column: x"),
         ):
-            df = loader.load_metadata(["dwell_time"])
-            assert df is None
+            with pytest.raises(ValueError) as raised:
+                loader.load_metadata(["dwell_time"])
+        assert str(raised.value) == "no such column: x"
 
     def test_load_event_data(self, loader: ConcreteDatabaseLoader) -> None:
         """Test loading event data."""
@@ -414,9 +416,11 @@ class TestMetaDatabaseLoader:
     def test_query_database_directly_invalid(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
-        """Test querying database directly with invalid query."""
-        df = loader.query_database_directly("SELECT INVALID FROM events")
-        assert df is None
+        """A query the validator rejects raises with the validator's reason."""
+        with pytest.raises(
+            ValueError, match="Invalid query: SELECT INVALID FROM events"
+        ):
+            loader.query_database_directly("SELECT INVALID FROM events")
 
     def test_query_database_directly_and_get_generator(
         self, loader: ConcreteDatabaseLoader
@@ -430,12 +434,12 @@ class TestMetaDatabaseLoader:
     def test_query_database_directly_and_get_generator_invalid(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
-        """Test querying database generator with invalid query."""
+        """An invalid query raises on the first step, rather than yielding no rows."""
         gen = loader.query_database_directly_and_get_generator(
             "SELECT INVALID FROM events"
         )
-        rows = list(gen)
-        assert len(rows) == 0
+        with pytest.raises(ValueError, match="INVALID"):
+            next(gen)
 
     def test_query_database_directly_and_get_generator_abort(
         self, loader: ConcreteDatabaseLoader
@@ -569,16 +573,13 @@ class TestGetExperimentIdByNameBase:
     ) -> None:
         assert MetaDatabaseLoader.get_experiment_id_by_name(loader, "") is None
 
-    @pytest.mark.parametrize(
-        "query_result",
-        [None, pd.DataFrame()],
-        ids=["query_failed", "no_such_experiment"],
-    )
     def test_base_impl_not_found_returns_none(
-        self, loader: ConcreteDatabaseLoader, query_result: Optional[pd.DataFrame]
+        self, loader: ConcreteDatabaseLoader
     ) -> None:
-        """None for a failed query and an empty frame for no match both mean "no id"."""
-        with patch.object(loader, "query_database_directly", return_value=query_result):
+        """No matching row means no id; a failed query raises (the test below)."""
+        with patch.object(
+            loader, "query_database_directly", return_value=pd.DataFrame()
+        ):
             assert (
                 MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing") is None
             )
@@ -607,8 +608,12 @@ class TestGetChannelDbId:
         with patch.object(loader, "get_experiment_id_by_name", return_value=None):
             assert loader.get_channel_db_id("nope", 0) is None
 
-    def test_channel_query_returns_none(self, loader: ConcreteDatabaseLoader) -> None:
-        with patch.object(loader, "query_database_directly", return_value=None):
+    def test_a_failed_channel_query_is_none(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader, "query_database_directly", side_effect=ValueError("no such table")
+        ):
             assert loader.get_channel_db_id("exp1", 0) is None
 
     def test_channel_query_returns_empty(self, loader: ConcreteDatabaseLoader) -> None:
@@ -628,6 +633,36 @@ class TestGetChannelDbId:
 # export_subset_to_csv - error branches for each loaded table
 # ---------------------------------------------------------------------------
 class TestExportSubsetToCsvErrorBranches:
+    @pytest.mark.parametrize(
+        "table", ["events", "sublevels", "experiments", "channels", "columns", "data"]
+    )
+    def test_a_table_that_cannot_be_read_stops_the_export_at_error(
+        self,
+        loader: ConcreteDatabaseLoader,
+        table: str,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """
+        The database's own error stops the export, logged at ERROR naming the table.
+
+        The export runs on a worker, which reports a stopped run at WARNING, so the
+        loader is the place that can raise the dialog (DECISIONS.md, 2026-09-04).
+        """
+        original = loader._load_metadata
+
+        def fails_for_one_table(query: str) -> pd.DataFrame:
+            if f"FROM {table} " in query:
+                raise sqlite3.OperationalError("disk I/O error")
+            return original(query)
+
+        with patch.object(loader, "_load_metadata", side_effect=fails_for_one_table):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+                    list(loader.export_subset_to_csv(tmpdir))
+        errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+        assert len(errors) == 1, errors
+        assert f"{table} table" in errors[0]
+
     def test_malformed_events_query_raises(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -638,21 +673,6 @@ class TestExportSubsetToCsvErrorBranches:
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed events query"):
-                    list(loader.export_subset_to_csv(tmpdir))
-
-    def test_sublevels_load_returns_none_raises(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        original_load_metadata = loader._load_metadata
-
-        def fake_load_metadata(query):
-            if "sublevels" in query.lower():
-                return None
-            return original_load_metadata(query)
-
-        with patch.object(loader, "_load_metadata", side_effect=fake_load_metadata):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with pytest.raises(ValueError, match="Failed to load sublevels"):
                     list(loader.export_subset_to_csv(tmpdir))
 
     def test_malformed_sublevels_query_raises(
@@ -669,19 +689,6 @@ class TestExportSubsetToCsvErrorBranches:
                 with pytest.raises(ValueError, match="Malformed sublevels query"):
                     list(loader.export_subset_to_csv(tmpdir))
 
-    def test_experiments_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
-        original_query = loader.query_database_directly
-
-        def fake_query(query):
-            if "FROM experiments" in query:
-                return None
-            return original_query(query)
-
-        with patch.object(loader, "query_database_directly", side_effect=fake_query):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with pytest.raises(ValueError, match="Failed to load experiments"):
-                    list(loader.export_subset_to_csv(tmpdir))
-
     def test_malformed_experiments_query_raises(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -694,19 +701,6 @@ class TestExportSubsetToCsvErrorBranches:
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed experiments query"):
-                    list(loader.export_subset_to_csv(tmpdir))
-
-    def test_channels_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
-        original_query = loader.query_database_directly
-
-        def fake_query(query):
-            if "FROM channels" in query:
-                return None
-            return original_query(query)
-
-        with patch.object(loader, "query_database_directly", side_effect=fake_query):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with pytest.raises(ValueError, match="Failed to load channels"):
                     list(loader.export_subset_to_csv(tmpdir))
 
     def test_malformed_channels_query_raises(
@@ -723,19 +717,6 @@ class TestExportSubsetToCsvErrorBranches:
                 with pytest.raises(ValueError, match="Malformed channels query"):
                     list(loader.export_subset_to_csv(tmpdir))
 
-    def test_columns_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
-        original_query = loader.query_database_directly
-
-        def fake_query(query):
-            if "FROM columns" in query:
-                return None
-            return original_query(query)
-
-        with patch.object(loader, "query_database_directly", side_effect=fake_query):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with pytest.raises(ValueError, match="Failed to load columns"):
-                    list(loader.export_subset_to_csv(tmpdir))
-
     def test_malformed_columns_query_raises(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
@@ -746,19 +727,6 @@ class TestExportSubsetToCsvErrorBranches:
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed columns query"):
-                    list(loader.export_subset_to_csv(tmpdir))
-
-    def test_data_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
-        original_query = loader.query_database_directly
-
-        def fake_query(query):
-            if "FROM data" in query:
-                return None
-            return original_query(query)
-
-        with patch.object(loader, "query_database_directly", side_effect=fake_query):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with pytest.raises(ValueError, match="Failed to load data table"):
                     list(loader.export_subset_to_csv(tmpdir))
 
     def test_malformed_data_query_raises(self, loader: ConcreteDatabaseLoader) -> None:
@@ -885,14 +853,16 @@ class TestLoadMetadataRaw:
 # load_event_data - malformed query branch
 # ---------------------------------------------------------------------------
 class TestLoadEventDataMalformed:
-    def test_malformed_query_logs_warning_and_yields_nothing(
+    def test_a_malformed_query_raises_on_the_first_step(
         self, loader: ConcreteDatabaseLoader
     ) -> None:
+        """An empty generator would read as a subset with no events."""
         with patch.object(
             loader, "validate_filter_query", return_value=(False, "bad query")
         ):
-            events = list(loader.load_event_data())
-            assert events == []
+            events = loader.load_event_data()
+            with pytest.raises(ValueError, match="bad query"):
+                next(events)
 
 
 # ---------------------------------------------------------------------------

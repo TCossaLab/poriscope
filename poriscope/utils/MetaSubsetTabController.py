@@ -656,7 +656,7 @@ class MetaSubsetTabController(MetaController):
             )
             return None
 
-        if id_result is None or id_result.empty:
+        if id_result.empty:
             self.add_text_to_display.emit(
                 f"No data available for the requested {action_label}: {event_ids}",
                 self.__class__.__name__,
@@ -754,32 +754,6 @@ class MetaSubsetTabController(MetaController):
             return
 
         self.logger.info(f"Filters saved to {path}")
-
-    @log(logger=logger)
-    def _raw_failure_reason(self, loader: str, query: str) -> str:
-        """
-        Say why a raw query could not run, in the loader's own words.
-
-        ``query_database_directly`` answers None for a query it could not run and
-        logs the reason; the validator gives the same reason as text, which is what
-        a SQL viewer would have shown, for example ``no such column: nope``.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param query: the SQL that failed
-        :type query: str
-        :return: the SQL error, or a pointer to the log if the validator has none
-        :rtype: str
-        """
-        try:
-            valid, debug = self.model.call(
-                "MetaDatabaseLoader", loader, "validate_filter_query", query
-            )
-        except Exception:
-            return "see the log for the SQL error"
-        if valid or not debug:
-            return "see the log for the SQL error"
-        return str(debug).split("\n\n")[-1].strip()
 
     @log(logger=logger)
     def _echo_applied_query(self, query: str, table_name: str) -> None:
@@ -1034,13 +1008,6 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
-        if rows is None:
-            self.add_text_to_display.emit(
-                f"Could not run the raw filter {subset_name}: "
-                f"{self._raw_failure_reason(loader, query)}",
-                self.__class__.__name__,
-            )
-            return None
         if pairs and not used:
             self._say_once(
                 f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
@@ -1271,13 +1238,6 @@ class MetaSubsetTabController(MetaController):
             self.logger.error(f"Failed to check the events of {subset_name}: {e!r}")
             self.add_text_to_display.emit(
                 f"Could not check that {subset_name}'s query names events: {e}",
-                self.__class__.__name__,
-            )
-            return False
-        if real is None:
-            self.add_text_to_display.emit(
-                f"Could not check that {subset_name}'s query names events: see the "
-                "log for the SQL error",
                 self.__class__.__name__,
             )
             return False
@@ -1565,16 +1525,7 @@ class MetaSubsetTabController(MetaController):
             )
             return
 
-        if rows is None:
-            # The loader logs why and answers None rather than raising; without this
-            # the panel said nothing and the View's error was the only report.
-            self.add_text_to_display.emit(
-                f"Could not read this subset's events from {loader}: see the log "
-                "for the SQL error",
-                self.__class__.__name__,
-            )
-        else:
-            self._echo_event_id_query(loader, conditions, experiments_and_channels)
+        self._echo_event_id_query(loader, conditions, experiments_and_channels)
         self.view.set_event_id_rows(rows)
 
     @log(logger=logger)
