@@ -12,7 +12,7 @@ Covers:
 
 import pytest
 from PySide6.QtGui import QValidator
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit
 
 from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit, RangeValidator
 
@@ -27,7 +27,8 @@ def qt_app():
 
 @pytest.fixture
 def validator(qt_app):
-    return RangeValidator(None)
+    # Only the final check is tested here, and it reads no line edit.
+    return RangeValidator(QLineEdit())
 
 
 @pytest.fixture

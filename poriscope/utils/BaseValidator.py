@@ -25,6 +25,7 @@
 
 import logging
 import re
+import weakref
 from abc import abstractmethod
 from typing import Optional, Tuple
 
@@ -39,8 +40,15 @@ class BaseValidator(QValidator, metaclass=QObjectABCMeta):
 
     def __init__(self, line_edit: QLineEdit) -> None:
         super().__init__()
-        self.line_edit = line_edit
-        # this is a test
+        # Weak: setValidator hands the validator to the line edit, which keeps it, so a
+        # strong reference back made a cycle that only the cyclic collector could free,
+        # and tearing that pair down corrupted the native heap.
+        self._line_edit = weakref.ref(line_edit)
+
+    @property
+    def line_edit(self) -> Optional[QLineEdit]:
+        """The line edit this validator checks, or None once it is gone."""
+        return self._line_edit()
 
     def common_validation(
         self, input: str, pos: int
@@ -83,8 +91,10 @@ class BaseValidator(QValidator, metaclass=QObjectABCMeta):
             if state != QValidator.Acceptable:
                 return state, input, pos
 
-            # Automatically handle focus-based decision between intermediate and final validation
-            if self.line_edit.hasFocus():
+            # Automatically handle focus-based decision between intermediate and final validation;
+            # a line edit that is gone is not being typed in, so its text is finished
+            line_edit = self.line_edit
+            if line_edit is not None and line_edit.hasFocus():
                 return self._validate_intermediate(input, pos)
             else:
                 return self._validate_final(input)

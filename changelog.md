@@ -262,6 +262,8 @@
 
 * **New Data Plugin: `NIBinaryReader`** reads one binary file from the lab's NI DAQ setups (16 channels in mV), taking the sample rate from the file name and converting to pA with the amplifier's sensitivity
 
+* Fixed a range field's validator keeping the field alive, which could crash Poriscope on Windows when the field was discarded; `BaseValidator.line_edit` is now a read-only property that returns `None` once its field is gone
+
 * **Fixed the Windows log file dropping any line containing `μ`**
 
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time; each channel now classifies itself as its own fitting ends
