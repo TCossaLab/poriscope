@@ -300,6 +300,8 @@ class TestARealSavedSession:
         removed is an entry the user silently loses. Asserting it here means the refactor
         cannot rename one without a test saying so - and the fixture covers six plugin
         families plus three tabs, which is most of the surface a real session touches.
+        A renamed class counts as existing only through the map the model reads a
+        session with, which is how the fixture's ``ChimeraReader20240501`` still opens.
         """
         available = set(discover_plugin_classes())
         tabs = {
@@ -310,7 +312,9 @@ class TestARealSavedSession:
         }
         missing = []
         for key, entry in session.items():
-            subclass = entry["subclass"]
+            subclass = MainModel.RENAMED_PLUGIN_CLASSES.get(
+                entry["subclass"], entry["subclass"]
+            )
             if subclass not in available and subclass not in tabs:
                 missing.append(f"{key} -> {subclass}")
         assert (

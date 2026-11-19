@@ -35,7 +35,7 @@ from typing import Any, Dict, Tuple
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
@@ -173,7 +173,7 @@ def build_rawdata_tab(
     :rtype: Triad
     """
     triad = build_triad("RawDataController", tmp_path)
-    reader = ChimeraReader20240501()
+    reader = ChimeraReaderVC400()
     reader_settings = reader.get_empty_settings(standalone=True)
     reader_settings["Input File"]["Value"] = chimera["log"]
     reader.apply_settings(reader_settings)

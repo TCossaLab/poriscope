@@ -25,7 +25,7 @@ channel 0.
 Signal construction
 --------------------
 The reader's conversion, inverted here the same way synthetic_chimera.py
-inverts ChimeraReader20240501's::
+inverts ChimeraReaderVC400's::
 
     bitmask = (2**16 - 1) - (2**(16 - adc_bits) - 1)
     closedloop_gain = tia_gain * preadc_gain

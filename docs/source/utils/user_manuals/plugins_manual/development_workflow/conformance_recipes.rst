@@ -169,7 +169,7 @@ its failure names exactly what is missing.
 
      # _recipes.py
      READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
-         "ChimeraReader20240501": _chimera_20240501_dataset,
+         "ChimeraReaderVC400": _chimera_vc400_dataset,
          "YourReader": _your_format_dataset,
      }
 

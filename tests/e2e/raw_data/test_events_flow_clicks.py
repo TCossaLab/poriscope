@@ -182,7 +182,7 @@ def reader_added(qtbot, monkeypatch, app_with_rawdata_tab, synthetic_chimera_dat
     QTest.mouseClick(controls.readers_add_button, Qt.LeftButton)
 
     # The application names instances by appending a counter to the class
-    # name ("ChimeraReader20240501_0"), so match on prefix. Note the combo
+    # name ("ChimeraReaderVC400_0"), so match on prefix. Note the combo
     # box is never empty -- it shows a "No Reader" placeholder when no
     # reader exists -- so its item count says nothing about whether the add
     # succeeded.

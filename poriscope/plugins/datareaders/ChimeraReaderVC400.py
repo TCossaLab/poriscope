@@ -41,7 +41,7 @@ from poriscope.utils.MetaReader import MetaReader
 
 
 @inherit_docstrings
-class ChimeraReader20240501(MetaReader):
+class ChimeraReaderVC400(MetaReader):
     """
     Subclass of MetaReader for reading Chimera VC400 ``.log`` files, in either of the instrument's two layouts.
 

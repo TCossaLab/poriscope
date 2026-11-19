@@ -57,7 +57,7 @@
 
 * **A setting declared `int` no longer accepts `True` or `False`** when settings are applied: Python counts a boolean as an integer, and the check now refuses one by name, as it already did for a default
 
-* **`ChimeraReader20240101` is removed**; `ChimeraReader20240501` opens the files it read, the Chimera VC400 `.log` files with their settings embedded at the start, and reads the same values from them
+* **`ChimeraReader20240501` is renamed `ChimeraReaderVC400` and `ChimeraReader20240101` is removed**; the one reader opens both Chimera VC400 `.log` layouts and reads the same values from each, a saved session naming either old class restores it as a `ChimeraReaderVC400`, and a script importing either name must import the new one
 
 #### Saved files:
 
@@ -400,7 +400,7 @@
 
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 
-* `ChimeraReader20240501` opens both Chimera VC400 file layouts: a `.log` with its settings embedded ahead of an `<END HEADER>` marker is read from that header, and any other from its companion `.json`
+* `ChimeraReaderVC400` opens both Chimera VC400 file layouts: a `.log` with its settings embedded ahead of an `<END HEADER>` marker is read from that header, and any other from its companion `.json`
 
 #### Event Analysis:
 

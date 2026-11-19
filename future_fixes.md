@@ -55,12 +55,11 @@ Everything planned has landed. `develop` burns in with lab users for a few weeks
 **Plans, awaiting approval:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>. Nothing is built
 until its plan is approved; each lands on its own branch, tests first.
 
-- **One Chimera VC400 reader for both layouts.** `ChimeraReader20240501._get_configs` learns the
-  2024-01 layout (a JSON header embedded in the `.log`, ending `<END HEADER>`), told by the marker in
-  the file; `ChimeraReader20240101` is removed (161 of `datareaders`' 348 removable lines); the
-  survivor is renamed `ChimeraReaderVC400` (30 files name it) and both old class names are mapped to
-  it where a session is read. The real 2024-01 set (`vc400/v2024_01`, first machine only) must be run
-  through the merged reader before the cut. **M**
+- **Run the real 2024-01 Chimera set through `ChimeraReaderVC400`.** The reader that opened it,
+  `ChimeraReader20240101`, is merged into `ChimeraReaderVC400`; synthetic files in both layouts read
+  sample for sample alike, and the real set (`vc400/v2024_01`, first machine only) has not been run:
+  `PORISCOPE_REAL_DATA_DIR=<dir> pytest tests/unit/plugins/conformance/test_real_recordings.py`
+  must reproduce the goldens recorded through the removed reader. **S, owner: Kyle**
 - **Database loaders raise on a failed query** (`MetaDatabaseLoader.load_metadata_raw:1408`,
   `load_metadata:1425`, `query_database_directly:1526`, abstract `_load_metadata:1590`). All six tab
   call sites already catch and report; three (`ClusteringController.py:256`,
@@ -459,14 +458,14 @@ contribution, and the notice for what 4.0 removes.
   controller's. Reproduce first; then read each controller's `view:`/`model:` annotations
   (`typing.get_type_hints`) for the guard's exact page name, falling back to the guess. **M**
 - **Nothing says which exception a reader raises for malformed input.** A 0-byte file raises
-  `ValueError` (most), `json.decoder.JSONDecodeError` (`ChimeraReader20240101`) or
-  `NotImplementedError` (the three ABF readers, from `pyabf`); a missing sidecar raises
-  `FileNotFoundError`; none hangs (`test_reader_fuzz.py`, which enforces no type). One new type that
+  `ValueError` (five readers) or `NotImplementedError` (the three ABF readers, from `pyabf`); a
+  missing sidecar raises `FileNotFoundError` or `OSError`, an emptied one `JSONDecodeError` or
+  scipy's `MatReadError`; none hangs (`test_reader_fuzz.py`, which enforces no type). One new type that
   inherits from what each reader raises today is additive; replacing them is 4.0's. Also confirm that
-  `ChimeraReader20240501` and `ChimeraReaderVC100` raising on a missing sidecar is intended. **M,
+  `ChimeraReaderVC400` and `ChimeraReaderVC100` raising on a missing sidecar is intended. **M,
   ruling**
 - **Announce what 4.0 removes.** Each removal in the 4.0 section needs a notice in a 3.x release:
-  written for `ChimeraReader20240101` (2.0.0); owed for anything else ruled into 4.0. **S** each
+  owed for anything ruled into 4.0. **S** each
 
 ### Contributor gate
 

@@ -145,6 +145,15 @@ there only when preparing a major release.
 Both database writers refuse to add to a file with a newer number. A stamp says which version
 *created* the file: a file from before 3.0 reads 0 and keeps 0 when a later writer adds to it.
 
+A session names every plugin by its class, so **renaming or removing a shipped plugin class is a
+break (major release only) and needs a row in `MainModel.RENAMED_PLUGIN_CLASSES`**, old name to the
+class that now does its job: `load_session` swaps the name in either session layout and the
+Controller says so on the status panel. No import alias (`DECISIONS.md` 2026-09-20). The test that
+catches a rename without a row is `test_every_class_it_names_still_exists`
+(`tests/unit/views/test_saved_state_replay.py`), over a real saved session. *Case:* 2026-11-19, the
+two Chimera VC400 readers became `ChimeraReaderVC400`; without the map every 2.0 session holding
+one would have lost the reader and each plugin that depends on it.
+
 What 3.0's readers tolerate was probed on real files (`DECISIONS.md` 2026-11-18, "3.0's readers
 ignore what a later minor adds"). A 3.x minor may add: a parameter with a default to a recorded
 action (3.0 replays the call without it), a setting to a plugin, an empty value for a new setting

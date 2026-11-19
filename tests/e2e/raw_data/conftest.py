@@ -11,7 +11,7 @@ Generation happens per test, so nothing is checked into the repository
 and there is no shared state between tests.
 
 The generators themselves live in tests/synthetic_data/, shared infrastructure rather than duplicated per suite -- see tests/synthetic_data/synthetic_chimera.py for the schema
-these write and what's been confirmed against the real ChimeraReader20240501.
+these write and what's been confirmed against the real ChimeraReaderVC400.
 
 Default signal parameters
 --------------------------

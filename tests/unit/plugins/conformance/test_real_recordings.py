@@ -33,7 +33,7 @@ import numpy as np
 import pytest
 
 from poriscope.plugins.datareaders.BinaryReader1X import BinaryReader1X
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.datareaders.LegacyElementsReader import LegacyElementsReader
 from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 from poriscope.utils.MetaReader import MetaReader
@@ -100,7 +100,7 @@ RECORDINGS = [
     RealRecording(
         name="chimera_2024_05",
         subdir="vc400/v2024_05",
-        reader_cls=ChimeraReader20240501,
+        reader_cls=ChimeraReaderVC400,
         first_file="*_HS1_*.log",
         samplerate=5_000_000.0,
         lengths={ch: 1_652_555_776 for ch in (1, 2, 3, 4)},
@@ -111,7 +111,7 @@ RECORDINGS = [
     RealRecording(
         name="chimera_2024_01",
         subdir="vc400/v2024_01",
-        reader_cls=ChimeraReader20240501,
+        reader_cls=ChimeraReaderVC400,
         first_file="*_HS1_20240313_171429.log",
         samplerate=5_000_000.0,
         lengths={1: 182_976_512, 2: 244_842_496},

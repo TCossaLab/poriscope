@@ -34,7 +34,12 @@ from typing import Any, Dict, List, Optional, Set, Union
 from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
-from poriscope.models.main_model import TAB_METACLASS, MainModel, SessionRefused
+from poriscope.models.main_model import (
+    TAB_METACLASS,
+    LoadedSession,
+    MainModel,
+    SessionRefused,
+)
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.views.main_view import MainView
@@ -867,6 +872,16 @@ class MainController(QObject):
         self.logger.warning(text)
         self.main_view.add_text_to_display(text, self.__class__.__name__)
 
+    def _show_what_reading_changed(self, loaded: LoadedSession) -> None:
+        """
+        Show the notes a session was read with, such as a plugin class renamed since.
+
+        :param loaded: the session as the model read it
+        :type loaded: LoadedSession
+        """
+        for note in loaded.notes:
+            self.main_view.add_text_to_display(note, self.__class__.__name__)
+
     @log(logger=logger)
     @Slot(str)
     def load_session(self, file_name: Optional[Union[str, Path]] = None) -> None:
@@ -902,6 +917,7 @@ class MainController(QObject):
             self._report_unloadable_session(file_name, refused)
             return
         self.reset_session()
+        self._show_what_reading_changed(loaded)
         self.plugin_history = loaded.plugin_history
         self.last_tab = loaded.last_tab
         self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)

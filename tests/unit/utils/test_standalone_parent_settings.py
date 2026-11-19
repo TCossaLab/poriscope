@@ -12,7 +12,7 @@ scripting guide's pipeline - assign the object, apply the settings - works as wr
 
 import pytest
 
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.datawriters.SQLiteEventWriter import SQLiteEventWriter
 from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
@@ -66,8 +66,8 @@ def reader(tmp_path):
     :type tmp_path: pathlib.Path
     :yield: The opened reader.
     """
-    dataset = build_reader_dataset(ChimeraReader20240501, tmp_path)
-    opened = build_any_reader(ChimeraReader20240501, dataset)
+    dataset = build_reader_dataset(ChimeraReaderVC400, tmp_path)
+    opened = build_any_reader(ChimeraReaderVC400, dataset)
     yield opened
     opened.close_resources()
     del opened

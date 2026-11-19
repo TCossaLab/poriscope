@@ -28,7 +28,7 @@ from typing import Any, Callable, Dict, List, Tuple, Type
 from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
     NIConditioningLoader,
 )
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
 from poriscope.utils.MetaConditioningLoader import MetaConditioningLoader
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -485,7 +485,7 @@ EVENT_FINDER_SETTINGS: Dict[str, Dict[str, Any]] = {
 
 def build_reader(log_path: str) -> MetaReader:
     """
-    Build a ``ChimeraReader20240501`` over a synthetic recording.
+    Build a ``ChimeraReaderVC400`` over a synthetic recording.
 
     Readers have their own conformance family (``test_readers.py``); this returns the
     single reader the other families need as a parent rather than being parametrised.
@@ -495,7 +495,7 @@ def build_reader(log_path: str) -> MetaReader:
     :return: A reader with settings applied and channel status initialised.
     :rtype: MetaReader
     """
-    reader = ChimeraReader20240501()
+    reader = ChimeraReaderVC400()
     settings = reader.get_empty_settings(standalone=True)
     settings["Input File"]["Value"] = str(log_path)
     reader.apply_settings(settings)
@@ -700,7 +700,7 @@ def build_any_event_loader(
 # is the entire thing a reader varies over. Each entry below is a synthetic
 # writer from tests/synthetic_data, covering one on-disk format; several
 # readers can and do share one (the three ABF readers). A reader that opens two
-# layouts of one format has one of them here: ChimeraReader20240501 is driven
+# layouts of one format has one of them here: ChimeraReaderVC400 is driven
 # over its companion-.json layout, and its embedded-header layout is proved to
 # give the same samples in tests/unit/plugins/datareaders. See each synthetic
 # writer module's docstring for the full format
@@ -717,8 +717,8 @@ READER_EVENT_AMPLITUDE_PA = -400.0
 READER_EVENT_DURATION_S = 0.0005
 
 
-def _chimera_20240501_dataset(out_dir: Path) -> SyntheticDataset:
-    """Build a ChimeraReader20240501 (.log + sidecar .json) fixture."""
+def _chimera_vc400_dataset(out_dir: Path) -> SyntheticDataset:
+    """Build a ChimeraReaderVC400 (.log + sidecar .json) fixture."""
     config = ChimeraRecordingConfig(
         samplerate=4_000_000.0,
         duration_s=0.5,
@@ -809,7 +809,7 @@ def _abf2_legacy_dataset(out_dir: Path) -> SyntheticDataset:
 
 
 READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
-    "ChimeraReader20240501": _chimera_20240501_dataset,
+    "ChimeraReaderVC400": _chimera_vc400_dataset,
     "ChimeraReaderVC100": _chimera_vc100_dataset,
     "BinaryReader1X": _binary_1x_dataset,
     "SingleBinaryDecoder": _single_binary_dataset,
@@ -907,7 +907,7 @@ MUTATIONS: Dict[str, List[Tuple[str, Callable[[SyntheticDataset], None]]]] = {
 }
 for _reader_name in ("TCossaLabABFReader", "LegacyElementsReader", "ABFReader"):
     MUTATIONS[_reader_name].append(("flip_abf2_signature", _flip_abf2_signature))
-for _reader_name in ("ChimeraReader20240501", "ChimeraReaderVC100"):
+for _reader_name in ("ChimeraReaderVC400", "ChimeraReaderVC100"):
     MUTATIONS[_reader_name].append(("delete_sidecar", _delete_sidecar))
     MUTATIONS[_reader_name].append(
         ("truncate_sidecar_to_zero", _truncate_sidecar_to_zero)

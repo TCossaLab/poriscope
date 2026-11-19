@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from poriscope.plugins.datareaders.ChimeraReader20240501 import (
-    ChimeraReader20240501 as Reader,
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import (
+    ChimeraReaderVC400 as Reader,
 )
 from tests.synthetic_data.synthetic_chimera import (
     ChimeraRecordingConfig,
