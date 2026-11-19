@@ -132,6 +132,8 @@
 
 * **Breaking:** `MetaView.lock` is removed: a tab's progress bars are only touched on the GUI thread, so it guarded nothing
 
+* **Breaking:** a recorded Plot Events in the Raw Data and Event Analysis tabs holds its events as range text (`"0-4,7"`), not a list of every index: `RawDataController.load_event_plot_data` and `EventAnalysisController.load_event_plot` take `event_range: str` in place of `events`, and both tabs' `event_plot_requested` signals carry that text; a Plot Events saved by a development build of 3.0 is reported on the status panel and not replayed
+
 ### Developer Tooling:
 
 * The tests added since the 2026-11-12 audit were audited before the release: a replay test that depended on the speed of the event loop now waits for the replay to settle, four tests that could not see what they named were armed, and the Clustering colours and the leftover-replay cleanup gained tests
@@ -383,6 +385,8 @@
 #### Raw Data and Event Analysis:
 
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
+
+* A session no longer grows by megabytes when a long range of events is plotted: Plot Events is saved as its range, so `0-99999` costs a few characters where it cost a number per event
 
 #### Raw Data:
 

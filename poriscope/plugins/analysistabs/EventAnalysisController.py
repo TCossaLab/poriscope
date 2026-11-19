@@ -69,7 +69,7 @@ class EventAnalysisController(MetaEventTabController):
         self.view.event_plot_requested.connect(self.load_event_plot)
 
     @log(logger=logger)
-    @Slot(str, str, int, list, str, bool)
+    @Slot(str, str, int, str, str, bool)
     @register_action(
         "plot_events",
         kind="view",
@@ -83,7 +83,7 @@ class EventAnalysisController(MetaEventTabController):
         loader: str,
         eventfitter: str,
         channel: int,
-        events: List[int],
+        event_range: str,
         data_filter: str,
         raw: bool,
     ) -> bool:
@@ -126,8 +126,10 @@ class EventAnalysisController(MetaEventTabController):
         :type eventfitter: str
         :param channel: the single channel whose events are being plotted
         :type channel: int
-        :param events: the event indices the user selected
-        :type events: List[int]
+        :param event_range: the events the user selected, as range text such as
+            ``"0-4,7"``. Recorded as text, so a long range stays short in the history and
+            the session file
+        :type event_range: str
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
         :param raw: whether to overlay each event's unfiltered trace
@@ -149,6 +151,15 @@ class EventAnalysisController(MetaEventTabController):
             )
             return False
 
+        expanded = self._expand_event_range(event_range)
+        if expanded is None:
+            self.add_text_to_display.emit(
+                f"The event range {event_range!r} could not be read, so nothing "
+                "was plotted",
+                self.__class__.__name__,
+            )
+            return False
+        events = expanded
         if not events:
             return False
 

@@ -75,9 +75,9 @@ class EventAnalysisView(MetaEventTabView):
     fitting_statuses_requested = Signal(str, str, list, str)
 
     #: Asks the Controller for the selected events, their raw traces and their fits,
-    #: ready to plot. loader, eventfitter, channel, event indices, filter key, raw
-    #: wanted. The answer arrives as ``set_event_plot_data``.
-    event_plot_requested = Signal(str, str, int, list, str, bool)
+    #: ready to plot. loader, eventfitter, channel, the event range as text ("0-4,7"),
+    #: filter key, raw wanted. The answer arrives as ``set_event_plot_data``.
+    event_plot_requested = Signal(str, str, int, str, str, bool)
 
     #: The second half: the channels the user approved, plus the filter key. No answer
     #: is expected; each channel's generator is registered and run by the Controller.
@@ -222,7 +222,9 @@ class EventAnalysisView(MetaEventTabView):
             loader,
             eventfitter,
             channel,
-            list(events or []),
+            # As text, in one spelling per set of events: the Controller records what
+            # it is handed.
+            self._format_event_indices(events or []),
             filter_key,
             bool(parameters.get("raw", False)),
         )
@@ -705,7 +707,7 @@ class EventAnalysisView(MetaEventTabView):
                 kwargs["eventfitter"], kwargs["channel"], kwargs["data_filter"]
             )
             controls.set_raw(bool(kwargs["raw"]))
-            controls.set_event_index_input(self._format_event_indices(kwargs["events"]))
+            controls.set_event_index_input(kwargs["event_range"])
         elif action == "fit_events":
             self._write_back_fitter(
                 kwargs["eventfitter"], kwargs["channel"], kwargs["data_filter"]

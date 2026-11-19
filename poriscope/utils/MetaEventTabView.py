@@ -64,9 +64,10 @@ class MetaEventTabView(MetaView):
       field's text into ranges and back. Only these two tabs call them, which is why
       they are here rather than on ``MetaView``; they are pure apart from one logger
       call.
-    - **Event navigation.** ``_shift_range_and_update_plot`` shifts the event-index
-      field by one event and re-plots through ``_handle_plot_events``;
-      ``_get_event_index_text`` reads that field.
+    - **Event navigation.** ``_shift_range_and_update_plot`` pages the event-index
+      field to the next or previous block, each range moving by its own width plus one,
+      and re-plots through ``_handle_plot_events``; ``_get_event_index_text`` reads
+      that field.
 
     What a subclass owes it:
 
@@ -152,8 +153,10 @@ class MetaEventTabView(MetaView):
         """
         The event-index field's text for a list of events, merged into ranges: ``[0, 1, 2, 5]`` is ``0-2,5``.
 
-        The form the arrows already rewrite the field in, so a restored field reads as a
-        paged one does, and not in the spelling the user first typed.
+        One spelling per set of events, and the form the arrows already rewrite the
+        field in. It is what a Plot Events request carries to the Controller and so what
+        is recorded: a restored field reads as a paged one does, not in the spelling the
+        user first typed, and a long range is saved as a few characters.
 
         :param events: the event indices
         :type events: Sequence[int]

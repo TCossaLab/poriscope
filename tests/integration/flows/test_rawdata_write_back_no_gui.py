@@ -87,23 +87,15 @@ def test_a_find_entry_shows_its_finder_and_restores_its_timer_limits(
     actions.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "events, text",
-    [
-        ([0, 1, 2, 3, 4], "0-4"),
-        ([0, 1, 2, 5], "0-2,5"),
-        ([7], "7"),
-        ([5, 3, 4, 3], "3-5"),
-    ],
-)
-def test_a_plot_events_entry_writes_the_event_index_in_canonical_form(
-    tab: Triad, actions: Any, events: List[int], text: str
+@pytest.mark.parametrize("text", ["0-4", "0-2,5", "7", "3-5"])
+def test_a_plot_events_entry_shows_the_range_it_recorded(
+    tab: Triad, actions: Any, text: str
 ) -> None:
     channel = tab.channel  # type: ignore[attr-defined]
     view = tab.tab_view
 
     view.write_back(
-        "plot_events", (), named(tab, "plot_events", FINDER, channel, events, "")
+        "plot_events", (), named(tab, "plot_events", FINDER, channel, text, "")
     )
 
     assert view.rawdatacontrols.event_index_lineEdit.text() == text
@@ -121,7 +113,7 @@ def test_a_named_filter_is_shown_for_every_kind_of_entry(
     entries = {
         "update_trace": (READER, [channel], 0.0, 1.0, "a filter", False),
         "find_events": (FINDER, channel, [(0.0, 1.0)], "a filter", {}),
-        "plot_events": (FINDER, channel, [0], "a filter"),
+        "plot_events": (FINDER, channel, "0", "a filter"),
     }
 
     tab.tab_view.write_back(action, (), named(tab, action, *entries[action]))
@@ -178,7 +170,7 @@ def test_write_back_reads_no_widget(tab: Triad, actions: Any) -> None:
             named(tab, "update_trace", READER, [channel], 1.0, 0.5, "", False),
         )
         tab.tab_view.write_back(
-            "plot_events", (), named(tab, "plot_events", FINDER, channel, [0, 1], "")
+            "plot_events", (), named(tab, "plot_events", FINDER, channel, "0-1", "")
         )
 
 

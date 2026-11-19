@@ -43,7 +43,7 @@ def test_a_plot_events_entry_shows_everything_the_plot_used(
     tab.tab_view.write_back(
         "plot_events",
         (),
-        named(tab, "plot_events", LOADER, FITTER, CHANNEL, [0, 1, 2], "", True),
+        named(tab, "plot_events", LOADER, FITTER, CHANNEL, "0-2", "", True),
     )
 
     assert controls.loaders_comboBox.currentText() == LOADER
@@ -86,22 +86,12 @@ def test_a_fit_entry_leaves_the_loader_alone_because_it_does_not_record_one(
     assert controls.loaders_comboBox.currentText() == before
 
 
-@pytest.mark.parametrize(
-    "events, text",
-    [
-        ([0, 1, 2, 3, 4], "0-4"),
-        ([0, 1, 2, 5], "0-2,5"),
-        ([7], "7"),
-        ([5, 3, 4, 3], "3-5"),
-    ],
-)
-def test_the_event_index_is_written_in_canonical_form(
-    tab: Triad, actions: Any, events: List[int], text: str
-) -> None:
+@pytest.mark.parametrize("text", ["0-4", "0-2,5", "7", "3-5"])
+def test_the_recorded_event_range_is_shown(tab: Triad, actions: Any, text: str) -> None:
     tab.tab_view.write_back(
         "plot_events",
         (),
-        named(tab, "plot_events", LOADER, FITTER, CHANNEL, events, "", False),
+        named(tab, "plot_events", LOADER, FITTER, CHANNEL, text, "", False),
     )
 
     assert tab.tab_view.eventAnalysisControls.event_index_lineEdit.text() == text
@@ -116,7 +106,7 @@ def test_a_named_filter_is_shown_for_every_kind_of_entry(
     controls.filters_comboBox.addItem("a filter")
     entries = {
         "fit_events": (FITTER, CHANNEL, "a filter"),
-        "plot_events": (LOADER, FITTER, CHANNEL, [0], "a filter", False),
+        "plot_events": (LOADER, FITTER, CHANNEL, "0", "a filter", False),
     }
 
     tab.tab_view.write_back(action, (), named(tab, action, *entries[action]))
@@ -135,7 +125,7 @@ def test_writing_back_a_plot_asks_for_the_loaders_channel_list(
     tab.tab_view.write_back(
         "plot_events",
         (),
-        named(tab, "plot_events", LOADER, FITTER, CHANNEL, [0], "", False),
+        named(tab, "plot_events", LOADER, FITTER, CHANNEL, "0", "", False),
     )
 
     assert asked == [LOADER]
@@ -160,7 +150,7 @@ def test_a_value_that_is_not_an_option_is_skipped_and_said(
             "a loader that is gone",
             "a fitter that is gone",
             CHANNEL,
-            [0],
+            "0",
             "",
             False,
         ),
@@ -177,7 +167,7 @@ def test_write_back_reads_no_widget(tab: Triad, actions: Any) -> None:
         tab.tab_view.write_back(
             "plot_events",
             (),
-            named(tab, "plot_events", LOADER, FITTER, CHANNEL, [0, 1], "", True),
+            named(tab, "plot_events", LOADER, FITTER, CHANNEL, "0-1", "", True),
         )
         tab.tab_view.write_back(
             "fit_events", (), named(tab, "fit_events", FITTER, CHANNEL, "")

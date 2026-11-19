@@ -1004,7 +1004,7 @@ class TestLoadEventPlotData:
         """The status is asked first, for that channel, and a False answer ends it."""
         self.answers(controller, get_eventfinding_status=False)
 
-        controller.load_event_plot_data("finder", 3, [0, 1], "")
+        controller.load_event_plot_data("finder", 3, "0-1", "")
 
         assert self.asked(controller, "get_eventfinding_status") == [
             ("MetaEventFinder", "finder", "get_eventfinding_status", 3)
@@ -1022,7 +1022,7 @@ class TestLoadEventPlotData:
         """
         self.answers(controller, get_eventfinding_status=RuntimeError("boom"))
 
-        controller.load_event_plot_data("finder", 3, [0, 1], "")
+        controller.load_event_plot_data("finder", 3, "0-1", "")
 
         assert self.asked(controller, "get_num_events_found") == []
         mock_view.set_event_plot_data.assert_not_called()
@@ -1034,7 +1034,7 @@ class TestLoadEventPlotData:
         """Nothing to plot, so the filter and samplerate are never asked for."""
         self.answers(controller, get_num_events_found=0)
 
-        controller.load_event_plot_data("finder", 0, [0, 1], "F1")
+        controller.load_event_plot_data("finder", 0, "0-1", "F1")
 
         assert self.asked(controller, "get_callable_filter") == []
         assert self.asked(controller, "get_samplerate") == []
@@ -1051,7 +1051,7 @@ class TestLoadEventPlotData:
         """
         self.answers(controller, get_num_events_found=RuntimeError("boom"))
 
-        controller.load_event_plot_data("finder", 0, [0, 1], "")
+        controller.load_event_plot_data("finder", 0, "0-1", "")
 
         assert self.asked(controller, "get_single_event_data") == []
         mock_view.set_event_plot_data.assert_not_called()
@@ -1063,7 +1063,7 @@ class TestLoadEventPlotData:
         """Pre-conversion behaviour, preserved: both are asked, nothing is loaded."""
         self.answers(controller)
 
-        controller.load_event_plot_data("finder", 0, [], "")
+        controller.load_event_plot_data("finder", 0, "", "")
 
         assert len(self.asked(controller, "get_eventfinding_status")) == 1
         assert len(self.asked(controller, "get_num_events_found")) == 1
@@ -1082,7 +1082,7 @@ class TestLoadEventPlotData:
             get_single_event_data=[{"data": "a"}, {"data": "b"}],
         )
 
-        controller.load_event_plot_data("finder", 0, [0, 1, 2, 7], "")
+        controller.load_event_plot_data("finder", 0, "0-2,7", "")
 
         assert [
             args[4] for args in self.asked(controller, "get_single_event_data")
@@ -1109,7 +1109,7 @@ class TestLoadEventPlotData:
             get_single_event_data=[{"data": "a"}, {"data": "b"}],
         )
 
-        controller.load_event_plot_data("finder", 3, [0, 1, 7], "")
+        controller.load_event_plot_data("finder", 3, "0-1,7", "")
 
         message = controller.add_text_to_display.emit.call_args[0][0]
         assert "Channel 3 has 2 events (0-1)" in message
@@ -1133,7 +1133,7 @@ class TestLoadEventPlotData:
         """
         self.answers(controller, get_num_events_found=2)
 
-        controller.load_event_plot_data("finder", 0, [5, 7], "")
+        controller.load_event_plot_data("finder", 0, "5,7", "")
 
         mock_view.set_event_plot_data.assert_not_called()
         assert "events 5, 7" in controller.add_text_to_display.emit.call_args[0][0]
@@ -1144,7 +1144,7 @@ class TestLoadEventPlotData:
         """ "No Filter" reaches the Controller as "", and consults nothing."""
         self.answers(controller, get_single_event_data=[{"data": "a"}])
 
-        controller.load_event_plot_data("finder", 0, [0], "")
+        controller.load_event_plot_data("finder", 0, "0", "")
 
         assert self.asked(controller, "get_callable_filter") == []
         assert self.asked(controller, "get_single_event_data")[0][5] is None
@@ -1155,7 +1155,7 @@ class TestLoadEventPlotData:
         """One fetch, then the same callable for each event."""
         self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
-        controller.load_event_plot_data("finder", 0, [0, 1], "F1")
+        controller.load_event_plot_data("finder", 0, "0-1", "F1")
 
         assert self.asked(controller, "get_callable_filter") == [
             ("MetaFilter", "F1", "get_callable_filter")
@@ -1173,7 +1173,7 @@ class TestLoadEventPlotData:
             get_single_event_data=[{"data": "a"}],
         )
 
-        controller.load_event_plot_data("finder", 0, [0], "F1")
+        controller.load_event_plot_data("finder", 0, "0", "F1")
 
         assert self.asked(controller, "get_single_event_data")[0][5] is None
         mock_view.set_event_plot_data.assert_called_once()
@@ -1185,7 +1185,7 @@ class TestLoadEventPlotData:
         """From the finder, not the reader, and not once per event."""
         self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
-        controller.load_event_plot_data("finder", 0, [0, 1], "")
+        controller.load_event_plot_data("finder", 0, "0-1", "")
 
         assert self.asked(controller, "get_samplerate") == [
             ("MetaEventFinder", "finder", "get_samplerate")
@@ -1205,7 +1205,7 @@ class TestLoadEventPlotData:
             get_single_event_data=[{"data": "a"}],
         )
 
-        controller.load_event_plot_data("finder", 0, [0], "")
+        controller.load_event_plot_data("finder", 0, "0", "")
 
         mock_view.update_plot_samplerate.assert_called_once_with(1)
 
@@ -1223,7 +1223,7 @@ class TestLoadEventPlotData:
         """
         self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
-        controller.load_event_plot_data("finder", 2, [5, 6], "")
+        controller.load_event_plot_data("finder", 2, "5-6", "")
 
         assert self.asked(controller, "get_single_event_data") == [
             ("MetaEventFinder", "finder", "get_single_event_data", 2, 5, None, False),
@@ -1244,7 +1244,7 @@ class TestLoadEventPlotData:
             get_single_event_data=[{"data": "first"}, {"data": "second"}],
         )
 
-        controller.load_event_plot_data("finder", 0, [0, 1], "")
+        controller.load_event_plot_data("finder", 0, "0-1", "")
 
         event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
         assert (event_data, kept) == (["first", "second"], [0, 1])
@@ -1267,7 +1267,7 @@ class TestLoadEventPlotData:
             ],
         )
 
-        controller.load_event_plot_data("finder", 0, [0, 1, 2], "")
+        controller.load_event_plot_data("finder", 0, "0-2", "")
 
         drawn, _time_bases, indices = mock_view.set_event_plot_data.call_args[0]
         assert (drawn, indices) == (["first", "third"], [0, 2])
@@ -1282,7 +1282,7 @@ class TestLoadEventPlotData:
             get_single_event_data=[ValueError("unreadable"), ValueError("unreadable")],
         )
 
-        controller.load_event_plot_data("finder", 0, [0, 1], "")
+        controller.load_event_plot_data("finder", 0, "0-1", "")
 
         event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
         assert (event_data, kept) == ([], [])
@@ -1694,7 +1694,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = []
         controller.record_action = recorded.append  # type: ignore[method-assign]
 
-        plotted = controller.load_event_plot_data("finder", 0, [1, 2], "")
+        plotted = controller.load_event_plot_data("finder", 0, "1-2", "")
 
         assert plotted is True
         assert recorded == [
@@ -1704,7 +1704,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
                 "kwargs": {
                     "eventfinder": "finder",
                     "channel": 0,
-                    "events": [1, 2],
+                    "event_range": "1-2",
                     "data_filter": "",
                 },
             }
@@ -1718,7 +1718,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = []
         controller.record_action = recorded.append  # type: ignore[method-assign]
 
-        plotted = controller.load_event_plot_data("finder", 0, [1], "")
+        plotted = controller.load_event_plot_data("finder", 0, "1", "")
 
         assert plotted is False
         assert recorded == []
@@ -1730,7 +1730,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = []
         controller.record_action = recorded.append  # type: ignore[method-assign]
 
-        assert controller.load_event_plot_data("finder", 0, [1], "") is False
+        assert controller.load_event_plot_data("finder", 0, "1", "") is False
         assert recorded == []
 
 

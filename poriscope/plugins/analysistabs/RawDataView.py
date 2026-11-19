@@ -87,10 +87,10 @@ class RawDataView(MetaEventTabView):
     psd_data_requested = Signal(str, list, float, float, str, dict)
 
     #: Asks the Controller for one channel's events, ready to plot. eventfinder,
-    #: channel, event indices, filter key ("" for none). The Controller checks the
-    #: finder's state, bounds the indices, resolves the filter and loads each event;
-    #: the answer arrives as ``set_event_plot_data``.
-    event_plot_requested = Signal(str, int, list, str)
+    #: channel, the event range as text ("0-4,7"), filter key ("" for none). The
+    #: Controller checks the finder's state, expands and bounds the range, resolves
+    #: the filter and loads each event; the answer arrives as ``set_event_plot_data``.
+    event_plot_requested = Signal(str, int, str, str)
 
     #: Asks the Controller to commit this tab's found events through a writer, one
     #: channel at a time: writer, channels, overwrite. Unlike the other request signals
@@ -562,9 +562,7 @@ class RawDataView(MetaEventTabView):
             self._write_back_finder(
                 kwargs["eventfinder"], kwargs["channel"], kwargs["data_filter"]
             )
-            self.rawdatacontrols.set_event_index_input(
-                self._format_event_indices(kwargs["events"])
-            )
+            self.rawdatacontrols.set_event_index_input(kwargs["event_range"])
 
     @log(logger=logger)
     def _write_back_reader(
@@ -672,8 +670,13 @@ class RawDataView(MetaEventTabView):
             )
             return
 
+        # As text, in one spelling per set of events: the Controller records what it
+        # is handed, and a list of every index is what made a long range cost megabytes.
         self.event_plot_requested.emit(
-            eventfinder, channels[0], list(events or []), self._filter_key(parameters)
+            eventfinder,
+            channels[0],
+            self._format_event_indices(events or []),
+            self._filter_key(parameters),
         )
 
     @log(logger=logger)

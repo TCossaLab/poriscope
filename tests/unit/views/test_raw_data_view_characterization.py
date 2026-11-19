@@ -484,8 +484,25 @@ class TestHandlePlotEvents:
         )
 
         wired.event_plot_requested.emit.assert_called_once_with(
-            "finder", 3, [5, 6], "F1"
+            "finder", 3, "5-6", "F1"
         )
+
+    @pytest.mark.parametrize(
+        "selected, text",
+        [
+            ([0, 1, 2, 3, 4], "0-4"),
+            ([0, 1, 2, 5], "0-2,5"),
+            ([7], "7"),
+            ([5, 3, 4, 3], "3-5"),
+        ],
+    )
+    def test_the_events_leave_as_range_text_in_one_spelling(
+        self, wired: RawDataView, selected, text
+    ) -> None:
+        """What is emitted is what gets recorded, so a long range has to leave short."""
+        wired._handle_plot_events(self.params(event_index=selected))
+
+        assert wired.event_plot_requested.emit.call_args[0][2] == text
 
     def test_no_filter_is_carried_as_an_empty_key(self, wired: RawDataView) -> None:
         """The three spellings of "none" collapse before they leave the View."""
@@ -493,7 +510,7 @@ class TestHandlePlotEvents:
 
         assert wired.event_plot_requested.emit.call_args[0][3] == ""
 
-    def test_no_selected_events_is_carried_as_an_empty_list(
+    def test_no_selected_events_is_carried_as_empty_text(
         self, wired: RawDataView
     ) -> None:
         """
@@ -505,7 +522,7 @@ class TestHandlePlotEvents:
         """
         wired._handle_plot_events(self.params(event_index=None))
 
-        assert wired.event_plot_requested.emit.call_args[0][2] == []
+        assert wired.event_plot_requested.emit.call_args[0][2] == ""
 
     # -- drawing the answer ----------------------------------------------
 

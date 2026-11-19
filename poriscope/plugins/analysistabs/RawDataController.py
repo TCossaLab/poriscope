@@ -528,7 +528,7 @@ class RawDataController(MetaEventTabController):
         return ""
 
     @log(logger=logger)
-    @Slot(str, int, list, str)
+    @Slot(str, int, str, str)
     @register_action(
         "plot_events",
         kind="view",
@@ -541,7 +541,7 @@ class RawDataController(MetaEventTabController):
         self,
         eventfinder: str,
         channel: int,
-        events: List[int],
+        event_range: str,
         data_filter: str,
     ) -> bool:
         """
@@ -564,8 +564,10 @@ class RawDataController(MetaEventTabController):
         :type eventfinder: str
         :param channel: the single channel whose events are being plotted
         :type channel: int
-        :param events: the event indices the user selected, possibly empty
-        :type events: List[int]
+        :param event_range: the events the user selected, as range text such as
+            ``"0-4,7"``, possibly empty. Recorded as text, so a long range stays short in
+            the history and the session file
+        :type event_range: str
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
         :return: True if events were plotted, False if there was nothing to plot
@@ -611,6 +613,15 @@ class RawDataController(MetaEventTabController):
             )
             return False
 
+        expanded = self._expand_event_range(event_range)
+        if expanded is None:
+            self.add_text_to_display.emit(
+                f"The event range {event_range!r} could not be read, so nothing "
+                "was plotted",
+                self.__class__.__name__,
+            )
+            return False
+        events = expanded
         if not events:
             return False
 

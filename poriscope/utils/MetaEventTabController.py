@@ -26,7 +26,8 @@
 
 import logging
 import math
-from typing import Callable, Dict, List, Optional
+import re
+from typing import Callable, Dict, List, Optional, Set
 
 from PySide6.QtCore import Slot
 
@@ -38,6 +39,9 @@ from poriscope.utils.MetaEventTabView import MetaEventTabView
 #: refused. A hand-typed 3333333 Hz against a header's 3333333.2008785727 Hz is a cutoff
 #: error of a hundredth of a percent and passes; a 100 kHz filter on 4 MHz data does not.
 FILTER_SAMPLERATE_TOLERANCE = 1e-3
+
+#: One segment of a recorded event range: an index, or ``first-last``.
+EVENT_RANGE_SEGMENT = re.compile(r"(\d+)(?:-(\d+))?", re.ASCII)
 
 
 class MetaEventTabController(MetaController):
@@ -73,6 +77,36 @@ class MetaEventTabController(MetaController):
     #: Redeclared with this tab's own types, so the type checker sees the methods
     #: the base View and Model do not have (see MetaController.view).
     view: MetaEventTabView
+
+    @staticmethod
+    def _expand_event_range(event_range: str) -> Optional[List[int]]:
+        """
+        Expand the text a Plot Events is recorded with: ``"0-2,5"`` is ``[0, 1, 2, 5]``.
+
+        The text is the View's canonical spelling of what the event-index field held, so
+        only that grammar is read: indices and ``first-last`` ranges, separated by commas.
+        Anything else is a damaged or hand-edited entry and gives None for the caller to
+        refuse; nothing is guessed from part of it. A static method, so both tabs' recorded
+        actions share it without reading anything but their own argument.
+
+        :param event_range: the range text; empty means no events
+        :type event_range: str
+        :return: the sorted event indices, or None if the text cannot be read
+        :rtype: Optional[List[int]]
+        """
+        if not event_range.strip():
+            return []
+        events: Set[int] = set()
+        for segment in event_range.split(","):
+            match = EVENT_RANGE_SEGMENT.fullmatch(segment.strip())
+            if match is None:
+                return None
+            first = int(match.group(1))
+            last = int(match.group(2)) if match.group(2) is not None else first
+            if last < first:
+                return None
+            events.update(range(first, last + 1))
+        return sorted(events)
 
     @log(logger=logger)
     @Slot(dict)

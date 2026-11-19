@@ -130,8 +130,24 @@ def test_the_intent_carries_everything_the_controller_needs(view):
     )
 
     view.event_plot_requested.emit.assert_called_once_with(
-        "ldr", "ef1", 3, [5, 6], "F1", True
+        "ldr", "ef1", 3, "5-6", "F1", True
     )
+
+
+@pytest.mark.parametrize(
+    "selected, text",
+    [
+        ([0, 1, 2, 3, 4], "0-4"),
+        ([0, 1, 2, 5], "0-2,5"),
+        ([7], "7"),
+        ([5, 3, 4, 3], "3-5"),
+    ],
+)
+def test_the_events_leave_as_range_text_in_one_spelling(view, selected, text):
+    """What is emitted is what gets recorded, so a long range has to leave short."""
+    view._handle_plot_events(params(event_index=selected))
+
+    assert view.event_plot_requested.emit.call_args[0][3] == text
 
 
 def test_no_filter_is_carried_as_an_empty_key(view):
@@ -141,7 +157,7 @@ def test_no_filter_is_carried_as_an_empty_key(view):
     assert view.event_plot_requested.emit.call_args[0][4] == ""
 
 
-def test_no_selected_events_is_carried_as_an_empty_list(view):
+def test_no_selected_events_is_carried_as_empty_text(view):
     """
     ``event_index`` is absent or None when nothing is selected.
 
@@ -150,7 +166,7 @@ def test_no_selected_events_is_carried_as_an_empty_list(view):
     """
     view._handle_plot_events(params(event_index=None))
 
-    assert view.event_plot_requested.emit.call_args[0][3] == []
+    assert view.event_plot_requested.emit.call_args[0][3] == ""
 
 
 def test_raw_defaults_to_false_when_absent(view):

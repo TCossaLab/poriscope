@@ -171,7 +171,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, get_num_events=RuntimeError("boom"))
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", False)
 
         mock_view.set_event_plot_data.assert_not_called()
         controller.add_text_to_display.emit.assert_called_once()
@@ -187,7 +187,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller)
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "", "", False)
 
         assert len(self.asked(controller, "get_num_events")) == 1
         assert self.asked(controller, "load_event") == []
@@ -208,7 +208,7 @@ class TestLoadEventPlot:
             load_event=[{"data": "a"}, {"data": "b"}],
         )
 
-        controller.load_event_plot("ldr", "No Event Fitter", 3, [0, 1, 2, 9], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 3, "0-2,9", "", False)
 
         assert [args[4] for args in self.asked(controller, "load_event")] == [0, 1]
         message = controller.add_text_to_display.emit.call_args[0][0]
@@ -226,7 +226,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, get_num_events=2)
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [5, 9], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "5,9", "", False)
 
         mock_view.set_event_plot_data.assert_not_called()
 
@@ -247,7 +247,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 2, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 2, "0", "", False)
 
         assert self.asked(controller, "get_num_events") == [
             ("MetaEventLoader", "ldr", "get_num_events", 2)
@@ -274,7 +274,7 @@ class TestLoadEventPlot:
             load_event=[{"data": "a"}],
         )
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", False)
 
         assert controller.model.time_bases.call_args.args[1] == 1
 
@@ -289,7 +289,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}, {"data": "b"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 2, [5, 6], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 2, "5-6", "", False)
 
         assert self.asked(controller, "load_event") == [
             ("MetaEventLoader", "ldr", "load_event", 2, 5, None),
@@ -310,7 +310,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "samples-0"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", False)
 
         assert self.plotted(mock_view)[0] == ["samples-0"]
 
@@ -322,7 +322,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}, {"data": "b"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0, 1], "F1", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0-1", "F1", False)
 
         assert len(self.asked(controller, "get_callable_filter")) == 1
         for args in self.asked(controller, "load_event"):
@@ -340,7 +340,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", True)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", True)
 
         assert len(self.asked(controller, "load_event")) == 1
 
@@ -358,7 +358,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "filtered"}, {"data": "raw"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "F1", True)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "F1", True)
 
         loads = self.asked(controller, "load_event")
         assert [args[5] for args in loads] == ["a-callable", None]
@@ -381,7 +381,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, get_data_requirements={"Samplerate": 100000.0})
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "F1", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "F1", False)
 
         assert self.asked(controller, "load_event") == []
         message = controller.add_text_to_display.emit.call_args.args[0]
@@ -400,7 +400,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", False)
 
         assert self.asked(controller, "get_eventfitting_status") == []
         assert self.asked(controller, "get_fitted_event") == []
@@ -415,7 +415,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", False)
 
         assert self.asked(controller, "get_parents") == []
 
@@ -436,7 +436,7 @@ class TestLoadEventPlot:
             get_fitted_event="the-fit",
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         assert self.plotted(mock_view)[0] == ["samples", "the-fit"]
         controller.add_text_to_display.emit.assert_not_called()
@@ -458,7 +458,7 @@ class TestLoadEventPlot:
             load_event=[{"data": "samples"}],
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         data, labels, *_ = self.plotted(mock_view)
         assert data == ["samples"]
@@ -490,7 +490,7 @@ class TestLoadEventPlot:
             load_event=[{"data": "samples"}],
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         assert self.plotted(mock_view)[0] == ["samples"]
         assert self.asked(controller, "get_fitted_event") == []
@@ -513,7 +513,7 @@ class TestLoadEventPlot:
             get_fitted_event=["f0", "f1", "f2"],
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0, 1, 2], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0-2", "", False)
 
         assert self.asked(controller, "get_eventfitting_status") == [
             ("MetaEventFitter", "ef1", "get_eventfitting_status", 0)
@@ -531,7 +531,7 @@ class TestLoadEventPlot:
             controller, get_eventfitting_status=False, load_event=[{"data": "a"}]
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         assert self.asked(controller, "get_fitted_event") == []
         assert self.asked(controller, "get_plot_features") == []
@@ -554,7 +554,7 @@ class TestLoadEventPlot:
             get_fitted_event="the-fit",
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         data, labels, num_events, vlines, *_ = self.plotted(mock_view)
         assert data == ["samples", "the-fit"]
@@ -578,7 +578,7 @@ class TestLoadEventPlot:
             get_fitted_event=None,
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         data, labels, *_ = self.plotted(mock_view)
         assert data == ["samples"]
@@ -603,7 +603,7 @@ class TestLoadEventPlot:
             get_plot_features=([1.0], [2.0], [(3.0, 4.0)], ["v"], ["h"], ["p"]),
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         _, _, _, vlines, hlines, points, vlabels, hlabels, plabels, _ = self.plotted(
             mock_view
@@ -635,7 +635,7 @@ class TestLoadEventPlot:
             get_plot_features=RuntimeError("boom"),
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0", "", False)
 
         data, _, _, vlines, *_ = self.plotted(mock_view)
         assert data == ["samples", "the-fit"]
@@ -659,7 +659,7 @@ class TestLoadEventPlot:
             get_fitted_event=["f0", "f1", "f2"],
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0, 1, 2], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0-2", "", False)
 
         data, labels, num_events, vlines, *_ = self.plotted(mock_view)
         assert data == ["d0", "f0", "d1", "f1", "d2", "f2"]
@@ -694,7 +694,7 @@ class TestLoadEventPlot:
             ],
         )
 
-        controller.load_event_plot("ldr", "ef1", 0, [0, 1], "", False)
+        controller.load_event_plot("ldr", "ef1", 0, "0-1", "", False)
 
         _, _, _, vlines, _, _, vlabels, *_ = self.plotted(mock_view)
         assert vlines == [[1.0], [2.0]]
@@ -715,7 +715,7 @@ class TestLoadEventPlot:
             load_event=[{"data": "d0"}, RuntimeError("boom"), {"data": "d2"}],
         )
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0, 1, 2], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0-2", "", False)
 
         data, labels, num_events, vlines, *_ = self.plotted(mock_view)
         assert data == ["d0", "d2"]
@@ -734,7 +734,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[None, None])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0, 1], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0-1", "", False)
 
         assert self.plotted(mock_view)[0] == []
 
@@ -753,7 +753,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "a"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 2, [0], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 2, "0", "", False)
 
         traces = self.plotted(mock_view)[0]
         called_with = controller.model.time_bases.call_args.args
@@ -772,7 +772,7 @@ class TestLoadEventPlot:
         """
         self.answers(controller, load_event=[{"data": "filtered"}, {"data": "raw"}])
 
-        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "F1", True)
+        controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "F1", True)
 
         assert self.plotted(mock_view)[9] is True
 
@@ -1447,7 +1447,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         TestLoadEventPlot.answers(controller, get_num_events=5)
         recorded = self.recording(controller)
 
-        plotted = controller.load_event_plot("ldr", "ef", 2, [0, 1], "F1", True)
+        plotted = controller.load_event_plot("ldr", "ef", 2, "0-1", "F1", True)
 
         assert plotted is True
         assert recorded == [
@@ -1458,7 +1458,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
                     "loader": "ldr",
                     "eventfitter": "ef",
                     "channel": 2,
-                    "events": [0, 1],
+                    "event_range": "0-1",
                     "data_filter": "F1",
                     "raw": True,
                 },
@@ -1466,7 +1466,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         ]
         mock_view.set_event_plot_data.assert_called_once()
 
-    def test_the_recorded_events_are_the_ones_asked_for_not_the_truncated_ones(
+    def test_the_recorded_range_is_the_one_asked_for_not_the_truncated_one(
         self, controller: EventAnalysisController
     ) -> None:
         """A replay truncates against the loader's count again, exactly as the click did."""
@@ -1475,9 +1475,9 @@ class TestPlotEventsIsRecordedWhenItPlots:
         )
         recorded = self.recording(controller)
 
-        controller.load_event_plot("ldr", "No Event Fitter", 3, [0, 1, 9], "", False)
+        controller.load_event_plot("ldr", "No Event Fitter", 3, "0-1,9", "", False)
 
-        assert recorded[0]["kwargs"]["events"] == [0, 1, 9]
+        assert recorded[0]["kwargs"]["event_range"] == "0-1,9"
 
     def test_an_unreadable_count_is_not_recorded(
         self, controller: EventAnalysisController
@@ -1486,7 +1486,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = self.recording(controller)
 
         assert (
-            controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+            controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "", False)
             is False
         )
         assert recorded == []
@@ -1498,7 +1498,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = self.recording(controller)
 
         assert (
-            controller.load_event_plot("ldr", "No Event Fitter", 0, [], "", False)
+            controller.load_event_plot("ldr", "No Event Fitter", 0, "", "", False)
             is False
         )
         assert recorded == []
@@ -1510,7 +1510,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = self.recording(controller)
 
         assert (
-            controller.load_event_plot("ldr", "No Event Fitter", 0, [5, 9], "", False)
+            controller.load_event_plot("ldr", "No Event Fitter", 0, "5,9", "", False)
             is False
         )
         assert recorded == []
@@ -1524,7 +1524,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = self.recording(controller)
 
         assert (
-            controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "F1", False)
+            controller.load_event_plot("ldr", "No Event Fitter", 0, "0", "F1", False)
             is False
         )
         assert recorded == []
@@ -1537,7 +1537,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
         recorded = self.recording(controller)
 
         assert (
-            controller.load_event_plot("ldr", "No Event Fitter", 0, [0, 1], "", False)
+            controller.load_event_plot("ldr", "No Event Fitter", 0, "0-1", "", False)
             is False
         )
         assert recorded == []

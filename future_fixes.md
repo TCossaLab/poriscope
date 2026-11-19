@@ -61,11 +61,6 @@ until its plan is approved; each lands on its own branch, tests first.
   survivor is renamed `ChimeraReaderVC400` (30 files name it) and both old class names are mapped to
   it where a session is read. The real 2024-01 set (`vc400/v2024_01`, first machine only) must be run
   through the merged reader before the cut. **M**
-- **A recorded Plot Events holds its range as text.** `RawDataController.load_event_plot_data:530`
-  and `EventAnalysisController.load_event_plot:71` take `events: List[int]`; a typed `0-99999` costs
-  3.49 MB in the indented session file and 464 bytes as text. The replay's fit check binds names,
-  not types (`MetaController.resolve_replayed_entry:743`), so the parameter is renamed for an old
-  entry to be skipped cleanly. **M**
 - **Database loaders raise on a failed query** (`MetaDatabaseLoader.load_metadata_raw:1408`,
   `load_metadata:1425`, `query_database_directly:1526`, abstract `_load_metadata:1590`). All six tab
   call sites already catch and report; three (`ClusteringController.py:256`,
@@ -280,9 +275,10 @@ addition, or the change waits for 4.0.
 - **One Plot Events request may ask for any number of events.** Recording the range as text (3.0)
   fixes the session file, not the request: a typed `0-99999` still builds the full list, makes one
   plugin call and one subplot per event, and its out-of-range message lists every index. Both panels
-  also expand the text on every keystroke. Three expanders with different rules do it
-  (`IntegerRangeLineEdit.get_values`, `MetaEventTabView._expand_event_indices:196`,
-  `_parse_event_indices:89`): a cap or a confirmation, and one expander. **S-M, ruling**
+  also expand the text on every keystroke. Four expanders with different rules now exist
+  (`IntegerRangeLineEdit.get_values`, `MetaEventTabView._expand_event_indices` and
+  `_parse_event_indices`, and the strict `MetaEventTabController._expand_event_range` a recorded
+  action uses): a cap or a confirmation, and one expander. **S-M, ruling**
 - **A replay can wait forever for a run that reports under another key.** A saved `find_events`
   whose channel is the string `"3"` starts a run that ends as `(3, "finder")` while the replay waits
   for `("finder", "3")` (`replay_sequence.py:376-391`); a probe gave up after 150 s (2026-11-18). No
@@ -349,7 +345,9 @@ Easier after 3.1 has moved the scope onto the Models.
   declines below 0 (`:304-311`); past the end it moves the field and the Controller reports the
   overflow (`RawDataController.py:617-633`, `EventAnalysisController.py:155-167`). Pros: matches the
   subset tabs' wrap, symmetric ends. Cons: positions 0..N-1 are not a browsed set, and a multi-range
-  field (`3, 7-9, 15-19`) has no clean wrap. The View has no event count: push the count to it
+  field (`3, 7-9, 15-19`) has no clean wrap. The arrows page the field's own spelling, so the same
+  three events page by one typed `2,0,1` and by three typed `0-2` (probe, 2026-11-19), though both
+  are recorded as `0-2`. The View has no event count: push the count to it
   (additive); moving the shift to the Controller re-signs a method on a tab base, a break. **S-M,
   ruling**
 - **Figure reset differs per tab**: `ClusteringView.clear_plot:165` guards `figure.clear()`

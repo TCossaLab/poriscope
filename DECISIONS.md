@@ -18,6 +18,43 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-19 - A recorded Plot Events holds its events as range text, made canonical by the View
+
+**Context.** Raw Data's and Event Analysis's Plot Events took `events: List[int]` and recorded it
+whole, so a typed `0-99999` put 100,000 integers in the history: 3.49 MB in the indented session
+file, rewritten on every history change while it was the tab's latest drawing, against 464 bytes as
+text. After 3.0 ships, changing a recorded action's parameters is a break, so it was done before the
+cut.
+
+**Decision** (Kyle, 2026-11-18). Both actions take `event_range: str`. The View asks with the
+canonical spelling of the selection (`_format_event_indices`: one spelling per set of events, the
+form the arrows already write), so that is what is recorded and what write-back shows. The panels
+and the arrows still hand the View a list; only the request to the Controller changed. The
+Controller expands the text through `MetaEventTabController._expand_event_range`, which reads only
+that grammar (indices and `first-last` ranges, comma separated) and gives None for anything else;
+the action then says on the status panel that the range could not be read, and plots nothing.
+
+**Why the parameter was renamed.** The replay's fit check binds names, not types
+(`MetaController.resolve_replayed_entry`). Under the old name, a list saved by a development build
+would have been handed to an action expecting text. Under a new name it is reported on the status
+panel and skipped. No release wrote the list form, so nothing is converted.
+
+**Rejected.** Recording the text as typed: two spellings of one set of events, and an arrow step can
+leave a segment with a negative part in the field. One class that every expander calls: it would
+change the arrows' edge cases in the same step. Skipping unreadable segments of a saved range, as
+the lenient expanders do: a damaged entry would plot something other than what was recorded.
+
+**Evidence.** The Controller's expansion of the canonical text gives back what the field expanded,
+for eleven typed forms including reversed ranges, a leading minus and empty segments
+(`test_event_range_text.py`). A list emitted on a text signal arrives as an empty string with no
+error (probed), so the check that every emit site was converted is the replay-guard and end-to-end
+tests, which use real signals; the View unit tests mock `emit`.
+
+**Revisit if** a request for very many events needs a cap or a confirmation (queued, 3.2), which
+is not a break, or the four range expanders are merged into one.
+
+---
+
 ## 2026-11-18 - 3.0's readers ignore what a later minor adds: four fixes, one accepted loss, and what a minor must not add
 
 **Context.** The saved-file rule (2026-11-18, below) lets a minor add to a file only if every reader
@@ -887,7 +924,8 @@ filled in, in every tab. Replay binds a saved entry before calling it, and repor
 
 **Rejected.** Saving positionally (unreadable); converting old files now (the saved-history format changes again).
 
-**Revisit** when the saved-history format is next changed.
+**Revisit** when the saved-history format is next changed. *Met 2026-11-19: Plot Events' parameters changed (range
+text, above), and again nothing was converted - only development builds had written the earlier form.*
 
 ---
 
