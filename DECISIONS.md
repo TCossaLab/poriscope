@@ -10,9 +10,9 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 Entries from September 2026 that name a "Step 4a", "5c.1", "Decision C", "Tier A" or the
 "closeout" refer to the 2.0.0 refactor plan, `refactor_2.0.0.md`, deleted at release; it is
-in git history (last present at the parent of the commit that deleted it) and its write-up,
-with the method rules, is at <https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>.
-Like the annotation-pass numbers, these labels only date and place the decision.
+in git history (`git show d40853b4^:refactor_2.0.0.md`), with the exit review's before/after
+figures. Its method rules are the `refactoring-codebases` and `planning-and-executing-changes`
+skills. Like the annotation-pass numbers, these labels only date and place the decision.
 `future_refactors_and_features.md`, cited by some entries, was folded into `future_fixes.md`
 and deleted on 2026-09-27; it too is in git history.
 
