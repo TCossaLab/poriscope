@@ -53,13 +53,8 @@ Everything planned has landed. `develop` burns in with lab users for a few weeks
 ### Before the cut (ruled 2026-11-18)
 
 **Plans:** <https://claude.ai/artifact/LffgYJDjd8U95z3Rvv1oMs>, approved 2026-11-18 and all landed
-on `develop` by 2026-11-19. What remains:
-
-- **Run the real 2024-01 Chimera set through `ChimeraReaderVC400`.** The reader that opened it,
-  `ChimeraReader20240101`, is merged into `ChimeraReaderVC400`; synthetic files in both layouts read
-  sample for sample alike, and the real set (`vc400/v2024_01`, first machine only) has not been run:
-  `PORISCOPE_REAL_DATA_DIR=<dir> pytest tests/unit/plugins/conformance/test_real_recordings.py`
-  must reproduce the goldens recorded through the removed reader. **S, owner: Kyle**
+on `develop` by 2026-11-19, including the real 2024-01 Chimera set read through
+`ChimeraReaderVC400`. Nothing remains.
 
 ### Release prep, after the burn-in
 
@@ -78,6 +73,9 @@ on `develop` by 2026-11-19. What remains:
   c44 run `check_scripted_keys.py`, which no longer exists. It has nothing for the plugin API break,
   the analysis tabs and replay, Conditioning or the saved-file rule: write those against the running
   app. Delete the page after the pass.
+- **Delete the Poriscope 3.0 Plan page once 3.0.0 has landed** (Kyle, 2026-11-19;
+  <https://claude.ai/artifact/W9G3cHAQvSopQsRrJH6s3z>, shared with Carolina). Everything on it is
+  already in the skills, `DECISIONS.md` or this file.
 - **Some 3.0 changelog lines sit under 2.0.0.** Three are confirmed: "Fixed the Event Analysis tab
   drawing one loader's fitter's fits over another loader's events", "Fit Events ... now refuses to
   run" and "Commit Events ... now refuses to run" (`changelog.md:690-694`) come from commits of
