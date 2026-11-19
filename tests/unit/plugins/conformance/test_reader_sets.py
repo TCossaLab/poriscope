@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 from tests.synthetic_data.synthetic_abf2 import (
     Abf2RecordingConfig,
@@ -96,7 +96,7 @@ def two_file_set(tmp_path: Path):
 def test_a_two_file_set_is_read_as_one_recording(two_file_set) -> None:
     """The channel is the two files end to end, and the boundary is seamless."""
     first, second = two_file_set
-    reader = build_any_reader(ChimeraReader20240501, first)
+    reader = build_any_reader(ChimeraReaderVC400, first)
     try:
         samples_per_file = int(CHIMERA_SAMPLERATE_HZ * FILE_DURATION_S)
         assert reader.get_channel_length(CHIMERA_CHANNEL) == 2 * samples_per_file
@@ -134,7 +134,7 @@ def test_a_file_at_a_different_sample_rate_is_refused(tmp_path: Path) -> None:
         seed=2,
     )
     with pytest.raises(ValueError, match="120001") as refused:
-        reader = build_any_reader(ChimeraReader20240501, first)
+        reader = build_any_reader(ChimeraReaderVC400, first)
         reader.close_resources()
     assert "samplerate" in str(refused.value)
 

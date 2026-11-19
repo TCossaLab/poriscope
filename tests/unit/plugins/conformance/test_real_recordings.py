@@ -16,7 +16,9 @@ them and a developer with the recordings runs them by pointing the variable at t
 directory that holds the six subdirectories listed in ``RECORDINGS``. A recording whose
 subdirectory is missing skips on its own, so a partial copy still runs the rest.
 
-Figures recorded 2026-10-06 through the shipped readers (``MetaReader.load_data``). Two
+Figures recorded 2026-10-06 through the shipped readers (``MetaReader.load_data``). The
+Chimera 2024-01 set's were recorded through ``ChimeraReader20240101``, removed in 3.0;
+the reader that now opens both Chimera VC400 layouts must reproduce them. Two
 facts about the data itself, so nobody re-investigates them: the four channel files of
 the Chimera 2024-05 set are byte-identical copies of one recording, which is why its
 channels report the same statistics; and the two ABF sets report non-integer sample
@@ -31,8 +33,7 @@ import numpy as np
 import pytest
 
 from poriscope.plugins.datareaders.BinaryReader1X import BinaryReader1X
-from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader20240101
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.datareaders.LegacyElementsReader import LegacyElementsReader
 from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 from poriscope.utils.MetaReader import MetaReader
@@ -99,7 +100,7 @@ RECORDINGS = [
     RealRecording(
         name="chimera_2024_05",
         subdir="vc400/v2024_05",
-        reader_cls=ChimeraReader20240501,
+        reader_cls=ChimeraReaderVC400,
         first_file="*_HS1_*.log",
         samplerate=5_000_000.0,
         lengths={ch: 1_652_555_776 for ch in (1, 2, 3, 4)},
@@ -110,7 +111,7 @@ RECORDINGS = [
     RealRecording(
         name="chimera_2024_01",
         subdir="vc400/v2024_01",
-        reader_cls=ChimeraReader20240101,
+        reader_cls=ChimeraReaderVC400,
         first_file="*_HS1_20240313_171429.log",
         samplerate=5_000_000.0,
         lengths={1: 182_976_512, 2: 244_842_496},

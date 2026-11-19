@@ -61,7 +61,7 @@ Multichannel
 ONE database file, as separate ``channel_id`` rows -- not one file per
 channel the way raw-data multichannel generation works. That difference
 is structural, not a style choice: raw-data readers like
-ChimeraReader20240501 assemble a multichannel experiment by globbing a
+ChimeraReaderVC400 assemble a multichannel experiment by globbing a
 directory for sibling files, so multichannel there has to mean "several
 files". SQLiteEventLoader instead queries a single file's ``channels``/
 ``events`` tables filtered by ``channel_id``, so a single file already
@@ -904,7 +904,7 @@ def generate_multichannel_events_database(
     Write a multi-channel synthetic events database with known events.
 
     Unlike raw-data multichannel generation (one file per channel,
-    because that's how a reader like ChimeraReader20240501 finds sibling
+    because that's how a reader like ChimeraReaderVC400 finds sibling
     files by globbing), this writes every channel into ONE database
     file, as separate channel_id rows -- confirmed against the real
     SQLiteEventLoader, whose queries already filter by channel_id within

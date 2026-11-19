@@ -12,7 +12,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     Integration test (no GUI) for the *raw data* instantiation pipeline,
     against a synthetic Chimera recording built by the sample_chimera fixture.
 
-      ChimeraReader20240501  ->  BesselFilter  ->  ClassicBlockageFinder  ->  SQLiteEventWriter
+      ChimeraReaderVC400  ->  BesselFilter  ->  ClassicBlockageFinder  ->  SQLiteEventWriter
 
     Pass criteria:
       - All plugins instantiate and apply settings without error,
@@ -23,8 +23,8 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
       - Output SQLite DB passes integrity and has expected tables/rows.
     """
     # Real plugins
-    from poriscope.plugins.datareaders.ChimeraReader20240501 import (
-        ChimeraReader20240501,
+    from poriscope.plugins.datareaders.ChimeraReaderVC400 import (
+        ChimeraReaderVC400,
     )
     from poriscope.plugins.datawriters.SQLiteEventWriter import SQLiteEventWriter
     from poriscope.plugins.eventfinders.ClassicBlockageFinder import (
@@ -33,7 +33,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     from poriscope.plugins.filters.BesselFilter import BesselFilter
 
     # ----- 1) Reader: point only to the .log (Chimera reader will discover its .json)
-    reader = ChimeraReader20240501()
+    reader = ChimeraReaderVC400()
     reader_settings = reader.get_empty_settings(standalone=True)
     reader_settings["Input File"]["Value"] = sample_chimera["log"]
     reader.apply_settings(reader_settings)

@@ -116,6 +116,11 @@ values 2.0 wrote; to compare with 3.0, run the step again.
 - ``TCossaLabABFReader`` and ``LegacyElementsReader`` refuse a file whose current channel's units
   are not a current, instead of reading it as pA, and no longer refuse a file for its ADC channel
   count or channel names.
+- ``ChimeraReader20240501`` is renamed ``ChimeraReaderVC400`` and ``ChimeraReader20240101`` is
+  removed. The one reader opens both kinds of Chimera VC400 ``.log`` file - settings in a
+  companion ``.json``, or embedded at the start of the ``.log`` - and reads the same values from
+  each. A saved session that names either old reader restores it as a ``ChimeraReaderVC400``
+  and says so on the status panel; a script that imports either name must import the new one.
 
 **Assisted subset filters** (Metadata and Protein plots and exports):
 

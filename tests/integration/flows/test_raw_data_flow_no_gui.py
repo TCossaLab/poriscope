@@ -26,7 +26,7 @@ from typing import Any, Dict, List
 import pytest
 from PySide6.QtWidgets import QMessageBox
 
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.datareaders.ChimeraReaderVC400 import ChimeraReaderVC400
 from poriscope.plugins.datawriters.SQLiteEventWriter import SQLiteEventWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from tests.integration.flows._triad import Triad, build_triad
@@ -93,7 +93,7 @@ def raw_data_tab(qapp, tmp_path: Path, sample_chimera: Dict[str, str]) -> Triad:
     """
     triad = build_triad("RawDataController", tmp_path)
 
-    reader = ChimeraReader20240501()
+    reader = ChimeraReaderVC400()
     reader_settings = reader.get_empty_settings(standalone=True)
     reader_settings["Input File"]["Value"] = sample_chimera["log"]
     reader.apply_settings(reader_settings)

@@ -33,7 +33,7 @@ import logging
 
 from poriscope import (
     BesselFilter,
-    ChimeraReader20240501,
+    ChimeraReaderVC400,
     ClassicBlockageFinder,
     PeakFinder,
     SQLiteDBLoader,
@@ -69,8 +69,8 @@ metadata_output_file_path = (
 
 
 def main():
-    # create a reader object to load our data file. Here we use ChimeraReader20240501, but any other type could be substituted
-    raw_data = ChimeraReader20240501()
+    # create a reader object to load our data file. Here we use ChimeraReaderVC400, but any other type could be substituted
+    raw_data = ChimeraReaderVC400()
 
     # pull the settings dict. Standalone=True is needed to tell it that this is in a script and not in the GUI
     data_settings = raw_data.get_empty_settings(standalone=True)

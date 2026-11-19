@@ -57,6 +57,8 @@
 
 * **A setting declared `int` no longer accepts `True` or `False`** when settings are applied: Python counts a boolean as an integer, and the check now refuses one by name, as it already did for a default
 
+* **`ChimeraReader20240501` is renamed `ChimeraReaderVC400` and `ChimeraReader20240101` is removed**; the one reader opens both Chimera VC400 `.log` layouts and reads the same values from each, a saved session naming either old class restores it as a `ChimeraReaderVC400`, and a script importing either name must import the new one
+
 #### Saved files:
 
 * **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 3.0 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it
@@ -397,6 +399,8 @@
 * **The Raw Data tab's baseline readout now uses the event finders' baseline fit**, so it no longer reads high in sigma or lands on an occupied level when the trace spends over half the window there
 
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
+
+* `ChimeraReaderVC400` opens both Chimera VC400 file layouts: a `.log` with its settings embedded ahead of an `<END HEADER>` marker is read from that header, and any other from its companion `.json`
 
 #### Event Analysis:
 

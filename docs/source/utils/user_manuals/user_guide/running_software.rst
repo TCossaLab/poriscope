@@ -17,7 +17,7 @@ Loading Data
 ------------
 
 1. Click the **➕** beside **READER**.
-2. Select **ChimeraReader20240501**.
+2. Select **ChimeraReaderVC400**.
 3. Click **Select Input File** and choose any ``.log`` file from the tutorial dataset
    (see :ref:`tutorial_dataset`).
 

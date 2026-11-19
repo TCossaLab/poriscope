@@ -169,7 +169,7 @@ its failure names exactly what is missing.
 
      # _recipes.py
      READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
-         "ChimeraReader20240501": _chimera_20240501_dataset,
+         "ChimeraReaderVC400": _chimera_vc400_dataset,
          "YourReader": _your_format_dataset,
      }
 
@@ -194,9 +194,10 @@ its failure names exactly what is missing.
        - a new generator function in that format's existing module, since the config
          describes the signal and cannot describe file layout.
          ``synthetic_chimera.py`` holds two generators for exactly this reason: the
-         samples are encoded identically, but one format keeps its metadata in a
+         samples are encoded identically, but one layout keeps its metadata in a
          separate ``.json`` file and the other embeds it in the recording's own
-         header.
+         header. One reader opens both, so only the first is its conformance
+         fixture; the second is driven by that reader's own tests.
      * - reads a genuinely new format
        - a new writer module under ``tests/synthetic_data/`` — a
          ``BaseSyntheticRecordingWriter`` subclass implementing ``_write()``.

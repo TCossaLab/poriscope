@@ -35,7 +35,7 @@ from PySide6.QtTest import QTest
 # environment so the same tests can be pointed at alternative plugins
 # without editing code.
 
-READER_NAME = os.getenv("E2E_READER_NAME", "ChimeraReader20240501")
+READER_NAME = os.getenv("E2E_READER_NAME", "ChimeraReaderVC400")
 FINDER_NAME = os.getenv("E2E_EVENTFINDER_NAME", "ClassicBlockageFinder")
 WRITER_NAME = os.getenv("E2E_WRITER_NAME", "SQLiteEventWriter")
 

@@ -18,6 +18,44 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-19 - One Chimera VC400 reader, and a session's old class names are mapped where it is read
+
+**Context.** Two readers opened Chimera VC400 `.log` files and differed in one method: where the
+acquisition settings are found. `ChimeraReader20240101` read them from JSON embedded at the start
+of the `.log`, ending `<END HEADER>`; `ChimeraReader20240501` from a companion `.json`. The first
+carried a deprecation notice from 2.0.0, but the lab's real-data tier holds a 2024-01 set only it
+could open, so removing it alone would have dropped a format. Removing or renaming a shipped plugin
+class is a break, so it was done before 3.0 is cut.
+
+**Decision** (Kyle, 2026-11-18). One reader, `ChimeraReaderVC400`, named as `ChimeraReaderVC100`
+is. It tells the layout from the file: a marker in the first 10,000 bytes means the settings are
+embedded and the samples start after it; no marker means the companion `.json`. The marker decides
+even when a `.json` sits beside the file, so a stray companion can neither replace a file's own
+settings nor leave its header to be read as samples. Both old names are gone from `exposed.py`.
+
+A saved session names each plugin by class, so `MainModel.load_session` maps both old names to
+`ChimeraReaderVC400` (`RENAMED_PLUGIN_CLASSES`), for the 3.0 layout and the 2.0 one, and returns a
+note per renamed entry that the Controller shows on the status panel. Only the entry's `subclass`
+changes. A class still installed under an old name, such as a copy kept in the user plugin folder,
+is not renamed.
+
+**Why a map and not an alias.** An importable alias is orphaned code (2026-09-20, "No alias module
+for a removed exposed name"), and a script that imports an old name fails at its import line, where
+the fix is obvious. A session cannot be fixed by its owner that way: without the map, every 2.0
+session with a Chimera reader would lose the reader and everything that depends on it.
+
+**Evidence.** The two files differed only in `_get_configs`, the deprecation notice and docstrings
+(`diff` after normalising the name). Synthetic recordings written in both layouts from one seed
+read sample for sample alike. The conformance suite drives the reader over the companion layout;
+the embedded layout's malformed-input cases are in
+`tests/unit/plugins/datareaders/test_chimera_both_layouts.py`. Not yet run: the real 2024-01 set
+through the merged reader, against the goldens the removed reader recorded (queued, owner Kyle).
+
+**Revisit if** another shipped plugin is renamed (add a row to the map; do not add an alias), or
+the VC400 gains a third layout that the marker cannot tell from the other two.
+
+---
+
 ## 2026-11-19 - A recorded Plot Events holds its events as range text, made canonical by the View
 
 **Context.** Raw Data's and Event Analysis's Plot Events took `events: List[int]` and recorded it

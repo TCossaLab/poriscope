@@ -114,12 +114,15 @@ class LoadedSession:
     ``plugin_history`` maps each key to its entry, data plugins first in their saved
     order, then the analysis tabs, each with ``metaclass`` and ``subclass``.
     ``last_tab`` is the tab whose history changed last when it was saved, or "".
+    ``notes`` are lines for the user about what reading the file changed, one per
+    entry whose class has been renamed since it was saved.
     """
 
     plugin_history: "OrderedDict[str, Dict[str, Any]]" = field(
         default_factory=OrderedDict
     )
     last_tab: str = ""
+    notes: Tuple[str, ...] = ()
 
 
 class MainModel(QObject):
@@ -147,6 +150,15 @@ class MainModel(QObject):
         "MetaController": MetaController,
         "MetaView": MetaView,
         "MetaModel": MetaModel,
+    }
+
+    #: Plugin classes a saved session may name that no longer exist under that
+    #: name, and the class that now does each one's job. Used only where a session
+    #: is read (`_rename_plugin_classes`): no class can be imported under an old
+    #: name, and a plugin still installed under one is left alone.
+    RENAMED_PLUGIN_CLASSES: Dict[str, str] = {
+        "ChimeraReader20240101": "ChimeraReaderVC400",
+        "ChimeraReader20240501": "ChimeraReaderVC400",
     }
 
     #: Settings keys whose value is a real type rather than data. Session JSON
@@ -586,7 +598,9 @@ class MainModel(QObject):
 
         A file in this version's layout (:py:meth:`save_session`) and a file in the 2.0
         layout - a map of entries, each carrying ``metaclass`` and ``subclass`` - both
-        load: data plugins first in their saved order, then the analysis tabs. Anything
+        load: data plugins first in their saved order, then the analysis tabs. An entry
+        naming a plugin class that has since been renamed (``RENAMED_PLUGIN_CLASSES``)
+        comes back naming the class it became, with a note saying so. Anything
         else is refused here, before the caller resets the workspace to apply it: a file
         that is missing or unreadable, one that holds no session (a tab action history
         from the same folder, a config file), and one in a layout this version does not
@@ -609,8 +623,44 @@ class MainModel(QObject):
             self.logger.debug(f"Unable to read a session from {file_name}: {e}")
             raise SessionRefused(f"it could not be read ({e})") from e
         session = self._session_from_file(content)
+        notes = self._rename_plugin_classes(session.plugin_history)
         self.replace_class_names_with_classes(session.plugin_history)
-        return session
+        return LoadedSession(session.plugin_history, session.last_tab, tuple(notes))
+
+    def _rename_plugin_classes(
+        self, history: "OrderedDict[str, Dict[str, Any]]"
+    ) -> List[str]:
+        """
+        Point each entry that names a renamed plugin class at the class it became.
+
+        Only the entry's ``subclass`` changes: its key, its settings and its place in
+        the order are what the plugins that depend on it name. A class still installed
+        under an old name - a copy kept in the user plugin folder - is not renamed.
+
+        :param history: the session's entries, changed in place
+        :type history: OrderedDict[str, Dict[str, Any]]
+        :return: one line for the user per entry renamed
+        :rtype: List[str]
+        """
+        installed = {
+            name
+            for classes in self.available_plugin_classes.values()
+            for name in classes
+        }
+        notes = []
+        for key, entry in history.items():
+            saved_as = entry["subclass"]
+            if not isinstance(saved_as, str) or saved_as in installed:
+                continue
+            current = self.RENAMED_PLUGIN_CLASSES.get(saved_as)
+            if current is None:
+                continue
+            entry["subclass"] = current
+            notes.append(
+                f"{key} was saved as a {saved_as}, which is now {current}; it is "
+                f"restored as one"
+            )
+        return notes
 
     def _session_from_file(self, content: Any) -> LoadedSession:
         """

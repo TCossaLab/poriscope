@@ -276,7 +276,9 @@ def test_a_renamed_plugin_key_loads_by_its_name_with_its_dependents(
     finder whose ``MetaReader`` setting names it. Restoring instantiates by key in
     this order, so a load that re-keyed the entry, or moved it after its dependent,
     would leave the finder pointing at a plugin that does not exist. Saved again in
-    this version's layout, it has to read back the same way.
+    this version's layout, it has to read back the same way. The file names its
+    reader ``ChimeraReader20240501``, which is ``ChimeraReaderVC400`` now, so it
+    comes back as that.
     """
     saved = Path(__file__).parents[1] / "views" / "saved_state" / "session_1x.json"
 
@@ -286,7 +288,7 @@ def test_a_renamed_plugin_key_loads_by_its_name_with_its_dependents(
 
     for history in (loaded, reloaded):
         keys = list(history)
-        assert history["testrename"]["subclass"] == "ChimeraReader20240501"
+        assert history["testrename"]["subclass"] == "ChimeraReaderVC400"
         finder = history["ClassicBlockageFinder_0"]
         assert finder["settings"]["MetaReader"]["Value"] == "testrename"
         assert keys.index("testrename") < keys.index("ClassicBlockageFinder_0")

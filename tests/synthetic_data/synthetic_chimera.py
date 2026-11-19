@@ -1,16 +1,16 @@
 """
 Generation of synthetic Chimera VC400 recordings for testing.
 
-Writes files a real ChimeraReader20240501 can open, containing a signal
+Writes files a real ChimeraReaderVC400 can open, containing a signal
 whose contents are known exactly: a flat baseline with Gaussian noise,
 into which blockage events of chosen depth and duration have been placed
 at chosen positions.
 
-Two writers live here, for the two Chimera log-file variants ChimeraReader20240101
-and ChimeraReader20240501 read: ChimeraRecordingWriter (a sidecar .json) and
+Two writers live here, for the two Chimera VC400 log-file layouts
+ChimeraReaderVC400 reads: ChimeraRecordingWriter (a sidecar .json) and
 Chimera20240101RecordingWriter (the same metadata embedded in the .log file's own
 header, terminated by a literal ``<END HEADER>`` marker - see
-ChimeraReader20240101._get_configs for the exact parsing this must satisfy). Both
+ChimeraReaderVC400._read_settings for the exact parsing this must satisfy). Both
 share the same ADC code / gain-stack conversion and the same picoamp signal
 construction; only how the metadata reaches the reader differs.
 
@@ -162,9 +162,9 @@ def _build_metadata_dict(config: ChimeraRecordingConfig, channel: int) -> dict:
     """
     Build the "log"/"global"/"channel" metadata block both formats share.
 
-    ChimeraReader20240501 reads this from a sidecar .json; ChimeraReader20240101
-    reads the identical structure embedded in the .log file's own header. Both
-    readers' _get_configs index this same set of keys.
+    ChimeraReaderVC400 reads this from a sidecar .json, or the identical
+    structure embedded in the .log file's own header; its
+    _config_from_settings indexes this same set of keys either way.
 
     :param config: Recording parameters for this channel.
     :type config: ChimeraRecordingConfig
@@ -198,7 +198,7 @@ def _build_metadata_dict(config: ChimeraRecordingConfig, channel: int) -> dict:
 class ChimeraRecordingWriter(BaseSyntheticRecordingWriter[ChimeraRecordingConfig]):
     """
     Subclass of BaseSyntheticRecordingWriter for writing Chimera VC400
-    .log/.json file pairs, for ChimeraReader20240501.
+    .log/.json file pairs, for ChimeraReaderVC400.
     """
 
     def _write(
@@ -254,12 +254,12 @@ class Chimera20240101RecordingWriter(
 ):
     """
     Subclass of BaseSyntheticRecordingWriter for writing Chimera VC400 .log
-    files in the 2024-01 format, for ChimeraReader20240101.
+    files in the 2024-01 layout, which ChimeraReaderVC400 tells by its marker.
 
     Same ADC codes and metadata schema as ChimeraRecordingWriter, but the
     metadata is JSON embedded at the start of the .log file itself, terminated
     by a literal ``<END HEADER>`` marker, rather than a sidecar .json - see
-    ChimeraReader20240101._get_configs, which reads up to the first 10000
+    ChimeraReaderVC400._read_settings, which reads up to the first 10000
     bytes of the file looking for that marker.
     """
 
@@ -353,7 +353,7 @@ def generate_chimera_20240101_dataset(
     seed: int = 42,
 ) -> SyntheticDataset:
     """
-    Write a single-channel Chimera 2024-01 recording, for ChimeraReader20240101.
+    Write a single-channel Chimera VC400 recording in the 2024-01 layout.
 
     Convenience wrapper around Chimera20240101RecordingWriter().generate(...).
     Unlike generate_chimera_dataset, the returned dataset has no

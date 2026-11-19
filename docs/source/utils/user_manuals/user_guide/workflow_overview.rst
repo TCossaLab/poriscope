@@ -10,7 +10,7 @@ Each tab has its own page with the details: :ref:`rawdata-tab`, :ref:`eventAnaly
 1. Raw Data
 -----------
 
-- The user selects a raw data file using a compatible reader plugin (e.g., ``ChimeraReader20240501``, ``BinaryReader1X``).
+- The user selects a raw data file using a compatible reader plugin (e.g., ``ChimeraReaderVC400``, ``BinaryReader1X``).
 - Available metadata (duration, number of channels, sampling rate, etc.) is extracted and displayed.
 - Users choose the desired channel(s), time ranges, and optionally apply filters for preprocessing the data.
 - Live previews allow validation of selected parameters before further analysis.

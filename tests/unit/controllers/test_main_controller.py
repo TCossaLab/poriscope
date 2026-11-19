@@ -2400,3 +2400,19 @@ def test_a_refused_load_asks_nothing(controller: MainController) -> None:
     controller.load_session("broken.json")
 
     controller.main_view.ask_which_tabs_to_replay.assert_not_called()
+
+
+def test_a_load_shows_what_reading_the_session_changed(
+    controller: MainController,
+) -> None:
+    """Between the reset's line and the sign-off, where the restore's own messages go."""
+    note = "mine was saved as an OldReader, which is now NewReader"
+    controller.main_model.load_session.return_value = LoadedSession(
+        OrderedDict(), notes=(note,)
+    )
+
+    controller.load_session("session.json")
+
+    shown = [c.args[0] for c in controller.main_view.add_text_to_display.call_args_list]
+    assert note in shown
+    assert shown.index(note) < shown.index("Loaded session from session.json.")

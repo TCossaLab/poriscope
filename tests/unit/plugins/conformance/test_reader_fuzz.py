@@ -20,19 +20,18 @@ Three tiers are asserted, in order of how much the mutation lets the reader get:
    ``ValueError`` (``MetaReader.load_data``'s documented bounds check).
 
 **What this deliberately does not assert.** Which exception type tier 1 raises is
-unconstrained. Measured directly across the mutations here: a 0-byte file alone
-already produces four different exception families depending on reader and
-format - ``ValueError`` (most readers, from an empty ``numpy.memmap``),
-``json.decoder.JSONDecodeError`` (``ChimeraReader20240101``'s embedded-header
-parse, itself a ``ValueError`` subclass), ``NotImplementedError`` (the three ABF
-readers, from ``pyabf``'s header parse; *not* a ``ValueError`` subclass), and a
-missing sidecar file raises
-``FileNotFoundError`` or ``OSError`` depending on the reader. None of that is a
+unconstrained. Measured directly across the mutations here (2026-11-19): a 0-byte
+file alone produces two exception families depending on reader and format -
+``ValueError`` (five readers, from an empty ``numpy.memmap``) and
+``NotImplementedError`` (the three ABF readers, from ``pyabf``'s header parse;
+*not* a ``ValueError`` subclass) - a missing sidecar file raises
+``FileNotFoundError`` or ``OSError`` depending on the reader, and an emptied one
+``json.decoder.JSONDecodeError`` or ``scipy``'s ``MatReadError``. None of that is a
 defect this suite should paper over by asserting a specific type it does not
 have - if every reader should converge on one exception contract for malformed
 input, that is a design question for whoever owns each reader family
 (``@shadowk29`` per ``CODEOWNERS``), not something to decide here. Same reasoning
-for a reader with a sidecar file: neither ``ChimeraReader20240501`` nor
+for a reader with a sidecar file: neither ``ChimeraReaderVC400`` nor
 ``ChimeraReaderVC100`` attempts to degrade gracefully when its sidecar is
 missing today (both raise cleanly), and this suite does not assert that they
 must keep doing so - only that they do not hang or crash uncaught either way.

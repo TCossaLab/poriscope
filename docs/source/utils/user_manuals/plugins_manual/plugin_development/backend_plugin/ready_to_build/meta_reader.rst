@@ -12,7 +12,7 @@ Build a MetaReader subclass
    **A reader carries one testing obligation the other plugin families do not.** The
    conformance suite drives every reader against a synthetic recording in its own on-disk
    format, so every reader needs an entry in ``READER_DATASET_BUILDERS``
-   (``tests/unit/plugins/conformance/_recipes.py``). Reuse is the common case - the nine
+   (``tests/unit/plugins/conformance/_recipes.py``). Reuse is the common case - the eight
    shipped readers are served by five synthetic-recording modules (Chimera, Chimera VC100,
    raw binary, NI binary and ABF2) - and a new format needs a small writer under
    ``tests/synthetic_data/``. See :ref:`plugin_conformance_testing` for which case is yours,
