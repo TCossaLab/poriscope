@@ -16,7 +16,7 @@ audit (<https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>).
 ## The release series (planned 2026-11-18)
 
 **Plan page:** <https://claude.ai/artifact/XJSQzf54ng5AhJhq1V5691>: what each release is for, and
-the rulings below with their options.
+the rulings below.
 
 A release with any breaking change is a major (`DECISIONS.md` 2026-11-12): narrowing, removing or
 renaming anything a plugin or tab can override or call, changing a saved file other than by
@@ -35,12 +35,9 @@ sorted by what each fix does to compatibility, then by theme.
 
 Each minor also takes the entries under "Any release" that sit in files it already opens.
 
-**Rulings owed on the series:**
-
-- **The order of 3.1 to 3.4**, and whether 3.2 runs as a parallel track.
-
 **Ruled 2026-11-18 (Kyle):** seven changes go into 3.0 while it is the open major ("Before the cut",
-below), and `NanoTrees` stays.
+below), and `NanoTrees` stays. **Ruled 2026-11-19:** the order is as the table reads, with 3.1 and
+3.2 as parallel tracks, whichever is ready first taking the next number.
 
 ## 3.0.0 - trust the numbers
 
