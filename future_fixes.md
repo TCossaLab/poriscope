@@ -699,11 +699,15 @@ Test-suite work is the test developer's by default.
   prototype two-component mixture on the samples, BIC (margin 10) with n divided by each event's
   padding correlation length, resolves none of the 5,817 events under 150 samples, where the
   histogram fit accepts 18; uncorrected it calls 52% of 50-99-sample events two populations. On
-  events over 150 samples the two disagree (27 both, 77 histogram only, 20 mixture only). Rulings:
-  replace the fit or decide acceptance only (both change results: 4.0), or only label events too
-  short (additive: any minor); validate on filtered synthetic events first, and answer
-  `DECISIONS.md` 2026-08-26, which ruled BIC out for PeakFinder. Write-up:
-  <https://claude.ai/artifact/D7ojrzmfUTXp5Rrq5UD8aJ>. **L, ruling**
+  events over 150 samples the two disagree (27 both, 77 histogram only, 20 mixture only). Ruled
+  2026-11-19 (Ben, Kyle): keep the least-squares histogram fit for the values; count independent
+  samples from each event's own padding (the database records no filter cutoff); a BIC margin, if
+  used, is 6 with a 5% width floor. Open, asked of Ben on the write-up: what "too short" means. A
+  length check (no fit below n_eff 5) keeps 95 of today's 104 fits on that database; a BIC gate
+  (margin 6) keeps 32, removing 54 on events over 150 samples where the methods disagree. Either
+  changes results, so it lands before the 3.0 cut or waits for 4.0. Answer `DECISIONS.md`
+  2026-08-26 (BIC ruled out for PeakFinder) when built. Write-up:
+  <https://claude.ai/artifact/D7ojrzmfUTXp5Rrq5UD8aJ>. **M, waiting on Ben**
 - **No accessibility work**: no accessible names, `QShortcut`s, mnemonics or tab order
   anywhere in `poriscope/`; sidebar colours hardcoded (`icon_menu_widget.py:81-89`,
   `text_menu_widget.py:80-89`); Windows-only fonts hardcoded 7 times. **M-L, ruling** (the scope)
