@@ -34,7 +34,6 @@ from poriscope.plugins.conditioningloaders.NIConditioningLoader import (
 )
 from poriscope.plugins.datareaders.ABFReader import ABFReader
 from poriscope.plugins.datareaders.BinaryReader1X import BinaryReader1X
-from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader20240101
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.datareaders.ChimeraReaderVC100 import ChimeraReaderVC100
 from poriscope.plugins.datareaders.LegacyElementsReader import LegacyElementsReader
@@ -116,7 +115,6 @@ __all__ = [
     "ABFReader",
     "TCossaLabABFReader",
     "BinaryReader1X",
-    "ChimeraReader20240101",
     "ChimeraReader20240501",
     "ChimeraReaderVC100",
     "SingleBinaryDecoder",

@@ -133,3 +133,67 @@ def test_a_file_with_neither_a_header_nor_a_companion_names_the_missing_file(
         open_reader(dataset.data_path)
 
     assert companion.name in str(refused.value)
+
+
+def embedded_recording(tmp_path: Path) -> Path:
+    """
+    Write a recording with its settings embedded, and return its ``.log`` file.
+
+    :param tmp_path: the directory to write into
+    :return: the path of the ``.log`` file
+    """
+    dataset = generate_chimera_20240101_dataset(
+        tmp_path, recording_config(), channel=CHANNEL, num_events=3
+    )
+    return dataset.data_path
+
+
+def test_a_damaged_marker_leaves_a_file_that_needs_a_companion(
+    tmp_path: Path,
+) -> None:
+    """Without its marker the file is not told as embedded, and nothing else describes it."""
+    log_file = embedded_recording(tmp_path)
+    data = log_file.read_bytes()
+    log_file.write_bytes(data.replace(b"<END HEADER>", b"<XXXX XXXXXX>"))
+
+    with pytest.raises(FileNotFoundError) as refused:
+        open_reader(log_file)
+
+    assert log_file.with_suffix(".json").name in str(refused.value)
+
+
+def test_a_file_cut_inside_its_header_is_refused(tmp_path: Path) -> None:
+    log_file = embedded_recording(tmp_path)
+    header_end = log_file.read_bytes().index(b"<END HEADER>")
+    log_file.write_bytes(log_file.read_bytes()[: header_end // 2])
+
+    with pytest.raises(FileNotFoundError):
+        open_reader(log_file)
+
+
+def test_settings_that_are_not_json_are_refused(tmp_path: Path) -> None:
+    log_file = embedded_recording(tmp_path)
+    data = log_file.read_bytes()
+    log_file.write_bytes(b"not json at all" + data[data.index(b"<END HEADER>") :])
+
+    with pytest.raises(json.JSONDecodeError):
+        open_reader(log_file)
+
+
+def test_a_recording_cut_short_reports_the_length_it_can_deliver(
+    tmp_path: Path,
+) -> None:
+    """The header's bytes are not counted as samples, whatever is left after them."""
+    log_file = embedded_recording(tmp_path)
+    data = log_file.read_bytes()
+    header_bytes = data.index(b"<END HEADER>") + len(b"<END HEADER>")
+    kept_samples = 1000
+    log_file.write_bytes(data[: header_bytes + 2 * kept_samples])
+
+    reader = open_reader(log_file)
+    length = reader.get_channel_length(CHANNEL)
+    delivered = reader.load_data(0.0, length / reader.get_samplerate(), CHANNEL)
+
+    assert length == kept_samples
+    assert delivered.size == kept_samples
+    reader.close_resources()

@@ -23,8 +23,8 @@ Three tiers are asserted, in order of how much the mutation lets the reader get:
 unconstrained. Measured directly across the mutations here: a 0-byte file alone
 already produces four different exception families depending on reader and
 format - ``ValueError`` (most readers, from an empty ``numpy.memmap``),
-``json.decoder.JSONDecodeError`` (``ChimeraReader20240101``'s embedded-header
-parse, itself a ``ValueError`` subclass), ``NotImplementedError`` (the three ABF
+``json.decoder.JSONDecodeError`` (an emptied Chimera sidecar, itself a
+``ValueError`` subclass), ``NotImplementedError`` (the three ABF
 readers, from ``pyabf``'s header parse; *not* a ``ValueError`` subclass), and a
 missing sidecar file raises
 ``FileNotFoundError`` or ``OSError`` depending on the reader. None of that is a

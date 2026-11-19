@@ -8,8 +8,10 @@ different *on-disk file format* per plugin, since that is the whole thing a
 reader varies over. ``tests/synthetic_data`` gained five new format writers
 for this module: ``synthetic_binary.py`` (BinaryReader1X, SingleBinaryDecoder),
 ``synthetic_chimera_vc100.py`` (ChimeraReaderVC100), a Chimera 2024-01
-embedded-header writer added to ``synthetic_chimera.py``
-(ChimeraReader20240101), and ``synthetic_abf2.py`` (TCossaLabABFReader,
+embedded-header writer added to ``synthetic_chimera.py`` (the second layout
+ChimeraReader20240501 opens, driven by
+``tests/unit/plugins/datareaders/test_chimera_both_layouts.py`` rather than
+here), and ``synthetic_abf2.py`` (TCossaLabABFReader,
 LegacyElementsReader) - each reverse-engineered against the real parsing code
 rather than guessed, and independently verified to round-trip a known signal
 before being wired in here. See each module's docstring for the format.

@@ -57,6 +57,8 @@
 
 * **A setting declared `int` no longer accepts `True` or `False`** when settings are applied: Python counts a boolean as an integer, and the check now refuses one by name, as it already did for a default
 
+* **`ChimeraReader20240101` is removed**; `ChimeraReader20240501` opens the files it read, the Chimera VC400 `.log` files with their settings embedded at the start, and reads the same values from them
+
 #### Saved files:
 
 * **Breaking:** the session file (Save Session's file and the autosave) has a new layout, a format version, the Poriscope version that saved it, the last tab, the data plugins as a list in their order and each tab's own state apart, so a session saved by 3.0 does not open in 2.0; a 2.0 session still loads, and one in a later format is refused with a message naming the version that saved it

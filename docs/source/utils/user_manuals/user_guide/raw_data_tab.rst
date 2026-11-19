@@ -18,7 +18,7 @@ Step 1: Loading Your Data
 
    - ``ABFReader`` (for any `.abf` file; its settings choose the ADC channel that records current and the sweep to read, -1 for every sweep back to back), and ``TCossaLabABFReader`` and ``LegacyElementsReader`` (for `.abf` recordings from the lab's own setups, with those settings fixed)
    - ``BinaryReader1X`` and ``SingleBinaryDecoder`` (for `.bin`-like formats), and ``NIBinaryReader`` (for the `.bin` files of the lab's NI DAQ setups: 16 channels in mV, with the sample rate read from the file name and the amplifier's **Sensitivity** in pA/V converting to pA)
-   - ``ChimeraReader20240101``, ``ChimeraReader20240501``, ``ChimeraReaderVC100`` (for Chimera system `.log` files or variations; ``ChimeraReader20240101`` is deprecated and will be removed in a future release)
+   - ``ChimeraReader20240501`` (for Chimera VC400 `.log` files, whether their settings are in a companion `.json` or embedded at the start of the `.log`) and ``ChimeraReaderVC100`` (for Chimera VC100 `.log` files)
 
 .. note::
 

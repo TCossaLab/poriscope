@@ -54,7 +54,6 @@ from tests.synthetic_data.synthetic_binary import (
 )
 from tests.synthetic_data.synthetic_chimera import (
     ChimeraRecordingConfig,
-    generate_chimera_20240101_dataset,
     generate_chimera_dataset,
 )
 from tests.synthetic_data.synthetic_chimera_vc100 import (
@@ -700,9 +699,11 @@ def build_any_event_loader(
 # a shared database" - it is a different *file format* per plugin, since that
 # is the entire thing a reader varies over. Each entry below is a synthetic
 # writer from tests/synthetic_data, covering one on-disk format; several
-# readers can and do share one (ChimeraReader20240501 and ChimeraReader20240101
-# read the identical ADC-code/gain-stack encoding, only the metadata's location
-# differs). See each synthetic writer module's docstring for the full format
+# readers can and do share one (the three ABF readers). A reader that opens two
+# layouts of one format has one of them here: ChimeraReader20240501 is driven
+# over its companion-.json layout, and its embedded-header layout is proved to
+# give the same samples in tests/unit/plugins/datareaders. See each synthetic
+# writer module's docstring for the full format
 # derivation - most of it was reverse-engineered directly from the real parser
 # rather than guessed, since a byte-format mismatch fails in ways ranging from
 # a clear exception to a silently wrong signal.
@@ -727,19 +728,6 @@ def _chimera_20240501_dataset(out_dir: Path) -> SyntheticDataset:
         event_duration_s=READER_EVENT_DURATION_S,
     )
     return generate_chimera_dataset(out_dir, config, channel=3, num_events=5)
-
-
-def _chimera_20240101_dataset(out_dir: Path) -> SyntheticDataset:
-    """Build a ChimeraReader20240101 (.log with embedded header) fixture."""
-    config = ChimeraRecordingConfig(
-        samplerate=4_000_000.0,
-        duration_s=0.5,
-        baseline=READER_BASELINE_PA,
-        noise_std=READER_NOISE_STD_PA,
-        event_amplitude=READER_EVENT_AMPLITUDE_PA,
-        event_duration_s=READER_EVENT_DURATION_S,
-    )
-    return generate_chimera_20240101_dataset(out_dir, config, channel=3, num_events=5)
 
 
 def _chimera_vc100_dataset(out_dir: Path) -> SyntheticDataset:
@@ -822,7 +810,6 @@ def _abf2_legacy_dataset(out_dir: Path) -> SyntheticDataset:
 
 READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
     "ChimeraReader20240501": _chimera_20240501_dataset,
-    "ChimeraReader20240101": _chimera_20240101_dataset,
     "ChimeraReaderVC100": _chimera_vc100_dataset,
     "BinaryReader1X": _binary_1x_dataset,
     "SingleBinaryDecoder": _single_binary_dataset,
@@ -885,12 +872,6 @@ def _flip_abf2_signature(dataset: SyntheticDataset) -> None:
     dataset.data_path.write_bytes(bytes(data))
 
 
-def _corrupt_end_header(dataset: SyntheticDataset) -> None:
-    """Corrupt the ``<END HEADER>`` marker the 2024-01 Chimera format embeds."""
-    data = dataset.data_path.read_bytes()
-    dataset.data_path.write_bytes(data.replace(b"<END HEADER>", b"<XXXX XXXXXX>"))
-
-
 def _delete_sidecar(dataset: SyntheticDataset) -> None:
     """Remove the sidecar metadata file, leaving the primary data file intact."""
     if dataset.metadata_path is not None:
@@ -911,11 +892,13 @@ _SHARED_MUTATIONS: List[Tuple[str, Callable[[SyntheticDataset], None]]] = [
 ]
 
 # Per-reader mutation lists: the shared set every format gets, plus
-# format-specific ones layered on top - not per-reader duplication. Only 4 of
-# the 9 readers have an in-band marker worth flipping (the three ABF readers'
-# ABF2 signature, the 2024-01 Chimera embedded header); the two sidecar-based
-# formats (2024-05 Chimera, ChimeraVC100) get sidecar mutations instead, since
-# their "header" is the sidecar file, not anything in the data file itself.
+# format-specific ones layered on top - not per-reader duplication. Only 3 of
+# the 8 readers have an in-band marker worth flipping (the three ABF readers'
+# ABF2 signature); the two sidecar-based fixtures (Chimera VC400 with its
+# companion .json, ChimeraVC100) get sidecar mutations instead, since their
+# "header" is the sidecar file, not anything in the data file itself. A damaged
+# embedded header in a Chimera VC400 file is covered beside the reader's
+# two-layout tests, which is where that layout's fixture is built.
 # BinaryReader1X, SingleBinaryDecoder and NIBinaryReader have no in-band marker
 # at all - a fixed-format binary dump has nothing to flip - so they get the
 # shared set only.
@@ -924,7 +907,6 @@ MUTATIONS: Dict[str, List[Tuple[str, Callable[[SyntheticDataset], None]]]] = {
 }
 for _reader_name in ("TCossaLabABFReader", "LegacyElementsReader", "ABFReader"):
     MUTATIONS[_reader_name].append(("flip_abf2_signature", _flip_abf2_signature))
-MUTATIONS["ChimeraReader20240101"].append(("corrupt_end_header", _corrupt_end_header))
 for _reader_name in ("ChimeraReader20240501", "ChimeraReaderVC100"):
     MUTATIONS[_reader_name].append(("delete_sidecar", _delete_sidecar))
     MUTATIONS[_reader_name].append(
