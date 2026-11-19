@@ -30,7 +30,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, override
+from typing import Any, Dict, List, Optional, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
@@ -43,7 +43,9 @@ from poriscope.utils.MetaReader import MetaReader
 @inherit_docstrings
 class ChimeraReader20240501(MetaReader):
     """
-    Subclass of MetaReader for reading chimera VC400 .log files using the 2024-05 specification that uses a separate json file for metadata
+    Subclass of MetaReader for reading Chimera VC400 ``.log`` files, in either of the instrument's two layouts.
+
+    The acquisition settings a ``.log`` file needs are stored one of two ways: in a companion ``.json`` file with the same stem (the 2024-05 layout), or as JSON embedded at the start of the ``.log`` itself, ending in an ``<END HEADER>`` marker (the 2024-01 layout). Which one a file uses is told from the file, by looking for the marker, so the two can be mixed in one folder.
 
     Attributes:
         datafile (str): Path to the data file.
@@ -57,6 +59,11 @@ class ChimeraReader20240501(MetaReader):
     """
 
     logger = logging.getLogger(__name__)
+
+    #: Ends the settings embedded at the start of a ``.log`` file in the 2024-01 layout.
+    EMBEDDED_HEADER_END = b"<END HEADER>"
+    #: How far into a ``.log`` file the marker is looked for.
+    EMBEDDED_HEADER_SEARCH_BYTES = 10000
 
     # private API, MUST be implemented by subclasses
     @log(logger=logger)
@@ -257,7 +264,7 @@ class ChimeraReader20240501(MetaReader):
     def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
-        Parses each file's companion .json settings file (same stem, .json extension) to build a per-file configuration dict; unlike ChimeraReader20240101, this format has no embedded header.
+        Builds one configuration dict per file from its acquisition settings, wherever the file keeps them: embedded at the start of the ``.log``, or in its companion ``.json``.
 
         :param datafiles: List of data file paths.
         :type datafiles: List[str]
@@ -266,50 +273,70 @@ class ChimeraReader20240501(MetaReader):
         :rtype: List[dict]
         """
         configs = []
-
         for filename in datafiles:
-            p = Path(filename)
-            settings_filename = p.parent / (p.stem + ".json")
-            with open(settings_filename) as f:
-                settings = json.load(f)
-                settings_log = settings["log"]
-                settings_global = settings["global"]
-                settings_channel = settings["channel"]
-            configs.append(
-                {
-                    "header_bytes": 0,  # 202405 has no header
-                    "samplerate": settings_global["f_sampling"],  # sample rate
-                    "adc_samplerate": settings_global["f_adc"],  # sample rate
-                    "label": "current",  # data labels for all arrays present
-                    "units": "pA",
-                    "dtype": {
-                        "data_order": "",
-                        "data_type": "int",
-                        "data_size": 16,
-                    },  # np dtypes
-                    "file_type": "Chimera VC400",
-                    "file_ext": ".log",
-                    "file_version": settings_log["version"],
-                    "channel": settings_log["HS"],
-                    "filter_gain": settings_global["filter_gain"],
-                    "bandwidth": settings_global["bandwidth"],
-                    "decimate": settings_global["decimate"],
-                    "tia_gain": settings_channel["tia_gain"],
-                    "i_offset": settings_channel["i_offset"],
-                    "v_offset": settings_channel["voffset"],
-                    "timestamp": settings_log["timestamp"],
-                    #'filter_tuning': settings_channel['filtertuning'],
-                    #'dac_power': settings_channel['dacpower'],
-                    #'dac_divider': settings_channel['dacdivider'],
-                    #'dac_rescale': settings_channel['dac_rescale'],
-                    #'low_gain': settings_channel['lowgain'],
-                    #'boost': settings_channel['boost'],
-                    #'internal_T': settings_channel['internalT'],
-                    #'tc_T': settings_channel['tcT'],
-                    #'tc_fault': settings_channel['tcFault']
-                }
-            )
+            settings, header_bytes = self._read_settings(filename)
+            configs.append(self._config_from_settings(settings, header_bytes))
         return configs
+
+    @log(logger=logger)
+    def _read_settings(self, filename: str) -> Tuple[dict, int]:
+        """
+        Read one ``.log`` file's acquisition settings, and find where its samples start.
+
+        The marker decides, not the companion file: a ``.log`` with settings embedded is read from its own header even if a ``.json`` sits beside it, so a stray companion can neither replace the file's settings nor leave its header to be read as samples. A file with no marker needs its companion, and a missing one is reported by name.
+
+        :param filename: path to the ``.log`` file
+        :type filename: str
+        :return: the settings as parsed JSON, and the number of bytes before the first sample
+        :rtype: Tuple[dict, int]
+        """
+        with open(filename, mode="rb") as f:
+            start = f.read(self.EMBEDDED_HEADER_SEARCH_BYTES)
+        marker = start.find(self.EMBEDDED_HEADER_END)
+        if marker >= 0:
+            return json.loads(start[:marker]), marker + len(self.EMBEDDED_HEADER_END)
+        p = Path(filename)
+        with open(p.parent / (p.stem + ".json")) as f:
+            return json.load(f), 0
+
+    @log(logger=logger)
+    def _config_from_settings(self, settings: dict, header_bytes: int) -> dict:
+        """
+        Build the configuration dict the reader works from out of one file's settings.
+
+        :param settings: the acquisition settings, with their ``log``, ``global`` and ``channel`` blocks
+        :type settings: dict
+        :param header_bytes: the number of bytes before the first sample, 0 for a file with a companion ``.json``
+        :type header_bytes: int
+        :return: the configuration dict for that file
+        :rtype: dict
+        """
+        settings_log = settings["log"]
+        settings_global = settings["global"]
+        settings_channel = settings["channel"]
+        return {
+            "header_bytes": header_bytes,
+            "samplerate": settings_global["f_sampling"],  # sample rate
+            "adc_samplerate": settings_global["f_adc"],  # sample rate
+            "label": "current",  # data labels for all arrays present
+            "units": "pA",
+            "dtype": {
+                "data_order": "",
+                "data_type": "int",
+                "data_size": 16,
+            },  # np dtypes
+            "file_type": "Chimera VC400",
+            "file_ext": ".log",
+            "file_version": settings_log["version"],
+            "channel": settings_log["HS"],
+            "filter_gain": settings_global["filter_gain"],
+            "bandwidth": settings_global["bandwidth"],
+            "decimate": settings_global["decimate"],
+            "tia_gain": settings_channel["tia_gain"],
+            "i_offset": settings_channel["i_offset"],
+            "v_offset": settings_channel["voffset"],
+            "timestamp": settings_log["timestamp"],
+        }
 
     # public API
     @log(logger=logger)
@@ -332,9 +359,10 @@ class ChimeraReader20240501(MetaReader):
 
         The keys this plugin adds:
 
-        - ``Input File`` - the Chimera ``.log`` file to read. Everything else comes
-          from the companion ``.json`` settings file with the same stem, since this
-          layout has no header embedded in the ``.log``.
+        - ``Input File`` - the Chimera ``.log`` file to read. Everything else - sample
+          rate, bit depth, scaling - comes from the file's acquisition settings: the
+          JSON header embedded at the start of the ``.log``, ahead of its ``<END HEADER>``
+          marker, or, for a file without one, the companion ``.json`` with the same stem.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Optional[Dict[str, List[str]]]

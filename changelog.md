@@ -398,6 +398,8 @@
 
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 
+* `ChimeraReader20240501` opens both Chimera VC400 file layouts: a `.log` with its settings embedded ahead of an `<END HEADER>` marker is read from that header, and any other from its companion `.json`
+
 #### Event Analysis:
 
 * Fixed the Event Analysis DB-WRITER delete button's tooltip, which read 'Add eventwriter'

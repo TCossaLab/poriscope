@@ -104,7 +104,7 @@
       "SingleBinaryDecoder.py:SingleBinaryDecoder.reset_channel"
     ],
     "files": 10,
-    "functions": 125,
+    "functions": 127,
     "identical_bodies": 13,
     "removable_lines": 348
   },
