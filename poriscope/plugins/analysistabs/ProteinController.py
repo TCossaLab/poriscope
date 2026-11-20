@@ -588,15 +588,75 @@ class ProteinController(MetaSubsetTabController):
             histograms = self.model.build_event_histograms(
                 event_data, "Filtered Histogram", bins, sizes
             )
-            fits = self.model.fit_histograms(histograms)
+            fits, too_short = self._fit_resolvable(
+                event_data, histograms, "Filtered Histogram"
+            )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
             self.add_text_to_display.emit(
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return False
+        if too_short:
+            names = ", ".join(str(event_id) for event_id in too_short)
+            one = len(too_short) == 1
+            self.add_text_to_display.emit(
+                f"Event{'' if one else 's'} {names} hold{'s' if one else ''} fewer than "
+                f"{self.model.MIN_INDEPENDENT_MEASUREMENTS} independent measurements, "
+                "too few to resolve two populations, so "
+                f"{'it is' if one else 'they are'} drawn without a fit",
+                self.__class__.__name__,
+            )
         self.view.show_event_histograms(fits, histograms, event_data)
         return True
+
+    @log(logger=logger)
+    def _fit_resolvable(
+        self,
+        event_data: Sequence[Dict[str, Any]],
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
+        plot_type: str,
+    ) -> Tuple[
+        List[
+            Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
+        ],
+        List[int],
+    ]:
+        """
+        Fit every event's histogram except those too short to resolve two populations.
+
+        Both the event page and the Individual fit come through here, so the event page
+        never draws a fit that the Individual fit refuses. A too-short event's histogram
+        stays in ``histograms`` to be drawn; it is handed to the fit as None, which
+        answers no fit.
+
+        :param event_data: the events, in the order their histograms were built
+        :type event_data: Sequence[Dict[str, Any]]
+        :param histograms: each event's (bin centers, amplitude) pair, or None where none could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :return: one (fit parameters, fitted curve) pair per event, and the ``event_id`` of each event refused as too short
+        :rtype: Tuple[List[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]], List[int]]
+        """
+        too_short = [
+            short and histogram is not None
+            for short, histogram in zip(
+                self.model.too_short_to_resolve(event_data, plot_type), histograms
+            )
+        ]
+        fits = self.model.fit_histograms(
+            [
+                None if short else histogram
+                for short, histogram in zip(too_short, histograms)
+            ]
+        )
+        refused = [
+            event["event_id"] for event, short in zip(event_data, too_short) if short
+        ]
+        return fits, refused
 
     @log(logger=logger)
     def _events_to_plot(
@@ -837,7 +897,7 @@ class ProteinController(MetaSubsetTabController):
             histograms = self.model.build_event_histograms(
                 event_data, plot_type, bins, sizes
             )
-            fits = self.model.fit_histograms(histograms)
+            fits, too_short = self._fit_resolvable(event_data, histograms, plot_type)
             df_prolate, df_oblate, fit_data = self.model.sample_event_geometries(
                 fits, histograms, event_data, d, L, N
             )
@@ -847,6 +907,14 @@ class ProteinController(MetaSubsetTabController):
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return None
+
+        if too_short:
+            self.add_text_to_display.emit(
+                f"{len(too_short)} of {len(event_data)} events hold fewer than "
+                f"{self.model.MIN_INDEPENDENT_MEASUREMENTS} independent measurements, "
+                "too few to resolve two populations, so they have no fit",
+                self.__class__.__name__,
+            )
 
         if fit_data.empty:
             # Every event was refused, or the subset held none at all. Every guard in

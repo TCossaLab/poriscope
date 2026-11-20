@@ -36,6 +36,8 @@
 
 * **The Protein tab's double-Gaussian fit no longer gives a component zero width:** no component is fitted narrower than a quarter of a bin, and a fit whose component sits on that limit, or whose two means nearly coincide, counts as finding one population; a real population narrower than half a bin is kept
 
+* **The Protein tab no longer fits an event holding fewer than 5 independent measurements**, counted from the correlation length of the noise in its leading padding; its histogram is still drawn, and the status panel says how many events, or which, were too short to resolve two populations
+
 #### Data plugin API:
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read

@@ -104,6 +104,13 @@ class ProteinModel(MetaSubsetTabModel):
     #: Two components whose means are closer than this many of the wider one's
     #: sigmas are one Gaussian split in two, not two populations.
     MIN_SEPARATION_STD = 0.25
+    #: An event holding fewer independent measurements than this gets no fit: a
+    #: two-population description has five free parameters (a weight, two means and two
+    #: widths), so fewer measurements cannot determine it.
+    MIN_INDEPENDENT_MEASUREMENTS = 5
+    #: A padding shorter than this gives no usable autocorrelation, so its event's samples
+    #: are counted as independent.
+    MIN_PADDING_SAMPLES = 8
 
     @log(logger=logger)
     @override
@@ -498,18 +505,11 @@ class ProteinModel(MetaSubsetTabModel):
         :type plot_type: str
         :return: the fractional blockage over the event proper, paddings excluded
         :rtype: npt.NDArray[np.float64]
-        :raises ValueError: if plot_type names neither the raw nor the filtered trace
         :raises ZeroDivisionError: if the event's baseline is zero
         """
-        if plot_type == "Raw Histogram":
-            timeseries = event["raw_data"]
-        elif plot_type == "Filtered Histogram":
-            timeseries = event["filtered_data"]
-        else:
-            raise ValueError(f"Unknown plot_type {plot_type!r}")
-
-        padding_before = round(event["padding_before"] * event["samplerate"] * 1e-6)
-        padding_after = round(event["padding_after"] * event["samplerate"] * 1e-6)
+        timeseries, padding_before, padding_after = self._trace_and_paddings(
+            event, plot_type
+        )
         baseline = 0.5 * (
             np.median(timeseries[:padding_before])
             + np.median(timeseries[-padding_after:])
@@ -523,6 +523,96 @@ class ProteinModel(MetaSubsetTabModel):
             baseline - timeseries[padding_before:-padding_after]
         ) / baseline
         return blockage
+
+    @log(logger=logger)
+    def _trace_and_paddings(
+        self, event: Dict[str, Any], plot_type: str
+    ) -> Tuple[npt.NDArray[np.float64], int, int]:
+        """
+        The trace a plot type bins, and the event's paddings in samples.
+
+        The loader reports the paddings in microseconds, while the slicing counts samples.
+
+        :param event: one event's payload as the loader yields it
+        :type event: Dict[str, Any]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :return: the trace, the samples of padding before the event and after it
+        :rtype: Tuple[npt.NDArray[np.float64], int, int]
+        :raises ValueError: if plot_type names neither the raw nor the filtered trace
+        """
+        if plot_type == "Raw Histogram":
+            timeseries = event["raw_data"]
+        elif plot_type == "Filtered Histogram":
+            timeseries = event["filtered_data"]
+        else:
+            raise ValueError(f"Unknown plot_type {plot_type!r}")
+
+        padding_before = round(event["padding_before"] * event["samplerate"] * 1e-6)
+        padding_after = round(event["padding_after"] * event["samplerate"] * 1e-6)
+        return timeseries, padding_before, padding_after
+
+    @log(logger=logger)
+    def _correlation_length(self, noise: npt.NDArray[np.float64]) -> int:
+        """
+        How many samples apart two values of this noise are before they are independent.
+
+        The lag at which the noise's autocorrelation first falls below 1/e. A low-pass
+        filter makes each sample nearly a copy of its neighbours, so this is how many
+        samples make one independent measurement. The lags are tried in turn because the
+        answer is a few samples, where the full autocorrelation would cost the square of
+        the padding's length.
+
+        :param noise: a stretch of pure baseline noise
+        :type noise: npt.NDArray[np.float64]
+        :return: the correlation length in samples, 1 when the noise is too short or flat to measure
+        :rtype: int
+        """
+        centred = noise - np.mean(noise)
+        variance = float(np.var(centred))
+        if centred.size < self.MIN_PADDING_SAMPLES or variance == 0:
+            return 1
+        norm = variance * centred.size
+        threshold = np.exp(-1)
+        for lag in range(1, centred.size):
+            if np.dot(centred[:-lag], centred[lag:]) / norm < threshold:
+                return lag
+        return int(centred.size)
+
+    @log(logger=logger)
+    def too_short_to_resolve(
+        self, events: Sequence[Dict[str, Any]], plot_type: str
+    ) -> List[bool]:
+        """
+        Which events hold too few independent measurements to resolve two populations.
+
+        An event's independent measurements are its samples between the paddings divided
+        by the correlation length of the noise in its leading padding, in the trace the
+        plot type bins. The database records no filter cutoff, so the padding is the only
+        measure of how far the filter correlates the samples. An event below
+        ``MIN_INDEPENDENT_MEASUREMENTS`` gets no fit, whatever its histogram fit would say:
+        the fit treats every sample as independent. An event with no samples between its
+        paddings is not counted here; it has no histogram, and the binning reports it.
+
+        :param events: the events to check, in the order they are fitted
+        :type events: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :return: True for each event too short to resolve, index-aligned with events
+        :rtype: List[bool]
+        """
+        answers: List[bool] = []
+        for event in events:
+            timeseries, padding_before, padding_after = self._trace_and_paddings(
+                event, plot_type
+            )
+            samples = timeseries[padding_before:-padding_after].size
+            if samples == 0:
+                answers.append(False)
+                continue
+            lag = self._correlation_length(timeseries[:padding_before])
+            answers.append(samples / lag < self.MIN_INDEPENDENT_MEASUREMENTS)
+        return answers
 
     @log(logger=logger)
     def _resolve_event_bins(

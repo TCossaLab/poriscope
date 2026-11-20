@@ -19,6 +19,9 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
+from tests.synthetic_data.synthetic_protein_events import (
+    two_level_event_with_correlated_padding,
+)
 
 
 def _make_double_gaussian_histogram(
@@ -1622,3 +1625,92 @@ def test_the_blockage_excludes_exactly_the_paddings(model):
     blockage = model._blockage_fraction(event, "Raw Histogram")
 
     assert len(blockage) == 30 - 7 - 7
+
+
+# ===========================================================================
+# too_short_to_resolve - independent measurements counted from the padding
+# ===========================================================================
+
+
+def _boxcar_noise(width, n=5000, seed=0):
+    """
+    White noise smoothed by a boxcar, as a low-pass filter correlates neighbouring samples.
+
+    :param width: the boxcar's width in samples; 1 leaves the noise white
+    :type width: int
+    :param n: how many samples to return
+    :type n: int
+    :param seed: the seed for the noise
+    :type seed: int
+    :return: the noise
+    :rtype: np.ndarray
+    """
+    white = np.random.default_rng(seed).normal(0, 1, n + 2 * width)
+    return np.convolve(white, np.ones(width) / width, "same")[width : width + n]
+
+
+class TestCorrelationLength:
+    """The lag at which the padding's autocorrelation first falls below 1/e."""
+
+    def test_white_noise_is_independent_sample_to_sample(self, model):
+        assert model._correlation_length(_boxcar_noise(1)) == 1
+
+    def test_a_boxcar_correlates_about_two_thirds_of_its_width(self, model):
+        """
+        A width-10 boxcar's autocorrelation at lag k is (10 - k) / 10, which first
+        falls below 1/e at lag 7.
+        """
+        assert 6 <= model._correlation_length(_boxcar_noise(10)) <= 8
+
+    def test_a_padding_too_short_to_measure_counts_every_sample(self, model):
+        assert model._correlation_length(_boxcar_noise(10, n=7)) == 1
+
+    def test_a_flat_padding_counts_every_sample(self, model):
+        assert model._correlation_length(np.full(100, 1000.0)) == 1
+
+
+class TestTooShortToResolve:
+    """
+    An event whose samples hold fewer independent measurements than a two-population
+    description has parameters cannot resolve two populations, whatever its histogram fit says.
+    """
+
+    def test_a_short_event_with_a_correlated_padding_is_too_short(self, model):
+        short = two_level_event_with_correlated_padding(n_event=100)
+        long = two_level_event_with_correlated_padding(event_id=2, n_event=3000)
+
+        assert model.too_short_to_resolve([short, long], "Filtered Histogram") == [
+            True,
+            False,
+        ]
+
+    def test_the_same_event_with_a_white_padding_is_long_enough(self, model):
+        """The sample count alone does not decide it: 100 white samples are 100 measurements."""
+        event = two_level_event_with_correlated_padding(n_event=100, width=1)
+
+        assert model.too_short_to_resolve([event], "Filtered Histogram") == [False]
+
+    def test_the_padding_is_measured_in_the_trace_being_binned(self, model):
+        event = two_level_event_with_correlated_padding(n_event=100)
+        event["raw_data"] = two_level_event_with_correlated_padding(
+            n_event=100, width=1
+        )["raw_data"]
+
+        assert model.too_short_to_resolve([event], "Raw Histogram") == [False]
+        assert model.too_short_to_resolve([event], "Filtered Histogram") == [True]
+
+    def test_an_event_with_no_samples_between_its_paddings_is_not_counted(self, model):
+        """It has no histogram to fit; build_event_histograms already reports it."""
+        event = two_level_event_with_correlated_padding(n_event=100)
+        event["padding_before"] = event["padding_after"] = 1100
+
+        assert model.too_short_to_resolve([event], "Filtered Histogram") == [False]
+
+    def test_no_events_gives_no_answers(self, model):
+        assert model.too_short_to_resolve([], "Filtered Histogram") == []
+
+    def test_an_unknown_plot_type_is_refused(self, model):
+        with pytest.raises(ValueError):
+            model.too_short_to_resolve(
+                [two_level_event_with_correlated_padding()], "Sideways Histogram"
+            )

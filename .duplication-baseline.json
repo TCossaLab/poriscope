@@ -2,7 +2,7 @@
   "*Controller.py": {
     "duplicated_functions": [],
     "files": 9,
-    "functions": 206,
+    "functions": 207,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -13,7 +13,7 @@
       "RawDataModel.py:RawDataModel._init"
     ],
     "files": 8,
-    "functions": 102,
+    "functions": 105,
     "identical_bodies": 1,
     "removable_lines": 4
   },

@@ -104,6 +104,9 @@ values 2.0 wrote; to compare with 3.0, run the step again.
 - The Protein tab's double-Gaussian fit no longer fits a component narrower than a quarter of a
   bin. A fit whose component sits on that limit, or whose two means nearly coincide, counts as
   finding one population; a real population narrower than half a bin is kept.
+- The Protein tab gives no fit to an event holding fewer than 5 independent measurements: a
+  filtered trace's neighbouring samples are nearly copies of each other, so a short event
+  cannot resolve two populations. The status panel says how many events this left unfitted.
 
 **Readers and filters** (everything read from raw data):
 

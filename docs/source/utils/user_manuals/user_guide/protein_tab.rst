@@ -72,6 +72,18 @@ Click **Update Plot** to run the fit for the current mode. This draws:
    events are the usual case: with automatic bins, an event of under about 150 samples gets
    too few bins to fit.
 
+.. note::
+
+   An event too short to resolve two populations is not fitted at all, and the status
+   panel says how many events, or on the event page which ones, this left unfitted. The
+   filter makes neighbouring samples nearly copies of each other, so the tab counts an
+   event's *independent measurements*: its samples divided by how many samples apart the
+   noise in the padding before it stays correlated (the lag at which its autocorrelation
+   falls below 1/e). An event holding fewer than 5, the number of parameters that describe
+   two populations (a weight, two means and two widths), gets no fit. On a 4.17 MHz
+   filtered recording the noise stays correlated for about 11 samples, so an event needs
+   roughly 55 samples. Ensemble mode is unaffected.
+
 Step 7a: Commit Individual Fits
 ----------------------------------
 

@@ -18,6 +18,41 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-20 - A Protein event too short to resolve two populations gets no fit; no BIC gate
+
+**Context.** The Protein tab's least-squares histogram fit treats every sample as independent, but
+the low-pass filter keeps the noise correlated for a median 11 samples (9-14) on
+`Ub_250mV_0p2MPa_CUSUM_A1` (4.17 MHz), so a 100-sample event holds about 9 independent measurements;
+5,719 of its 5,997 events are under 100 samples. A prototype two-component mixture with BIC, n
+corrected by each event's padding correlation length, resolved none of the 5,817 events under 150
+samples, where the histogram fit accepts 18. Ruled 2026-11-19 (Ben, Kyle): keep the histogram fit
+for the values; count independent measurements from each event's own padding, since the database
+records no filter cutoff. Write-up: <https://claude.ai/artifact/D7ojrzmfUTXp5Rrq5UD8aJ>.
+
+**Decision** (Ben chose A, 2026-11-20; Kyle the threshold). Build A, a length check:
+`ProteinModel.too_short_to_resolve` divides an event's samples by the lag at which the
+autocorrelation of its leading padding, in the trace being binned, first falls below 1/e; below
+`MIN_INDEPENDENT_MEASUREMENTS = 5`, the number of free parameters in a two-population description,
+the event gets no fit. Its histogram is still drawn and the status panel counts or names the events.
+The Individual fit and the event page share the check (`ProteinController._fit_resolvable`);
+Ensemble mode is unchanged. A padding under 8 samples, or a flat one, counts every sample.
+
+**Evidence.** Through the shipped code on a copy of that database: 104 fits before, 95 after; the
+check costs 1.6 s over the 5,997 events beside 4.5 s to bin them. A threshold of 8 would keep 92
+(the prototype's count, 2026-11-19).
+
+**Rejected.** B, a BIC gate (mixture fitted to the samples, margin 6, 5% width floor), which keeps 32
+of 104: it also removes 54 fits on events over 150 samples where the histogram fit and the mixture
+disagree, and neither is known to be right there. That gate also meets the objection of 2026-08-26
+(BIC ruled out for `PeakFinder`): a skewed single population can win two Gaussians by BIC, so a margin
+alone cannot be trusted. A length check makes no model comparison, so that entry stands. Counting from
+the filter cutoff and sample rate is not possible: the database does not record them.
+
+**Revisit if** synthetic events with known levels, filtered the way the lab's data is, show which of
+the two fits is closer on long events; B could then follow A.
+
+---
+
 ## 2026-11-19 - Database loaders raise on a failed query
 
 **Context.** `MetaDatabaseLoader.load_metadata`, `load_metadata_raw`, `query_database_directly`
@@ -325,7 +360,8 @@ event edges (above); a separate rule for zero width on top of the other mean (on
 restored most false two-population fits along with the real ones).
 
 **Revisit if** short events matter: under automatic binning, events under ~150 samples get 2-7 bins
-and cannot be fitted by any of these rules (see `future_fixes.md`).
+and cannot be fitted by any of these rules (see 2026-11-20, which refuses such events by their
+independent measurements).
 
 ---
 

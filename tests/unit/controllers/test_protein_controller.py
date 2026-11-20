@@ -20,6 +20,9 @@ from PySide6.QtWidgets import QApplication
 
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import EnsembleFit
+from tests.synthetic_data.synthetic_protein_events import (
+    two_level_event_with_correlated_padding,
+)
 
 # ===========================================================================
 # Fixtures
@@ -425,6 +428,36 @@ class TestPlotEventHistograms:
         (message, _), _ = controller.add_text_to_display.emit.call_args
         assert message == "No data available for event_id 2"
 
+    def test_an_event_too_short_to_resolve_is_drawn_without_a_fit_and_named(
+        self, controller, mocker
+    ) -> None:
+        """
+        The event page applies the same length check as the Individual fit, so it
+        never shows a fit that Individual mode would refuse.
+        """
+        controller.view.show_event_histograms = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        short = two_level_event_with_correlated_padding(event_id=2, n_event=100)
+        long = two_level_event_with_correlated_padding(event_id=1, n_event=3000)
+        self._fetch(controller, [short, long])
+
+        assert self._plot(controller, bins=[30]) is True
+
+        fits, histograms, _ = controller.view.show_event_histograms.call_args.args
+        # Without the check the short event fits: the check, not the fit, refuses it.
+        assert controller.model.fit_histogram(*histograms[0])[0] is not None
+        assert fits[0][0] is None and fits[0][1] is None
+        assert histograms[0] is not None
+        assert fits[1][0] is not None
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert messages == [
+            "Event 2 holds fewer than 5 independent measurements, too few to resolve "
+            "two populations, so it is drawn without a fit"
+        ]
+
 
 class TestUpdateIndividualDistribution:
     """Fetch, bin, fit and sample one subset; keep the fit; have the View draw it."""
@@ -494,6 +527,48 @@ class TestUpdateIndividualDistribution:
             4,
         )
         assert controller.model.individual_fit["id"].tolist() == [1]
+
+    def test_events_too_short_to_resolve_get_no_fit_and_are_counted(
+        self, controller, mocker
+    ) -> None:
+        """
+        A short event whose histogram would fit is left out of the kept fit, and the
+        status panel says how many were left out and why.
+        """
+        self._drawing(controller)
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        short = two_level_event_with_correlated_padding(event_id=2, n_event=100)
+        long = two_level_event_with_correlated_padding(event_id=1, n_event=3000)
+        ((bincenters, amplitude),) = controller.model.build_event_histograms(
+            [short], "Filtered Histogram", [60], False
+        )
+        # Without the check the short event fits: the check, not the fit, refuses it.
+        assert controller.model.fit_histogram(bincenters, amplitude)[0] is not None
+        self._fetch(controller, [long, short])
+
+        assert self._plot(controller) is True
+
+        assert controller.model.individual_fit["id"].tolist() == [1]
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert messages == [
+            "1 of 2 events hold fewer than 5 independent measurements, too few to "
+            "resolve two populations, so they have no fit"
+        ]
+
+    def test_nothing_is_said_when_every_event_is_long_enough(
+        self, controller, mocker
+    ) -> None:
+        self._drawing(controller)
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        self._fetch(controller, [_two_level_event(1)])
+
+        assert self._plot(controller) is True
+
+        controller.add_text_to_display.emit.assert_not_called()
 
     def test_a_subset_with_nothing_fittable_is_reported_and_changes_nothing(
         self, controller, mocker
